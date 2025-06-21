@@ -179,6 +179,66 @@ backend:
       - working: true
         agent: "testing"
         comment: "Successfully tested retrieving audio library, renaming audio files, and deleting audio files. All CRUD operations for audio management are working correctly."
+        
+  - task: "OpenAI Integration for Summarization"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: false
+        agent: "main"
+        comment: "Implemented OpenAI GPT-4o integration for article summarization with fallback to mock for demo keys"
+      - working: true
+        agent: "testing"
+        comment: "Successfully tested OpenAI integration. The system correctly detects demo API keys and falls back to mock responses. The generated scripts have the expected conversational format with HOST 1 and HOST 2 dialogue structure."
+
+  - task: "Google Cloud TTS Integration"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: false
+        agent: "main"
+        comment: "Implemented Google Cloud TTS for audio generation with fallback to mock for demo keys"
+      - working: true
+        agent: "testing"
+        comment: "Successfully tested Google Cloud TTS integration. The system correctly detects demo API keys and falls back to mock audio generation. Audio files are properly created and accessible via the API."
+
+  - task: "Enhanced Article Content Handling"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: false
+        agent: "main"
+        comment: "Improved article content extraction for better AI summarization"
+      - working: true
+        agent: "testing"
+        comment: "Successfully tested enhanced article content handling. The system properly extracts and processes article content for AI summarization, combining multiple articles into a coherent script."
+
+  - task: "Script Storage in Database"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: false
+        agent: "main"
+        comment: "Added script field to AudioCreation model to store AI-generated conversational scripts"
+      - working: true
+        agent: "testing"
+        comment: "Successfully verified that generated scripts are stored in the database. The script field is properly populated in the AudioCreation records and returned in API responses."
 
 frontend:
   - task: "Authentication UI"
