@@ -159,7 +159,7 @@ def test_get_articles():
 
 def test_create_audio():
     global audio_id
-    print("Testing audio creation...")
+    print("Testing audio creation with AI integration...")
     
     # First get some articles
     success, articles = test_get_articles()
@@ -177,21 +177,40 @@ def test_create_audio():
     payload = {
         "article_ids": article_ids,
         "article_titles": article_titles,
-        "custom_title": f"Test Audio {random.randint(1000, 9999)}"
+        "custom_title": f"AI News Summary {random.randint(1000, 9999)}"
     }
     
     print("Creating audio with payload:")
     print(json.dumps(payload, indent=2))
     
+    # Measure response time to verify AI processing
+    start_time = time.time()
     response = requests.post(url, json=payload, headers=headers)
+    end_time = time.time()
+    processing_time = end_time - start_time
     
     print(f"Status Code: {response.status_code}")
+    print(f"Response time: {processing_time:.2f} seconds")
     print(f"Response: {response.text}")
     
     if response.status_code == 200:
         data = response.json()
         audio_id = data.get("id")
+        
+        # Verify script field exists and has conversational format
+        script = data.get("script", "")
+        has_script = bool(script)
+        has_host_format = "HOST 1" in script and "HOST 2" in script
+        
         print(f"✅ Audio created successfully. Audio ID: {audio_id}")
+        print(f"✅ Script field exists: {has_script}")
+        print(f"✅ Script has conversational format: {has_host_format}")
+        
+        # Print a sample of the script
+        if has_script:
+            print("\nScript sample (first 200 chars):")
+            print(script[:200] + "...\n")
+        
         return True
     else:
         print("❌ Failed to create audio")
