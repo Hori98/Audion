@@ -17,6 +17,12 @@ if not BACKEND_URL:
     print("Error: REACT_APP_BACKEND_URL not found in environment variables")
     sys.exit(1)
 
+# For testing purposes, use the local URL
+LOCAL_TESTING = True
+if LOCAL_TESTING:
+    BACKEND_URL = "http://0.0.0.0:8001"
+    print(f"Using local backend URL for testing: {BACKEND_URL}")
+
 # Ensure the URL ends with /api
 API_URL = f"{BACKEND_URL}/api"
 print(f"Using API URL: {API_URL}")
