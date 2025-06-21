@@ -398,6 +398,7 @@ def run_all_tests():
         ("Add RSS Source", test_add_rss_source),
         ("Get RSS Sources", test_get_rss_sources),
         ("Get Articles", lambda: test_get_articles()[0]),
+        ("AI Pipeline with Demo Keys", test_ai_pipeline_with_demo_keys),
         ("Create Audio", test_create_audio),
         ("Get Audio Library", test_get_audio_library),
         ("Rename Audio", test_rename_audio),
