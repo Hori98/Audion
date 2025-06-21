@@ -1,0 +1,354 @@
+#!/usr/bin/env python3
+import requests
+import json
+import time
+import random
+import string
+import os
+from dotenv import load_dotenv
+import sys
+
+# Load environment variables from frontend/.env
+load_dotenv('/app/frontend/.env')
+
+# Get the backend URL from the environment
+BACKEND_URL = os.environ.get('REACT_APP_BACKEND_URL')
+if not BACKEND_URL:
+    print("Error: REACT_APP_BACKEND_URL not found in environment variables")
+    sys.exit(1)
+
+# Ensure the URL ends with /api
+API_URL = f"{BACKEND_URL}/api"
+print(f"Using API URL: {API_URL}")
+
+# Test data
+TEST_EMAIL = f"test_user_{random.randint(1000, 9999)}@example.com"
+TEST_PASSWORD = "password123"
+TEST_RSS_SOURCE_NAME = "TechCrunch"
+TEST_RSS_SOURCE_URL = "https://techcrunch.com/feed/"
+
+# Store auth token and created resources for cleanup
+auth_token = None
+user_id = None
+source_id = None
+audio_id = None
+
+def print_separator():
+    print("\n" + "="*80 + "\n")
+
+def test_register():
+    global auth_token, user_id
+    print("Testing user registration...")
+    
+    url = f"{API_URL}/auth/register"
+    payload = {
+        "email": TEST_EMAIL,
+        "password": TEST_PASSWORD
+    }
+    
+    response = requests.post(url, json=payload)
+    
+    print(f"Status Code: {response.status_code}")
+    print(f"Response: {response.text}")
+    
+    if response.status_code == 200:
+        data = response.json()
+        auth_token = data.get("access_token")
+        user_id = auth_token  # In this implementation, the token is the user ID
+        print(f"✅ Registration successful. Token: {auth_token}")
+        return True
+    else:
+        print("❌ Registration failed")
+        return False
+
+def test_login():
+    global auth_token, user_id
+    print("Testing user login...")
+    
+    url = f"{API_URL}/auth/login"
+    payload = {
+        "email": TEST_EMAIL,
+        "password": TEST_PASSWORD
+    }
+    
+    response = requests.post(url, json=payload)
+    
+    print(f"Status Code: {response.status_code}")
+    print(f"Response: {response.text}")
+    
+    if response.status_code == 200:
+        data = response.json()
+        auth_token = data.get("access_token")
+        user_id = auth_token  # In this implementation, the token is the user ID
+        print(f"✅ Login successful. Token: {auth_token}")
+        return True
+    else:
+        print("❌ Login failed")
+        return False
+
+def test_add_rss_source():
+    global source_id
+    print("Testing adding RSS source...")
+    
+    url = f"{API_URL}/sources"
+    headers = {"Authorization": f"Bearer {auth_token}"}
+    payload = {
+        "name": TEST_RSS_SOURCE_NAME,
+        "url": TEST_RSS_SOURCE_URL
+    }
+    
+    response = requests.post(url, json=payload, headers=headers)
+    
+    print(f"Status Code: {response.status_code}")
+    print(f"Response: {response.text}")
+    
+    if response.status_code == 200:
+        data = response.json()
+        source_id = data.get("id")
+        print(f"✅ RSS source added successfully. Source ID: {source_id}")
+        return True
+    else:
+        print("❌ Failed to add RSS source")
+        return False
+
+def test_get_rss_sources():
+    print("Testing getting RSS sources...")
+    
+    url = f"{API_URL}/sources"
+    headers = {"Authorization": f"Bearer {auth_token}"}
+    
+    response = requests.get(url, headers=headers)
+    
+    print(f"Status Code: {response.status_code}")
+    print(f"Response: {response.text}")
+    
+    if response.status_code == 200:
+        data = response.json()
+        if isinstance(data, list) and len(data) > 0:
+            print(f"✅ Successfully retrieved {len(data)} RSS sources")
+            return True
+        else:
+            print("⚠️ No RSS sources found")
+            return True
+    else:
+        print("❌ Failed to get RSS sources")
+        return False
+
+def test_get_articles():
+    print("Testing getting articles...")
+    
+    url = f"{API_URL}/articles"
+    headers = {"Authorization": f"Bearer {auth_token}"}
+    
+    response = requests.get(url, headers=headers)
+    
+    print(f"Status Code: {response.status_code}")
+    print(f"Response: {response.text[:500]}...")  # Truncate long response
+    
+    if response.status_code == 200:
+        data = response.json()
+        if isinstance(data, list):
+            print(f"✅ Successfully retrieved {len(data)} articles")
+            return True, data
+        else:
+            print("⚠️ No articles found or invalid response format")
+            return False, None
+    else:
+        print("❌ Failed to get articles")
+        return False, None
+
+def test_create_audio():
+    global audio_id
+    print("Testing audio creation...")
+    
+    # First get some articles
+    success, articles = test_get_articles()
+    if not success or not articles:
+        print("❌ Cannot create audio without articles")
+        return False
+    
+    # Select up to 3 articles for the audio creation
+    selected_articles = articles[:min(3, len(articles))]
+    article_ids = [article["id"] for article in selected_articles]
+    article_titles = [article["title"] for article in selected_articles]
+    
+    url = f"{API_URL}/audio/create"
+    headers = {"Authorization": f"Bearer {auth_token}"}
+    payload = {
+        "article_ids": article_ids,
+        "article_titles": article_titles,
+        "custom_title": f"Test Audio {random.randint(1000, 9999)}"
+    }
+    
+    print("Creating audio with payload:")
+    print(json.dumps(payload, indent=2))
+    
+    response = requests.post(url, json=payload, headers=headers)
+    
+    print(f"Status Code: {response.status_code}")
+    print(f"Response: {response.text}")
+    
+    if response.status_code == 200:
+        data = response.json()
+        audio_id = data.get("id")
+        print(f"✅ Audio created successfully. Audio ID: {audio_id}")
+        return True
+    else:
+        print("❌ Failed to create audio")
+        return False
+
+def test_get_audio_library():
+    print("Testing getting audio library...")
+    
+    url = f"{API_URL}/audio/library"
+    headers = {"Authorization": f"Bearer {auth_token}"}
+    
+    response = requests.get(url, headers=headers)
+    
+    print(f"Status Code: {response.status_code}")
+    print(f"Response: {response.text}")
+    
+    if response.status_code == 200:
+        data = response.json()
+        if isinstance(data, list):
+            print(f"✅ Successfully retrieved {len(data)} audio items")
+            return True
+        else:
+            print("⚠️ No audio items found or invalid response format")
+            return True
+    else:
+        print("❌ Failed to get audio library")
+        return False
+
+def test_rename_audio():
+    if not audio_id:
+        print("❌ Cannot rename audio without audio_id")
+        return False
+    
+    print("Testing renaming audio...")
+    
+    url = f"{API_URL}/audio/{audio_id}/rename"
+    headers = {"Authorization": f"Bearer {auth_token}"}
+    new_title = f"Renamed Audio {random.randint(1000, 9999)}"
+    
+    # The API expects a string, not a JSON object
+    response = requests.put(url, params={"new_title": new_title}, headers=headers)
+    
+    print(f"Status Code: {response.status_code}")
+    print(f"Response: {response.text}")
+    
+    if response.status_code == 200:
+        print(f"✅ Audio renamed successfully to '{new_title}'")
+        return True
+    else:
+        print("❌ Failed to rename audio")
+        return False
+
+def test_delete_audio():
+    if not audio_id:
+        print("❌ Cannot delete audio without audio_id")
+        return False
+    
+    print("Testing deleting audio...")
+    
+    url = f"{API_URL}/audio/{audio_id}"
+    headers = {"Authorization": f"Bearer {auth_token}"}
+    
+    response = requests.delete(url, headers=headers)
+    
+    print(f"Status Code: {response.status_code}")
+    print(f"Response: {response.text}")
+    
+    if response.status_code == 200:
+        print(f"✅ Audio deleted successfully")
+        return True
+    else:
+        print("❌ Failed to delete audio")
+        return False
+
+def test_delete_rss_source():
+    if not source_id:
+        print("❌ Cannot delete RSS source without source_id")
+        return False
+    
+    print("Testing deleting RSS source...")
+    
+    url = f"{API_URL}/sources/{source_id}"
+    headers = {"Authorization": f"Bearer {auth_token}"}
+    
+    response = requests.delete(url, headers=headers)
+    
+    print(f"Status Code: {response.status_code}")
+    print(f"Response: {response.text}")
+    
+    if response.status_code == 200:
+        print(f"✅ RSS source deleted successfully")
+        return True
+    else:
+        print("❌ Failed to delete RSS source")
+        return False
+
+def test_missing_auth():
+    print("Testing endpoint with missing auth token...")
+    
+    url = f"{API_URL}/sources"
+    
+    response = requests.get(url)
+    
+    print(f"Status Code: {response.status_code}")
+    print(f"Response: {response.text}")
+    
+    if response.status_code in [401, 403]:
+        print(f"✅ Correctly rejected request without auth token")
+        return True
+    else:
+        print("❌ Failed to properly handle missing auth token")
+        return False
+
+def run_all_tests():
+    tests = [
+        ("User Registration", test_register),
+        ("User Login", test_login),
+        ("Missing Auth Token", test_missing_auth),
+        ("Add RSS Source", test_add_rss_source),
+        ("Get RSS Sources", test_get_rss_sources),
+        ("Get Articles", lambda: test_get_articles()[0]),
+        ("Create Audio", test_create_audio),
+        ("Get Audio Library", test_get_audio_library),
+        ("Rename Audio", test_rename_audio),
+        ("Delete Audio", test_delete_audio),
+        ("Delete RSS Source", test_delete_rss_source)
+    ]
+    
+    results = {}
+    all_passed = True
+    
+    for test_name, test_func in tests:
+        print_separator()
+        print(f"Running test: {test_name}")
+        try:
+            result = test_func()
+            results[test_name] = result
+            if not result:
+                all_passed = False
+        except Exception as e:
+            print(f"❌ Test failed with exception: {str(e)}")
+            results[test_name] = False
+            all_passed = False
+    
+    print_separator()
+    print("TEST SUMMARY:")
+    for test_name, result in results.items():
+        status = "✅ PASSED" if result else "❌ FAILED"
+        print(f"{test_name}: {status}")
+    
+    print_separator()
+    if all_passed:
+        print("🎉 All tests passed successfully!")
+    else:
+        print("⚠️ Some tests failed. See details above.")
+    
+    return all_passed
+
+if __name__ == "__main__":
+    run_all_tests()
