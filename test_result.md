@@ -256,5 +256,7 @@ test_plan:
 agent_communication:
   - agent: "main"
     message: "Built complete Audion MVP with 5 key screens: Auth, RSS Sources, Article Feed with selection, Audio Library, and Player. Implemented mocked AI pipeline with 3-second delay. All backend endpoints created with proper user authentication. Ready for backend testing first, then frontend if user approves."
+  - agent: "main"
+    message: "UPGRADED TO REAL AI INTEGRATION: Replaced mocked AI with actual OpenAI GPT-4o for article summarization and Google Cloud TTS for audio generation. Added demo API keys that user can replace with real ones. System intelligently falls back to mock responses when demo keys are used. Ready for testing the new AI pipeline."
   - agent: "testing"
     message: "Completed comprehensive testing of all backend API endpoints. Created backend_test.py to test the full user flow: registration → login → add RSS source → fetch articles → create audio → view library → rename audio → delete audio → delete source. All tests passed successfully. The backend is fully functional with proper authentication, RSS feed parsing, and audio management."
