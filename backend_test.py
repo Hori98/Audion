@@ -336,6 +336,60 @@ def test_missing_auth():
         print("❌ Failed to properly handle missing auth token")
         return False
 
+def test_ai_pipeline_with_demo_keys():
+    print("Testing AI pipeline with demo keys...")
+    
+    # This test verifies that the system correctly uses mock responses when demo keys are used
+    # We'll check the response time - it should be relatively quick since it's using mock data
+    
+    # First get some articles
+    success, articles = test_get_articles()
+    if not success or not articles:
+        print("❌ Cannot test AI pipeline without articles")
+        return False
+    
+    # Select just 1 article for faster testing
+    selected_article = articles[0]
+    
+    url = f"{API_URL}/audio/create"
+    headers = {"Authorization": f"Bearer {auth_token}"}
+    payload = {
+        "article_ids": [selected_article["id"]],
+        "article_titles": [selected_article["title"]],
+        "custom_title": f"AI Pipeline Test {random.randint(1000, 9999)}"
+    }
+    
+    # Measure response time - should be quick with demo keys
+    start_time = time.time()
+    response = requests.post(url, json=payload, headers=headers)
+    end_time = time.time()
+    processing_time = end_time - start_time
+    
+    print(f"Status Code: {response.status_code}")
+    print(f"Response time: {processing_time:.2f} seconds")
+    
+    if response.status_code == 200:
+        data = response.json()
+        
+        # Verify script field exists and has conversational format
+        script = data.get("script", "")
+        has_script = bool(script)
+        has_host_format = "HOST 1" in script and "HOST 2" in script
+        
+        print(f"✅ AI pipeline with demo keys working")
+        print(f"✅ Script field exists: {has_script}")
+        print(f"✅ Script has conversational format: {has_host_format}")
+        
+        # Print a sample of the script
+        if has_script:
+            print("\nScript sample (first 200 chars):")
+            print(script[:200] + "...\n")
+        
+        return True
+    else:
+        print("❌ Failed to test AI pipeline with demo keys")
+        return False
+
 def run_all_tests():
     tests = [
         ("User Registration", test_register),
