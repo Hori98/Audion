@@ -217,7 +217,7 @@ def test_create_audio():
         return False
 
 def test_get_audio_library():
-    print("Testing getting audio library...")
+    print("Testing getting audio library with script field...")
     
     url = f"{API_URL}/audio/library"
     headers = {"Authorization": f"Bearer {auth_token}"}
@@ -231,6 +231,18 @@ def test_get_audio_library():
         data = response.json()
         if isinstance(data, list):
             print(f"✅ Successfully retrieved {len(data)} audio items")
+            
+            # Check for script field in the first audio item (if available)
+            if data and len(data) > 0:
+                first_audio = data[0]
+                has_script = "script" in first_audio and bool(first_audio["script"])
+                print(f"✅ Script field exists in audio items: {has_script}")
+                
+                if has_script:
+                    script = first_audio["script"]
+                    has_host_format = "HOST 1" in script and "HOST 2" in script
+                    print(f"✅ Script has conversational format: {has_host_format}")
+            
             return True
         else:
             print("⚠️ No audio items found or invalid response format")
