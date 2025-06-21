@@ -20,7 +20,7 @@ if not BACKEND_URL:
 # For testing purposes, use the local URL
 LOCAL_TESTING = True
 if LOCAL_TESTING:
-    BACKEND_URL = "http://0.0.0.0:8001"
+    BACKEND_URL = "http://localhost:8001"
     print(f"Using local backend URL for testing: {BACKEND_URL}")
 
 # Ensure the URL ends with /api
