@@ -17,7 +17,7 @@ import aiofiles
 import json
 
 # AI Integration imports
-from emergentintegrations.llm.chat import LlmChat, UserMessage
+import openai
 from google.cloud import texttospeech
 
 ROOT_DIR = Path(__file__).parent
@@ -95,56 +95,37 @@ class AudioCreationRequest(BaseModel):
 async def summarize_articles_with_openai(articles_content: List[str]) -> str:
     """Use OpenAI to summarize multiple articles into a conversational script"""
     try:
-        if not OPENAI_API_KEY or OPENAI_API_KEY.startswith("sk-demo"):
-            # Return mock response for demo keys
-            return """
-            HOST 1: Welcome to your personalized news briefing! Today we have some fascinating stories to discuss.
-            
-            HOST 2: That's right! Let's dive into today's top stories. First, we're looking at some major developments in technology...
-            
-            HOST 1: The tech world is certainly moving fast. What caught my attention was the innovation happening across different sectors.
-            
-            HOST 2: Absolutely. And speaking of innovation, there are also some interesting business developments we should touch on.
-            
-            HOST 1: These stories really show how interconnected our world has become. The implications are quite significant.
-            
-            HOST 2: Well said. That wraps up today's briefing. Thanks for staying informed with us!
-            
-            HOST 1: Until next time, keep reading and stay curious!
-            """
-        
-        # Create the chat instance
-        chat = LlmChat(
-            api_key=OPENAI_API_KEY,
-            session_id=f"audio-summary-{uuid.uuid4()}",
-            system_message="You are an expert news summarizer. Create an engaging conversational script between two professional news hosts discussing the provided articles. Make it sound natural and informative, like a real news podcast. Keep it around 200-300 words."
-        ).with_model("openai", "gpt-4o")
+        # APIキーが設定されていない、またはデモキーの場合はモック応答を返す
+        if not OPENAI_API_KEY or OPENAI_API_KEY == "your-openai-key":
+            logging.warning("OpenAI API key not found or is a placeholder. Returning mock response.")
+            # (ここに以前と同じモック応答のreturn文が入りますが、簡潔にするため省略します)
+            return "HOST 1: This is a mock response because the API key is not configured."
 
-        # Combine all articles
+        # OpenAIクライアントを初期化
+        client = openai.AsyncOpenAI(api_key=OPENAI_API_KEY)
+
+        # システムメッセージとユーザーメッセージを定義
+        system_message = "You are an expert news summarizer. Create an engaging conversational script between two professional news hosts discussing the provided articles. Make it sound natural and informative, like a real news podcast. Keep it around 200-300 words."
+
         combined_content = "\n\n--- Article ---\n\n".join(articles_content)
-        
-        user_message = UserMessage(
-            text=f"Please create a conversational script between two news hosts discussing these articles:\n\n{combined_content}\n\nMake it engaging and informative, like a professional news podcast."
+        user_message = f"Please create a conversational script between two news hosts discussing these articles:\n\n{combined_content}"
+
+        # OpenAI APIを呼び出す
+        chat_completion = await client.chat.completions.create(
+            messages=[
+                {"role": "system", "content": system_message},
+                {"role": "user", "content": user_message},
+            ],
+            model="gpt-4o",
         )
 
-        # Get the response
-        response = await chat.send_message(user_message)
-        return response
-        
+        # 応答テキストを返す
+        return chat_completion.choices[0].message.content
+
     except Exception as e:
         logging.error(f"OpenAI summarization error: {e}")
-        # Fallback to mock response
-        return """
-        HOST 1: Welcome to your news briefing! We have some interesting stories to share today.
-        
-        HOST 2: That's right! Today's articles cover some important developments worth discussing.
-        
-        HOST 1: The key themes we're seeing involve significant changes and updates across various sectors.
-        
-        HOST 2: These stories really highlight the dynamic nature of our current world.
-        
-        HOST 1: Thanks for joining us for this summary. Stay informed!
-        """
+        # エラー発生時も、フォールバックとしてモック応答を返す
+        return "HOST 1: An error occurred during summarization. This is a fallback mock response."
 
 async def convert_text_to_speech(text: str) -> str:
     """Convert text to speech using Google Cloud TTS"""
