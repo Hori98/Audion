@@ -20,6 +20,16 @@ import json
 import openai
 from google.cloud import texttospeech
 
+# Vercel上でGoogle認証情報をファイルとして扱うための処理
+google_creds_json_str = os.environ.get('GOOGLE_CREDENTIALS_JSON')
+if google_creds_json_str:
+    # 一時ファイルに書き出す
+    creds_path = "/tmp/gcreds.json"
+    with open(creds_path, "w") as f:
+        f.write(google_creds_json_str)
+    # 環境変数にファイルパスを設定
+    os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = str(creds_path)
+
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
