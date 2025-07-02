@@ -611,7 +611,7 @@ const LibraryScreen = () => {
 const AudioPlayer = ({ audioUrl, duration }) => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
-  const [audio] = useState(new Audio('https://www.soundjay.com/misc/sounds/bell-ringing-05.wav')); // Mock audio
+  const [audio] = useState(new Audio(`${BACKEND_URL}${audioUrl}`));
 
   useEffect(() => {
     const updateTime = () => setCurrentTime(audio.currentTime);
