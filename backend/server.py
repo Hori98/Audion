@@ -93,6 +93,8 @@ class AudioCreationRequest(BaseModel):
 class RenameRequest(BaseModel):
     new_title: str
 
+from mutagen.mp3 import MP3
+
 # AI Helper Functions
 def initialize_google_credentials():
     """
@@ -127,17 +129,17 @@ async def summarize_articles_with_openai(articles_content: List[str]) -> str:
         logging.error(f"OpenAI summarization error: {e}")
         return "HOST 1: An error occurred during summarization. This is a fallback mock response."
 
-def create_mock_audio_file() -> str:
+def create_mock_audio_file() -> tuple[str, int]:
     audio_filename = f"audio_{uuid.uuid4()}.mp3"
     audio_path = Path("/tmp") / audio_filename
     audio_path.parent.mkdir(parents=True, exist_ok=True)
     mock_audio_content = b"MOCK_AUDIO_DATA_FOR_PODCAST_STYLE_CONTENT" * 100
     with open(audio_path, "wb") as f:
         f.write(mock_audio_content)
-    return f"/api/audio/file/{audio_filename}"
+    return f"/api/audio/file/{audio_filename}", 180
 
-async def convert_text_to_speech(text: str) -> str:
-    """Convert text to speech using Google Cloud TTS"""
+async def convert_text_to_speech(text: str) -> tuple[str, int]:
+    """Convert text to speech using Google Cloud TTS and return URL and duration."""
     credentials = initialize_google_credentials()
     if not credentials:
         return create_mock_audio_file()
@@ -167,8 +169,16 @@ async def convert_text_to_speech(text: str) -> str:
         async with aiofiles.open(audio_path, "wb") as out:
             await out.write(response.audio_content)
         
-        logging.info(f'Audio content written to file "{audio_path}"')
-        return f"/api/audio/file/{audio_filename}"
+        # Calculate duration
+        try:
+            audio = MP3(audio_path)
+            duration = int(audio.info.length)
+        except Exception as e:
+            logging.error(f"Could not read audio duration: {e}")
+            duration = 180 # Fallback duration
+
+        logging.info(f'Audio content written to file "{audio_path}" with duration {duration}s')
+        return f"/api/audio/file/{audio_filename}", duration
 
     except Exception as e:
         logging.error(f"TTS conversion error: {e}")
@@ -244,12 +254,12 @@ async def create_audio(request: AudioCreationRequest, current_user: User = Depen
     try:
         articles_content = [f"Article: {title}\n\nThis is the full content of the article..." for title in request.article_titles]
         script = await summarize_articles_with_openai(articles_content)
-        audio_url = await convert_text_to_speech(script)
+        audio_url, duration = await convert_text_to_speech(script)
         title = request.custom_title or f"AI News Summary - {datetime.now().strftime('%Y-%m-%d')}"
         audio_creation = AudioCreation(
             user_id=current_user.id, title=title, article_ids=request.article_ids,
             article_titles=request.article_titles, audio_url=audio_url,
-            duration=180, script=script
+            duration=duration, script=script
         )
         await db.audio_creations.insert_one(audio_creation.dict())
         return audio_creation
