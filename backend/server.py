@@ -145,8 +145,7 @@ async def convert_text_to_speech(text: str) -> tuple[str, int]:
         return create_mock_audio_file()
 
     try:
-        client_options = {"api_key": None, "credentials": credentials}
-        tts_client = texttospeech.TextToSpeechAsyncClient(client_options=client_options)
+        tts_client = texttospeech.TextToSpeechAsyncClient(credentials=credentials)
 
         synthesis_input = texttospeech.SynthesisInput(text=text)
         voice = texttospeech.VoiceSelectionParams(
