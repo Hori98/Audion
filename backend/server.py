@@ -19,16 +19,9 @@ import json
 # AI Integration imports
 import openai
 from google.cloud import texttospeech
-
-# Vercel上でGoogle認証情報をファイルとして扱うための処理
-google_creds_json_str = os.environ.get('GOOGLE_CREDENTIALS_JSON')
-if google_creds_json_str:
-    # 一時ファイルに書き出す
-    creds_path = "/tmp/gcreds.json"
-    with open(creds_path, "w") as f:
-        f.write(google_creds_json_str)
-    # 環境変数にファイルパスを設定
-    os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = str(creds_path)
+import google.auth.credentials
+import google.auth.transport.requests
+from google.oauth2 import service_account
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -40,8 +33,6 @@ db = client[os.environ['DB_NAME']]
 
 # API Keys
 OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY')
-# GOOGLE_APPLICATION_CREDENTIALS should be set in Render's Secret Files
-# No need to load it here, the library finds it automatically.
 
 # Create the main app
 app = FastAPI()
@@ -102,7 +93,25 @@ class AudioCreationRequest(BaseModel):
 class RenameRequest(BaseModel):
     new_title: str
 
-# AI Helper Functions (The same as before)
+from mutagen.mp3 import MP3
+
+# AI Helper Functions
+def initialize_google_credentials():
+    """
+    環境変数からGoogle認証情報を読み込み、認証情報オブジェクトを返す。
+    """
+    creds_json_str = os.environ.get('GOOGLE_CREDENTIAL_JSON')
+    if not creds_json_str:
+        logging.warning("GOOGLE_CREDENTIAL_JSON is not set. TTS will use mock audio.")
+        return None
+    try:
+        creds_info = json.loads(creds_json_str)
+        credentials = service_account.Credentials.from_service_account_info(creds_info)
+        return credentials
+    except Exception as e:
+        logging.error(f"Failed to load Google credentials: {e}")
+        return None
+
 async def summarize_articles_with_openai(articles_content: List[str]) -> str:
     try:
         if not OPENAI_API_KEY or OPENAI_API_KEY == "your-openai-key":
@@ -120,36 +129,61 @@ async def summarize_articles_with_openai(articles_content: List[str]) -> str:
         logging.error(f"OpenAI summarization error: {e}")
         return "HOST 1: An error occurred during summarization. This is a fallback mock response."
 
-def create_mock_audio_file() -> str:
+def create_mock_audio_file() -> tuple[str, int]:
     audio_filename = f"audio_{uuid.uuid4()}.mp3"
-    audio_path = Path("audio_files") / audio_filename
+    audio_path = Path("/tmp") / audio_filename
     audio_path.parent.mkdir(parents=True, exist_ok=True)
     mock_audio_content = b"MOCK_AUDIO_DATA_FOR_PODCAST_STYLE_CONTENT" * 100
     with open(audio_path, "wb") as f:
         f.write(mock_audio_content)
-    return f"/api/audio/file/{audio_filename}"
+    return f"/api/audio/file/{audio_filename}", 180
 
-async def convert_text_to_speech(text: str) -> str:
+async def convert_text_to_speech(text: str) -> tuple[str, int]:
+    """Convert text to speech using Google Cloud TTS and return URL and duration."""
+    credentials = initialize_google_credentials()
+    if not credentials:
+        return create_mock_audio_file()
+
     try:
-        # The library will automatically find GOOGLE_APPLICATION_CREDENTIALS
-        tts_client = texttospeech.TextToSpeechAsyncClient()
+        tts_client = texttospeech.TextToSpeechAsyncClient(credentials=credentials)
+
         synthesis_input = texttospeech.SynthesisInput(text=text)
-        voice = texttospeech.VoiceSelectionParams(language_code="en-US", ssml_gender=texttospeech.SsmlVoiceGender.NEUTRAL)
-        audio_config = texttospeech.AudioConfig(audio_encoding=texttospeech.AudioEncoding.MP3)
-        response = await tts_client.synthesize_speech(input=synthesis_input, voice=voice, audio_config=audio_config)
+        voice = texttospeech.VoiceSelectionParams(
+            language_code="en-US",
+            name="en-US-Studio-O",
+            ssml_gender=texttospeech.SsmlVoiceGender.FEMALE,
+        )
+        audio_config = texttospeech.AudioConfig(
+            audio_encoding=texttospeech.AudioEncoding.MP3
+        )
+
+        response = await tts_client.synthesize_speech(
+            input=synthesis_input, voice=voice, audio_config=audio_config
+        )
 
         audio_filename = f"audio_{uuid.uuid4()}.mp3"
-        audio_path = Path("audio_files") / audio_filename
+        audio_path = Path("/tmp") / audio_filename
         audio_path.parent.mkdir(parents=True, exist_ok=True)
-        async with aiofiles.open(audio_path, 'wb') as out:
+
+        async with aiofiles.open(audio_path, "wb") as out:
             await out.write(response.audio_content)
-        logging.info(f'Audio content written to file "{audio_path}"')
-        return f"/api/audio/file/{audio_filename}"
+        
+        # Calculate duration
+        try:
+            audio = MP3(audio_path)
+            duration = int(audio.info.length)
+        except Exception as e:
+            logging.error(f"Could not read audio duration: {e}")
+            duration = 180 # Fallback duration
+
+        logging.info(f'Audio content written to file "{audio_path}" with duration {duration}s')
+        return f"/api/audio/file/{audio_filename}", duration
+
     except Exception as e:
         logging.error(f"TTS conversion error: {e}")
         return create_mock_audio_file()
 
-# Auth helpers (The same as before)
+# Auth helpers
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
     token = credentials.credentials
     user = await db.users.find_one({"id": token})
@@ -157,7 +191,7 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid authentication credentials")
     return User(**user)
 
-# === API Endpoints (Defined directly on 'app') ===
+# === API Endpoints ===
 
 @app.post("/api/auth/register", tags=["Auth"])
 async def register(user_data: UserCreate):
@@ -219,12 +253,12 @@ async def create_audio(request: AudioCreationRequest, current_user: User = Depen
     try:
         articles_content = [f"Article: {title}\n\nThis is the full content of the article..." for title in request.article_titles]
         script = await summarize_articles_with_openai(articles_content)
-        audio_url = await convert_text_to_speech(script)
+        audio_url, duration = await convert_text_to_speech(script)
         title = request.custom_title or f"AI News Summary - {datetime.now().strftime('%Y-%m-%d')}"
         audio_creation = AudioCreation(
             user_id=current_user.id, title=title, article_ids=request.article_ids,
             article_titles=request.article_titles, audio_url=audio_url,
-            duration=180, script=script
+            duration=duration, script=script
         )
         await db.audio_creations.insert_one(audio_creation.dict())
         return audio_creation
@@ -239,8 +273,9 @@ async def get_audio_library(current_user: User = Depends(get_current_user)):
 
 @app.get("/api/audio/file/{filename}", tags=["Audio"])
 async def get_audio_file(filename: str):
-    file_path = Path("audio_files") / filename
-    if not file_path.is_file(): raise HTTPException(status_code=404, detail="File not found")
+    file_path = Path("/tmp") / filename
+    if not file_path.is_file():
+        raise HTTPException(status_code=404, detail="File not found or has been cleared by a new deploy.")
     return FileResponse(str(file_path))
 
 @app.delete("/api/audio/{audio_id}", tags=["Audio"])
@@ -258,7 +293,7 @@ async def rename_audio(audio_id: str, request: RenameRequest, current_user: User
     if result.modified_count == 0: raise HTTPException(status_code=404, detail="Audio not found")
     return {"message": "Audio renamed"}
 
-# Add CORS Middleware (The same as before, with explicit methods)
+# Add CORS Middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -277,7 +312,7 @@ async def startup_event():
     await db.audio_creations.create_index([("user_id", 1), ("created_at", -1)])
     logging.info("Database indexes created.")
     if not OPENAI_API_KEY: logging.warning("OpenAI API key not found")
-    if not os.environ.get('GOOGLE_APPLICATION_CREDENTIALS'): logging.warning("Google Cloud credentials not found")
+    if not os.environ.get('GOOGLE_CREDENTIAL_JSON'): logging.warning("Google Cloud credentials not found")
 
 @app.on_event("shutdown")
 async def shutdown_db_client():

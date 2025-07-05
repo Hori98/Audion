@@ -28,3 +28,4 @@ google-cloud-texttospeech
 feedparser
 aiofiles
 verbal-blob
+mutagen
