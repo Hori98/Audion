@@ -261,7 +261,7 @@ async def rename_audio(audio_id: str, request: RenameRequest, current_user: User
 # Add CORS Middleware (The same as before, with explicit methods)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://audion-emergent-ai-demo.vercel.app"],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],

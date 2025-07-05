@@ -27,3 +27,4 @@ openai
 google-cloud-texttospeech
 feedparser
 aiofiles
+verbal-blob
