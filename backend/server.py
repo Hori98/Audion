@@ -21,7 +21,11 @@ import openai
 from google.cloud import texttospeech
 import google.auth.credentials
 import google.auth.transport.requests
-from google.oauth2 import service_account
+from google.oauth2 import service_account Z
+
+from mutagen.mp3 import MP3
+from vercel_blob import put
+import io
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -138,50 +142,39 @@ def create_mock_audio_file() -> tuple[str, int]:
         f.write(mock_audio_content)
     return f"/api/audio/file/{audio_filename}", 180
 
-async def convert_text_to_speech(text: str) -> tuple[str, int]:
-    """Convert text to speech using Google Cloud TTS and return URL and duration."""
-    credentials = initialize_google_credentials()
-    if not credentials:
-        return create_mock_audio_file()
-
+# 置き換え後のコード
+async def convert_text_to_speech(text: str) -> dict:
     try:
-        tts_client = texttospeech.TextToSpeechAsyncClient(credentials=credentials)
-
+        tts_client = texttospeech.TextToSpeechAsyncClient()
         synthesis_input = texttospeech.SynthesisInput(text=text)
-        voice = texttospeech.VoiceSelectionParams(
-            language_code="en-US",
-            name="en-US-Studio-O",
-            ssml_gender=texttospeech.SsmlVoiceGender.FEMALE,
-        )
-        audio_config = texttospeech.AudioConfig(
-            audio_encoding=texttospeech.AudioEncoding.MP3
-        )
+        voice = texttospeech.VoiceSelectionParams(language_code="en-US", ssml_gender=texttospeech.SsmlVoiceGender.NEUTRAL)
+        audio_config = texttospeech.AudioConfig(audio_encoding=texttospeech.AudioEncoding.MP3)
+        response = await tts_client.synthesize_speech(input=synthesis_input, voice=voice, audio_config=audio_config)
 
-        response = await tts_client.synthesize_speech(
-            input=synthesis_input, voice=voice, audio_config=audio_config
-        )
+        # mutagenで再生時間を取得
+        audio_stream = io.BytesIO(response.audio_content)
+        audio_info = MP3(audio_stream)
+        duration = int(audio_info.info.length)
 
         audio_filename = f"audio_{uuid.uuid4()}.mp3"
-        audio_path = Path("/tmp") / audio_filename
-        audio_path.parent.mkdir(parents=True, exist_ok=True)
 
-        async with aiofiles.open(audio_path, "wb") as out:
-            await out.write(response.audio_content)
+        # Vercel Blobに公開設定でアップロード
+        blob_result = await put(
+            f'audio/{audio_filename}',
+            response.audio_content,
+            options={'access': 'public'}
+        )
         
-        # Calculate duration
-        try:
-            audio = MP3(audio_path)
-            duration = int(audio.info.length)
-        except Exception as e:
-            logging.error(f"Could not read audio duration: {e}")
-            duration = 180 # Fallback duration
-
-        logging.info(f'Audio content written to file "{audio_path}" with duration {duration}s')
-        return f"/api/audio/file/{audio_filename}", duration
+        public_url = blob_result['url']
+        logging.info(f"Audio content uploaded to Vercel Blob: {public_url}")
+        
+        # URLと再生時間の両方を返す
+        return {"url": public_url, "duration": duration}
 
     except Exception as e:
-        logging.error(f"TTS conversion error: {e}")
-        return create_mock_audio_file()
+        logging.error(f"TTS conversion or Blob upload error: {e}")
+        # エラー時はモックファイルを返し、再生時間は0とする
+        return {"url": create_mock_audio_file(), "duration": 0}
 
 # Auth helpers
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
@@ -248,18 +241,32 @@ async def get_articles(current_user: User = Depends(get_current_user)):
             continue
     return sorted(all_articles, key=lambda x: x.published, reverse=True)[:50]
 
+# 置き換え後のコード
 @app.post("/api/audio/create", response_model=AudioCreation, tags=["Audio"])
 async def create_audio(request: AudioCreationRequest, current_user: User = Depends(get_current_user)):
     try:
+        # (要約部分のロジックは変更なし)
         articles_content = [f"Article: {title}\n\nThis is the full content of the article..." for title in request.article_titles]
         script = await summarize_articles_with_openai(articles_content)
-        audio_url, duration = await convert_text_to_speech(script)
+        
+        # 音声化処理を呼び出し、URLと再生時間を取得
+        audio_data = await convert_text_to_speech(script)
+        audio_url = audio_data['url']
+        duration = audio_data['duration']
+
         title = request.custom_title or f"AI News Summary - {datetime.now().strftime('%Y-%m-%d')}"
+        
+        # データベースに保存するオブジェクトを作成
         audio_creation = AudioCreation(
-            user_id=current_user.id, title=title, article_ids=request.article_ids,
-            article_titles=request.article_titles, audio_url=audio_url,
-            duration=duration, script=script
+            user_id=current_user.id, 
+            title=title, 
+            article_ids=request.article_ids,
+            article_titles=request.article_titles, 
+            audio_url=audio_url,  # 取得したURLを保存
+            duration=duration,    # 取得した再生時間を保存
+            script=script
         )
+        
         await db.audio_creations.insert_one(audio_creation.dict())
         return audio_creation
     except Exception as e:
