@@ -21,7 +21,7 @@ import openai
 from google.cloud import texttospeech
 import google.auth.credentials
 import google.auth.transport.requests
-from google.oauth2 import service_account Z
+from google.oauth2 import service_account 
 
 from mutagen.mp3 import MP3
 from vercel_blob import put
