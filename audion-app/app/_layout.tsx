@@ -1,38 +1,41 @@
 
-import React from 'react';
-import { Tabs } from 'expo-router';
-import { Home, Rss, Library } from 'lucide-react-native';
+import React, { useEffect } from 'react';
+import { AuthProvider, useAuth } from '../context/AuthContext';
+import { Slot, useRouter, useSegments } from 'expo-router';
+import { ActivityIndicator, View } from 'react-native';
 
-export default function AppLayout() {
+const InitialLayout = () => {
+  const { user, loading } = useAuth();
+  const segments = useSegments();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (loading) return;
+
+    const inTabsGroup = segments[0] === '(tabs)';
+
+    if (user && !inTabsGroup) {
+      router.replace('/(tabs)/feed');
+    } else if (!user && inTabsGroup) {
+      router.replace('/');
+    }
+  }, [user, loading, segments, router]);
+
+  if (loading) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+        <ActivityIndicator size="large" />
+      </View>
+    );
+  }
+
+  return <Slot />;
+};
+
+export default function RootLayout() {
   return (
-    <Tabs
-      screenOptions={{
-        tabBarActiveTintColor: '#4f46e5',
-      }}>
-      <Tabs.Screen
-        name="feed"
-        options={{
-          tabBarLabel: 'Feed',
-          headerTitle: 'Feed',
-          tabBarIcon: ({ color, size }) => <Home color={color} size={size} />,
-        }}
-      />
-      <Tabs.Screen
-        name="sources"
-        options={{
-          tabBarLabel: 'Sources',
-          headerTitle: 'Sources',
-          tabBarIcon: ({ color, size }) => <Rss color={color} size={size} />,
-        }}
-      />
-      <Tabs.Screen
-        name="library"
-        options={{
-          tabBarLabel: 'Library',
-          headerTitle: 'Library',
-          tabBarIcon: ({ color, size }) => <Library color={color} size={size} />,
-        }}
-      />
-    </Tabs>
+    <AuthProvider>
+      <InitialLayout />
+    </AuthProvider>
   );
 }

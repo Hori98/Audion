@@ -1,43 +1,43 @@
 import { Tabs } from 'expo-router';
-import React from 'react';
-import { Platform } from 'react-native';
+import { Home, Rss, Library } from 'lucide-react-native';
+import { useAuth } from '../../context/AuthContext';
+import { TouchableOpacity } from 'react-native';
+import { LogOut } from 'lucide-react-native';
 
-import { HapticTab } from '@/components/HapticTab';
-import { IconSymbol } from '@/components/ui/IconSymbol';
-import TabBarBackground from '@/components/ui/TabBarBackground';
-import { Colors } from '@/constants/Colors';
-import { useColorScheme } from '@/hooks/useColorScheme';
-
-export default function TabLayout() {
-  const colorScheme = useColorScheme();
-
+export default function AppLayout() {
+  const { logout } = useAuth();
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
-        headerShown: false,
-        tabBarButton: HapticTab,
-        tabBarBackground: TabBarBackground,
-        tabBarStyle: Platform.select({
-          ios: {
-            // Use a transparent background on iOS to show the blur effect
-            position: 'absolute',
-          },
-          default: {},
-        }),
+        tabBarActiveTintColor: '#4f46e5',
+        headerRight: () => (
+          <TouchableOpacity onPress={logout} style={{ marginRight: 15 }}>
+            <LogOut color="#333" size={24} />
+          </TouchableOpacity>
+        )
       }}>
       <Tabs.Screen
-        name="index"
+        name="feed"
         options={{
-          title: 'Home',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="house.fill" color={color} />,
+          tabBarLabel: 'Feed',
+          headerTitle: 'Feed',
+          tabBarIcon: ({ color, size }) => <Home color={color} size={size} />,
         }}
       />
       <Tabs.Screen
-        name="explore"
+        name="sources"
         options={{
-          title: 'Explore',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="paperplane.fill" color={color} />,
+          tabBarLabel: 'Sources',
+          headerTitle: 'Sources',
+          tabBarIcon: ({ color, size }) => <Rss color={color} size={size} />,
+        }}
+      />
+      <Tabs.Screen
+        name="library"
+        options={{
+          tabBarLabel: 'Library',
+          headerTitle: 'Library',
+          tabBarIcon: ({ color, size }) => <Library color={color} size={size} />,
         }}
       />
     </Tabs>
