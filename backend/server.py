@@ -301,9 +301,14 @@ async def rename_audio(audio_id: str, request: RenameRequest, current_user: User
     return {"message": "Audio renamed"}
 
 # Add CORS Middleware
+origins = [
+    "http://localhost:8081",
+    # Add your production frontend URL here when you have one
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
@@ -314,6 +319,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 @app.on_event("startup")
 async def startup_event():
+    logging.info("--- SERVER STARTUP: CORS DEBUG V2 ---")
     await db.users.create_index("email", unique=True)
     await db.rss_sources.create_index([("user_id", 1)])
     await db.audio_creations.create_index([("user_id", 1), ("created_at", -1)])
