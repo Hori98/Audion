@@ -41,6 +41,10 @@ OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY')
 # Create the main app
 app = FastAPI()
 
+@app.get("/api/health", tags=["Health Check"])
+def health_check():
+    return {"status": "ok"}
+
 @app.get("/", tags=["Health Check"])
 def read_root():
     return {"status": "ok", "message": "Welcome to Audion Backend V4 - The server is running!"}
