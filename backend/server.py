@@ -15,6 +15,7 @@ import feedparser
 import asyncio
 import aiofiles
 import json
+import time # Added import
 
 # AI Integration imports
 import openai
@@ -26,6 +27,10 @@ from google.oauth2 import service_account
 from mutagen.mp3 import MP3
 from vercel_blob import put
 import io
+
+# Global cache for RSS feeds
+RSS_CACHE = {}
+CACHE_EXPIRY_SECONDS = 300 # Cache for 5 minutes
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -86,6 +91,7 @@ class Article(BaseModel):
     published: str
     source_name: str
     content: Optional[str] = None
+    genre: Optional[str] = None # Added genre field
 
 class AudioCreation(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -118,14 +124,46 @@ def initialize_google_credentials():
         logging.warning("GOOGLE_CREDENTIAL_JSON is not set. TTS will use mock audio.")
         return None
     try:
+        logging.info("Attempting to parse GOOGLE_CREDENTIAL_JSON...")
         creds_info = json.loads(creds_json_str)
         credentials = service_account.Credentials.from_service_account_info(creds_info)
+        logging.info("GOOGLE_CREDENTIAL_JSON parsed successfully.")
         return credentials
+    except json.JSONDecodeError as e:
+        logging.error(f"Failed to parse GOOGLE_CREDENTIAL_JSON: Invalid JSON format: {e}")
+        return None
     except Exception as e:
         logging.error(f"Failed to load Google credentials: {e}")
         return None
 
+def classify_genre(title: str, summary: str) -> str:
+    text = (title + " " + summary).lower()
+    genre = "General"
+    if any(keyword in text for keyword in ["tech", "technology", "ai", "artificial intelligence", "software", "startup", "innovation"]):
+        genre = "Technology"
+    elif any(keyword in text for keyword in ["finance", "economy", "market", "stock", "business", "investment"]):
+        genre = "Finance"
+    elif any(keyword in text for keyword in ["sport", "game", "team", "match", "athlete"]):
+        genre = "Sports"
+    elif any(keyword in text for keyword in ["politics", "government", "election", "law", "policy"]):
+        genre = "Politics"
+    elif any(keyword in text for keyword in ["health", "medical", "disease", "hospital", "doctor"]):
+        genre = "Health"
+    elif any(keyword in text for keyword in ["entertainment", "movie", "music", "celebrity", "art", "culture"]):
+        genre = "Entertainment"
+    elif any(keyword in text for keyword in ["science", "research", "discovery", "space", "biology", "physics"]):
+        genre = "Science"
+    elif any(keyword in text for keyword in ["environment", "climate", "nature", "ecology", "sustainability"]):
+        genre = "Environment"
+    elif any(keyword in text for keyword in ["education", "school", "university", "student", "learning"]):
+        genre = "Education"
+    elif any(keyword in text for keyword in ["travel", "tourism", "destination", "vacation", "trip"]):
+        genre = "Travel"
+    logging.info(f"Classifying: \"{title[:50]}...\" -> {genre}")
+    return genre
+
 async def summarize_articles_with_openai(articles_content: List[str]) -> str:
+
     try:
         if not OPENAI_API_KEY or OPENAI_API_KEY == "your-openai-key":
             return "HOST 1: This is a mock response because the API key is not configured."
@@ -229,25 +267,47 @@ async def delete_rss_source(source_id: str, current_user: User = Depends(get_cur
     return {"message": "Source deleted"}
 
 @app.get("/api/articles", response_model=List[Article], tags=["Articles"])
-async def get_articles(current_user: User = Depends(get_current_user)):
+async def get_articles(current_user: User = Depends(get_current_user), genre: Optional[str] = None):
     sources = await db.rss_sources.find({"user_id": current_user.id}).to_list(100)
     all_articles = []
     for source in sources:
         try:
-            feed = feedparser.parse(source["url"])
+            # Check cache first
+            cache_key = source["url"]
+            current_time = time.time()
+
+            if cache_key in RSS_CACHE and (current_time - RSS_CACHE[cache_key]['timestamp'] < CACHE_EXPIRY_SECONDS):
+                feed = RSS_CACHE[cache_key]['feed']
+                logging.info(f"Using cached feed for {source['name']}")
+            else:
+                feed = feedparser.parse(source["url"])
+                RSS_CACHE[cache_key] = {'feed': feed, 'timestamp': current_time}
+                logging.info(f"Fetched new feed for {source['name']}")
+
             for entry in feed.entries[:10]:
+                article_title = getattr(entry, 'title', "No Title")
+                article_summary = getattr(entry, 'summary', getattr(entry, 'description', "No summary available"))
+                article_genre = classify_genre(article_title, article_summary) # Classify genre
                 all_articles.append(Article(
                     id=str(uuid.uuid4()),
-                    title=getattr(entry, 'title', "No Title"),
-                    summary=getattr(entry, 'summary', getattr(entry, 'description', "No summary available")),
+                    title=article_title,
+                    summary=article_summary,
                     link=getattr(entry, 'link', ""),
-                    published=getattr(entry, 'published', "Unknown"),
+                    published=time.strftime('%Y-%m-%dT%H:%M:%SZ', entry.published_parsed) if hasattr(entry, 'published_parsed') and entry.published_parsed else "",
                     source_name=source["name"],
-                    content=getattr(entry, 'summary', getattr(entry, 'description', "No content available"))
+                    content=getattr(entry, 'summary', getattr(entry, 'description', "No content available")),
+                    genre=article_genre # Assign classified genre
                 ))
         except Exception as e:
             logging.warning(f"Error parsing RSS feed {source['url']}: {e}")
             continue
+    
+    # Filter by genre if specified
+    logging.info(f"Fetched {len(all_articles)} articles before filtering.")
+    if genre:
+        all_articles = [article for article in all_articles if article.genre and article.genre.lower() == genre.lower()]
+        logging.info(f"Filtered to {len(all_articles)} articles for genre: {genre}")
+
     return sorted(all_articles, key=lambda x: x.published, reverse=True)[:50]
 
 # 置き換え後のコード
@@ -317,7 +377,7 @@ origins = [
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=["http://localhost:8081", "https://audion-backend-b805.onrender.com"], # Add localhost for Expo web, and your Render URL
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
