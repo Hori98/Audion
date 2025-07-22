@@ -2,7 +2,7 @@
 import React, { useEffect } from 'react';
 import { AuthProvider, useAuth } from '../context/AuthContext';
 import { Slot, useRouter, useSegments } from 'expo-router';
-import { ActivityIndicator, View } from 'react-native';
+import { ActivityIndicator, View, Alert } from 'react-native'; // Added Alert
 
 const InitialLayout = () => {
   const { user, loading } = useAuth();

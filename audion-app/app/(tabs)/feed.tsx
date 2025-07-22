@@ -3,7 +3,9 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator
 import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
 import { format } from 'date-fns';
-import { useFocusEffect } from '@react-navigation/native'; // Added import
+import { useFocusEffect } from '@react-navigation/native';
+import * as WebBrowser from 'expo-web-browser';
+import { Ionicons } from '@expo/vector-icons'; // Added import
 
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:8000';
 const API = `${BACKEND_URL}/api`;
@@ -24,6 +26,8 @@ export default function FeedScreen() {
   const [articles, setArticles] = useState<Article[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedGenre, setSelectedGenre] = useState('All');
+  const [selectedArticleIds, setSelectedArticleIds] = useState<string[]>([]); // Added state
+  const [creatingAudio, setCreatingAudio] = useState(false); // Added state
 
   const genres = [
     'All', 'Technology', 'Finance', 'Sports', 'Politics', 'Health',
@@ -53,6 +57,53 @@ export default function FeedScreen() {
       Alert.alert('Error', error.response?.data?.detail || 'Failed to fetch articles.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleArticlePress = async (url: string) => {
+    if (url) {
+      await WebBrowser.openBrowserAsync(url);
+    } else {
+      Alert.alert('Error', 'Article link not available.');
+    }
+  };
+
+  const toggleArticleSelection = (articleId: string) => {
+    setSelectedArticleIds((prevSelected) =>
+      prevSelected.includes(articleId)
+        ? prevSelected.filter((id) => id !== articleId)
+        : [...prevSelected, articleId]
+    );
+  };
+
+  const handleCreateAudio = async () => {
+    if (selectedArticleIds.length === 0) {
+      Alert.alert('Error', 'Please select at least one article to create audio.');
+      return;
+    }
+
+    setCreatingAudio(true);
+    try {
+      const selectedArticles = articles.filter((article) =>
+        selectedArticleIds.includes(article.id)
+      );
+      const articleTitles = selectedArticles.map((article) => article.title);
+
+      const response = await axios.post(
+        `${API}/audio/create`,
+        {
+          article_ids: selectedArticleIds,
+          article_titles: articleTitles,
+        },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      Alert.alert('Success', `Audio created: ${response.data.title}`);
+      setSelectedArticleIds([]); // Clear selection after creation
+    } catch (error: any) {
+      console.error('Error creating audio:', error);
+      Alert.alert('Error', error.response?.data?.detail || 'Failed to create audio.');
+    } finally {
+      setCreatingAudio(false);
     }
   };
 
@@ -94,21 +145,50 @@ export default function FeedScreen() {
             <TouchableOpacity
               key={article.id}
               style={styles.articleCard}
-              onPress={() => { /* Handle article press, e.g., open in webview */ }}
+              onPress={() => handleArticlePress(article.link)} // Open link on tap
             >
-              <Text style={styles.articleSource}>{article.source_name}</Text>
-              <Text style={styles.articleTitle}>{article.title}</Text>
-              <Text style={styles.articleSummary}>{article.summary}</Text>
-              <Text style={styles.articlePublished}>
-                {article.published ? format(new Date(article.published), 'MMM dd, yyyy') : 'Unknown Date'}
-              </Text>
-              {article.genre && (
-                <Text style={styles.articleGenre}>Genre: {article.genre}</Text>
-              )}
+              <View style={styles.articleContent}>
+                <Text style={styles.articleSource}>{article.source_name}</Text>
+                <Text style={styles.articleTitle}>{article.title}</Text>
+                <Text style={styles.articleSummary}>{article.summary}</Text>
+                <Text style={styles.articlePublished}>
+                  {article.published ? format(new Date(article.published), 'MMM dd, yyyy') : 'Unknown Date'}
+                </Text>
+                {article.genre && (
+                  <Text style={styles.articleGenre}>Genre: {article.genre}</Text>
+                )}
+              </View>
+              <TouchableOpacity
+                style={[
+                  styles.plusButton,
+                  selectedArticleIds.includes(article.id) && styles.plusButtonSelected,
+                ]}
+                onPress={() => toggleArticleSelection(article.id)}
+              >
+                <Ionicons
+                  name={selectedArticleIds.includes(article.id) ? 'checkmark-circle' : 'add-circle-outline'}
+                  size={28}
+                  color={selectedArticleIds.includes(article.id) ? '#4f46e5' : '#6b7280'}
+                />
+              </TouchableOpacity>
             </TouchableOpacity>
           ))
         )}
       </ScrollView>
+
+      {selectedArticleIds.length > 0 && (
+        <TouchableOpacity
+          style={styles.createAudioButton}
+          onPress={handleCreateAudio}
+          disabled={creatingAudio}
+        >
+          {creatingAudio ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.createAudioButtonText}>Create Audio ({selectedArticleIds.length})</Text>
+          )}
+        </TouchableOpacity>
+      )}
     </View>
   );
 }
@@ -164,6 +244,20 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: 2,
     elevation: 2,
+    flexDirection: 'row', // Added for layout
+    alignItems: 'flex-start', // Added for layout
+  },
+  articleContent: {
+    flex: 1, // Takes up remaining space
+    marginRight: 10, // Space for the button
+  },
+  plusButton: {
+    padding: 5,
+    borderRadius: 20,
+    backgroundColor: '#e2e8f0',
+  },
+  plusButtonSelected: {
+    backgroundColor: '#d1e7dd', // A lighter green for selected state
   },
   articleSource: {
     fontSize: 12,
@@ -190,6 +284,24 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#4f46e5',
     marginTop: 5,
+    fontWeight: 'bold',
+  },
+  articleCardSelected: {
+    borderColor: '#4f46e5',
+    borderWidth: 2,
+  },
+  createAudioButton: {
+    backgroundColor: '#4f46e5',
+    paddingVertical: 15,
+    marginHorizontal: 10,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
+  },
+  createAudioButtonText: {
+    color: '#ffffff',
+    fontSize: 18,
     fontWeight: 'bold',
   },
   noArticlesText: {

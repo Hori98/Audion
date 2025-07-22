@@ -15,22 +15,16 @@ import feedparser
 import asyncio
 import aiofiles
 import json
-import time # Added import
-
-# AI Integration imports
+import time
 import openai
-from google.cloud import texttospeech
-import google.auth.credentials
-import google.auth.transport.requests
-from google.oauth2 import service_account 
-
 from mutagen.mp3 import MP3
-from vercel_blob import put
 import io
+import boto3
+from botocore.exceptions import ClientError
 
 # Global cache for RSS feeds
 RSS_CACHE = {}
-CACHE_EXPIRY_SECONDS = 300 # Cache for 5 minutes
+CACHE_EXPIRY_SECONDS = 300  # Cache for 5 minutes
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -43,8 +37,26 @@ db = client[os.environ['DB_NAME']]
 # API Keys
 OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY')
 
+# AWS S3 Configuration
+AWS_ACCESS_KEY_ID = os.environ.get('AWS_ACCESS_KEY_ID')
+AWS_SECRET_ACCESS_KEY = os.environ.get('AWS_SECRET_ACCESS_KEY')
+AWS_REGION = os.environ.get('AWS_REGION', 'us-east-1')
+S3_BUCKET_NAME = os.environ.get('S3_BUCKET_NAME', 'audion-audio-files')
+
 # Create the main app
 app = FastAPI()
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+# Add CORS Middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allow all origins for debugging
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["*"],
+)
 
 @app.get("/api/health", tags=["Health Check"])
 def health_check():
@@ -54,11 +66,18 @@ def health_check():
 def read_root():
     return {"status": "ok", "message": "Welcome to Audion Backend V4 - The server is running!"}
 
+@app.get("/audio/{filename}", tags=["Audio Files"])
+async def serve_audio_file(filename: str):
+    project_root = Path(__file__).parent.parent  # Go up from backend/ to project root
+    audio_path = project_root / "audio_files" / filename
+    if not audio_path.exists():
+        raise HTTPException(status_code=404, detail="Audio file not found")
+    return FileResponse(audio_path, media_type="audio/mpeg")
 
 # Security
 security = HTTPBearer()
 
-# Pydantic Models (The same as before)
+# Pydantic Models
 class User(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     email: str
@@ -91,7 +110,7 @@ class Article(BaseModel):
     published: str
     source_name: str
     content: Optional[str] = None
-    genre: Optional[str] = None # Added genre field
+    genre: Optional[str] = None
 
 class AudioCreation(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -112,30 +131,7 @@ class AudioCreationRequest(BaseModel):
 class RenameRequest(BaseModel):
     new_title: str
 
-from mutagen.mp3 import MP3
-
 # AI Helper Functions
-def initialize_google_credentials():
-    """
-    環境変数からGoogle認証情報を読み込み、認証情報オブジェクトを返す。
-    """
-    creds_json_str = os.environ.get('GOOGLE_CREDENTIAL_JSON')
-    if not creds_json_str:
-        logging.warning("GOOGLE_CREDENTIAL_JSON is not set. TTS will use mock audio.")
-        return None
-    try:
-        logging.info("Attempting to parse GOOGLE_CREDENTIAL_JSON...")
-        creds_info = json.loads(creds_json_str)
-        credentials = service_account.Credentials.from_service_account_info(creds_info)
-        logging.info("GOOGLE_CREDENTIAL_JSON parsed successfully.")
-        return credentials
-    except json.JSONDecodeError as e:
-        logging.error(f"Failed to parse GOOGLE_CREDENTIAL_JSON: Invalid JSON format: {e}")
-        return None
-    except Exception as e:
-        logging.error(f"Failed to load Google credentials: {e}")
-        return None
-
 def classify_genre(title: str, summary: str) -> str:
     text = (title + " " + summary).lower()
     genre = "General"
@@ -163,7 +159,6 @@ def classify_genre(title: str, summary: str) -> str:
     return genre
 
 async def summarize_articles_with_openai(articles_content: List[str]) -> str:
-
     try:
         if not OPENAI_API_KEY or OPENAI_API_KEY == "your-openai-key":
             return "HOST 1: This is a mock response because the API key is not configured."
@@ -181,47 +176,122 @@ async def summarize_articles_with_openai(articles_content: List[str]) -> str:
         return "HOST 1: An error occurred during summarization. This is a fallback mock response."
 
 def create_mock_audio_file() -> tuple[str, int]:
-    audio_filename = f"audio_{uuid.uuid4()}.mp3"
-    audio_path = Path("/tmp") / audio_filename
-    audio_path.parent.mkdir(parents=True, exist_ok=True)
-    mock_audio_content = b"MOCK_AUDIO_DATA_FOR_PODCAST_STYLE_CONTENT" * 100
-    with open(audio_path, "wb") as f:
-        f.write(mock_audio_content)
-    return f"/api/audio/file/{audio_filename}", 180
+    dummy_audio_url = "https://6yzcao8mrwa5n5rr.public.blob.vercel-storage.com/SampleAudio_0.4mb.mp3"
+    dummy_duration = 30
+    return dummy_audio_url, dummy_duration
 
-# 置き換え後のコード
+async def upload_to_s3(audio_content: bytes, filename: str) -> str:
+    """Upload audio content to S3 and return public URL"""
+    try:
+        # Initialize S3 client
+        s3_client = boto3.client(
+            's3',
+            aws_access_key_id=AWS_ACCESS_KEY_ID,
+            aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
+            region_name=AWS_REGION
+        )
+        
+        # Upload to S3
+        s3_key = f"audio/{filename}"
+        s3_client.put_object(
+            Bucket=S3_BUCKET_NAME,
+            Key=s3_key,
+            Body=audio_content,
+            ContentType='audio/mpeg'
+            # Removed ACL parameter - using bucket policy for public access
+        )
+        
+        # Generate public URL
+        public_url = f"https://{S3_BUCKET_NAME}.s3.{AWS_REGION}.amazonaws.com/{s3_key}"
+        logging.info(f"Audio uploaded to S3: {public_url}")
+        return public_url
+        
+    except ClientError as e:
+        logging.error(f"S3 upload failed: {e}")
+        raise e
+
 async def convert_text_to_speech(text: str) -> dict:
     try:
-        tts_client = texttospeech.TextToSpeechAsyncClient()
-        synthesis_input = texttospeech.SynthesisInput(text=text)
-        voice = texttospeech.VoiceSelectionParams(language_code="en-US", ssml_gender=texttospeech.SsmlVoiceGender.NEUTRAL)
-        audio_config = texttospeech.AudioConfig(audio_encoding=texttospeech.AudioEncoding.MP3)
-        response = await tts_client.synthesize_speech(input=synthesis_input, voice=voice, audio_config=audio_config)
+        logging.info(f"Starting TTS conversion for text length: {len(text)}")
+        logging.info(f"OpenAI API Key available: {bool(OPENAI_API_KEY)}")
+        logging.info(f"Vercel Blob Token available: {bool(os.environ.get('BLOB_READ_WRITE_TOKEN'))}")
+        
+        client = openai.AsyncOpenAI(api_key=OPENAI_API_KEY)
+        response = await client.audio.speech.create(
+            model="tts-1",
+            voice="alloy",
+            input=text,
+        )
+        logging.info("OpenAI TTS request completed successfully")
+        
+        logging.info(f"Type of OpenAI TTS response: {type(response)}")
+        logging.info(f"Type of response.content: {type(response.content)}")
 
-        # mutagenで再生時間を取得
-        audio_stream = io.BytesIO(response.audio_content)
+        audio_content = b''
+        if hasattr(response.content, '__aiter__'):
+            async for chunk in response.content.aiter_bytes():
+                audio_content += chunk
+            logging.info("Read audio_content from async stream.")
+        elif isinstance(response.content, bytes):
+            audio_content = response.content
+            logging.info("Assumed audio_content is already bytes.")
+        else:
+            raise TypeError(f"Unexpected type for response.content: {type(response.content)}")
+
+        logging.info(f"Type of audio_content after processing: {type(audio_content)}")
+        logging.info(f"Length of audio_content: {len(audio_content)}")
+
+        audio_stream = io.BytesIO(audio_content)
         audio_info = MP3(audio_stream)
         duration = int(audio_info.info.length)
 
         audio_filename = f"audio_{uuid.uuid4()}.mp3"
+        logging.info(f"Processing audio file: {audio_filename}, size: {len(audio_content)} bytes")
 
-        # Vercel Blobに公開設定でアップロード
-        blob_result = await put(
-            f'audio/{audio_filename}',
-            response.audio_content,
-            options={'access': 'public'}
-        )
+        # Debug: Log AWS credentials status
+        logging.info(f"AWS_ACCESS_KEY_ID present: {bool(AWS_ACCESS_KEY_ID)}")
+        logging.info(f"AWS_SECRET_ACCESS_KEY present: {bool(AWS_SECRET_ACCESS_KEY)}")
+        logging.info(f"AWS_ACCESS_KEY_ID starts with: {AWS_ACCESS_KEY_ID[:10] if AWS_ACCESS_KEY_ID else 'None'}...")
         
-        public_url = blob_result['url']
-        logging.info(f"Audio content uploaded to Vercel Blob: {public_url}")
+        # Try S3 upload first, fallback to local storage
+        if AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY and AWS_ACCESS_KEY_ID != "your-aws-access-key":
+            try:
+                logging.info("Attempting S3 upload...")
+                public_url = await upload_to_s3(audio_content, audio_filename)
+                logging.info(f"Successfully uploaded to S3: {public_url}")
+            except Exception as s3_error:
+                logging.warning(f"S3 upload failed, falling back to local storage: {s3_error}")
+                # Fallback to local storage
+                project_root = Path(__file__).parent.parent
+                audio_dir = project_root / "audio_files"
+                audio_dir.mkdir(exist_ok=True)
+                
+                audio_path = audio_dir / audio_filename
+                with open(audio_path, 'wb') as f:
+                    f.write(audio_content)
+                
+                public_url = f"http://localhost:8000/audio/{audio_filename}"
+                logging.info(f"Fallback: Audio saved locally at {public_url}")
+        else:
+            logging.info(f"AWS condition failed - KEY:{bool(AWS_ACCESS_KEY_ID)} SECRET:{bool(AWS_SECRET_ACCESS_KEY)} NOT_DEFAULT:{AWS_ACCESS_KEY_ID != 'your-aws-access-key' if AWS_ACCESS_KEY_ID else False}")
+            # Use local storage
+            project_root = Path(__file__).parent.parent
+            audio_dir = project_root / "audio_files"
+            audio_dir.mkdir(exist_ok=True)
+            
+            audio_path = audio_dir / audio_filename
+            with open(audio_path, 'wb') as f:
+                f.write(audio_content)
+            
+            public_url = f"http://localhost:8000/audio/{audio_filename}"
+            logging.info(f"Audio saved locally: {public_url}")
         
-        # URLと再生時間の両方を返す
         return {"url": public_url, "duration": duration}
 
     except Exception as e:
-        logging.error(f"TTS conversion or Blob upload error: {e}")
-        # エラー時はモックファイルを返し、再生時間は0とする
-        return {"url": create_mock_audio_file(), "duration": 0}
+        logging.error(f"OpenAI TTS conversion or Blob upload error: {e}")
+        mock_url, mock_duration = create_mock_audio_file()
+        return {"url": mock_url, "duration": mock_duration}
 
 # Auth helpers
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
@@ -263,7 +333,8 @@ async def add_rss_source(source_data: RSSSourceCreate, current_user: User = Depe
 @app.delete("/api/sources/{source_id}", tags=["RSS"])
 async def delete_rss_source(source_id: str, current_user: User = Depends(get_current_user)):
     result = await db.rss_sources.delete_one({"id": source_id, "user_id": current_user.id})
-    if result.deleted_count == 0: raise HTTPException(status_code=404, detail="Source not found")
+    if result.deleted_count == 0: 
+        raise HTTPException(status_code=404, detail="Source not found")
     return {"message": "Source deleted"}
 
 @app.get("/api/articles", response_model=List[Article], tags=["Articles"])
@@ -272,7 +343,6 @@ async def get_articles(current_user: User = Depends(get_current_user), genre: Op
     all_articles = []
     for source in sources:
         try:
-            # Check cache first
             cache_key = source["url"]
             current_time = time.time()
 
@@ -287,7 +357,7 @@ async def get_articles(current_user: User = Depends(get_current_user), genre: Op
             for entry in feed.entries[:10]:
                 article_title = getattr(entry, 'title', "No Title")
                 article_summary = getattr(entry, 'summary', getattr(entry, 'description', "No summary available"))
-                article_genre = classify_genre(article_title, article_summary) # Classify genre
+                article_genre = classify_genre(article_title, article_summary)
                 all_articles.append(Article(
                     id=str(uuid.uuid4()),
                     title=article_title,
@@ -296,13 +366,12 @@ async def get_articles(current_user: User = Depends(get_current_user), genre: Op
                     published=time.strftime('%Y-%m-%dT%H:%M:%SZ', entry.published_parsed) if hasattr(entry, 'published_parsed') and entry.published_parsed else "",
                     source_name=source["name"],
                     content=getattr(entry, 'summary', getattr(entry, 'description', "No content available")),
-                    genre=article_genre # Assign classified genre
+                    genre=article_genre
                 ))
         except Exception as e:
             logging.warning(f"Error parsing RSS feed {source['url']}: {e}")
             continue
     
-    # Filter by genre if specified
     logging.info(f"Fetched {len(all_articles)} articles before filtering.")
     if genre:
         all_articles = [article for article in all_articles if article.genre and article.genre.lower() == genre.lower()]
@@ -310,31 +379,28 @@ async def get_articles(current_user: User = Depends(get_current_user), genre: Op
 
     return sorted(all_articles, key=lambda x: x.published, reverse=True)[:50]
 
-# 置き換え後のコード
 @app.post("/api/audio/create", response_model=AudioCreation, tags=["Audio"])
 async def create_audio(request: AudioCreationRequest, current_user: User = Depends(get_current_user)):
     try:
-        # (要約部分のロジックは変更なし)
         articles_content = [f"Article: {title}\n\nThis is the full content of the article..." for title in request.article_titles]
         script = await summarize_articles_with_openai(articles_content)
         
-        # 音声化処理を呼び出し、URLと再生時間を取得
         audio_data = await convert_text_to_speech(script)
         audio_url = audio_data['url']
         duration = audio_data['duration']
 
         title = request.custom_title or f"AI News Summary - {datetime.now().strftime('%Y-%m-%d')}"
         
-        # データベースに保存するオブジェクトを作成
         audio_creation = AudioCreation(
             user_id=current_user.id, 
             title=title, 
             article_ids=request.article_ids,
             article_titles=request.article_titles, 
-            audio_url=audio_url,  # 取得したURLを保存
-            duration=duration,    # 取得した再生時間を保存
+            audio_url=audio_url,
+            duration=duration,
             script=script
         )
+        logging.info(f"Saving AudioCreation to DB with audio_url: {audio_creation.audio_url}")
         
         await db.audio_creations.insert_one(audio_creation.dict())
         return audio_creation
@@ -347,17 +413,11 @@ async def get_audio_library(current_user: User = Depends(get_current_user)):
     audio_list = await db.audio_creations.find({"user_id": current_user.id}).sort("created_at", -1).to_list(100)
     return [AudioCreation(**audio) for audio in audio_list]
 
-@app.get("/api/audio/file/{filename}", tags=["Audio"])
-async def get_audio_file(filename: str):
-    file_path = Path("/tmp") / filename
-    if not file_path.is_file():
-        raise HTTPException(status_code=404, detail="File not found or has been cleared by a new deploy.")
-    return FileResponse(str(file_path))
-
 @app.delete("/api/audio/{audio_id}", tags=["Audio"])
 async def delete_audio(audio_id: str, current_user: User = Depends(get_current_user)):
     result = await db.audio_creations.delete_one({"id": audio_id, "user_id": current_user.id})
-    if result.deleted_count == 0: raise HTTPException(status_code=404, detail="Audio not found")
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Audio not found")
     return {"message": "Audio deleted"}
 
 @app.put("/api/audio/{audio_id}/rename", tags=["Audio"])
@@ -366,35 +426,19 @@ async def rename_audio(audio_id: str, request: RenameRequest, current_user: User
         {"id": audio_id, "user_id": current_user.id},
         {"$set": {"title": request.new_title}}
     )
-    if result.modified_count == 0: raise HTTPException(status_code=404, detail="Audio not found")
+    if result.modified_count == 0:
+        raise HTTPException(status_code=404, detail="Audio not found")
     return {"message": "Audio renamed"}
-
-# Add CORS Middleware
-origins = [
-    "http://localhost:8081",
-    # Add your production frontend URL here when you have one
-]
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://localhost:8081", "https://audion-backend-b805.onrender.com"], # Add localhost for Expo web, and your Render URL
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["*"],
-)
-
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 @app.on_event("startup")
 async def startup_event():
-    logging.info("--- SERVER STARTUP: CORS DEBUG V2 ---")
+    logging.info("--- SERVER STARTUP ---")
     await db.users.create_index("email", unique=True)
     await db.rss_sources.create_index([("user_id", 1)])
     await db.audio_creations.create_index([("user_id", 1), ("created_at", -1)])
     logging.info("Database indexes created.")
-    if not OPENAI_API_KEY: logging.warning("OpenAI API key not found")
-    if not os.environ.get('GOOGLE_CREDENTIAL_JSON'): logging.warning("Google Cloud credentials not found")
+    if not OPENAI_API_KEY: 
+        logging.warning("OpenAI API key not found")
 
 @app.on_event("shutdown")
 async def shutdown_db_client():

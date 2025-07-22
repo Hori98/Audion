@@ -8,20 +8,19 @@ import os
 from dotenv import load_dotenv
 import sys
 
-# Load environment variables from frontend/.env
-load_dotenv('/app/frontend/.env')
-
-# Get the backend URL from the environment
-BACKEND_URL = os.environ.get('REACT_APP_BACKEND_URL')
-if not BACKEND_URL:
-    print("Error: REACT_APP_BACKEND_URL not found in environment variables")
-    sys.exit(1)
-
 # For testing purposes, use the local URL
 LOCAL_TESTING = True
 if LOCAL_TESTING:
-    BACKEND_URL = "http://localhost:8001"
+    BACKEND_URL = "http://localhost:8000"
     print(f"Using local backend URL for testing: {BACKEND_URL}")
+else:
+    # Load environment variables from frontend/.env
+    load_dotenv('/app/frontend/.env')
+    # Get the backend URL from the environment
+    BACKEND_URL = os.environ.get('REACT_APP_BACKEND_URL')
+    if not BACKEND_URL:
+        print("Error: REACT_APP_BACKEND_URL not found in environment variables")
+        sys.exit(1)
 
 # Ensure the URL ends with /api
 API_URL = f"{BACKEND_URL}/api"
@@ -268,8 +267,8 @@ def test_rename_audio():
     headers = {"Authorization": f"Bearer {auth_token}"}
     new_title = f"Renamed Audio {random.randint(1000, 9999)}"
     
-    # The API expects a string, not a JSON object
-    response = requests.put(url, params={"new_title": new_title}, headers=headers)
+    # The API expects a JSON object with new_title
+    response = requests.put(url, json={"new_title": new_title}, headers=headers)
     
     print(f"Status Code: {response.status_code}")
     print(f"Response: {response.text}")
