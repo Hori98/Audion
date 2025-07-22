@@ -395,6 +395,125 @@ def test_ai_pipeline_with_demo_keys():
         print("❌ Failed to test AI pipeline with demo keys")
         return False
 
+def test_auto_pick_articles():
+    print("Testing auto-pick articles...")
+    
+    url = f"{API_URL}/auto-pick"
+    headers = {"Authorization": f"Bearer {auth_token}"}
+    payload = {
+        "max_articles": 5
+    }
+    
+    response = requests.post(url, json=payload, headers=headers)
+    
+    print(f"Status Code: {response.status_code}")
+    print(f"Response: {response.text}")
+    
+    if response.status_code == 200:
+        data = response.json()
+        if isinstance(data, list):
+            print(f"✅ Successfully got {len(data)} auto-picked articles")
+            return True
+        else:
+            print("❌ Invalid response format for auto-pick")
+            return False
+    else:
+        print("❌ Failed to get auto-picked articles")
+        return False
+
+def test_user_profile():
+    print("Testing user profile...")
+    
+    url = f"{API_URL}/user-profile"
+    headers = {"Authorization": f"Bearer {auth_token}"}
+    
+    response = requests.get(url, headers=headers)
+    
+    print(f"Status Code: {response.status_code}")
+    print(f"Response: {response.text}")
+    
+    if response.status_code == 200:
+        data = response.json()
+        has_preferences = "genre_preferences" in data
+        has_history = "interaction_history" in data
+        
+        print(f"✅ User profile retrieved successfully")
+        print(f"✅ Has genre preferences: {has_preferences}")
+        print(f"✅ Has interaction history: {has_history}")
+        
+        return True
+    else:
+        print("❌ Failed to get user profile")
+        return False
+
+def test_user_interaction():
+    print("Testing user interaction recording...")
+    
+    # First get some articles to interact with
+    success, articles = test_get_articles()
+    if not success or not articles:
+        print("❌ Cannot test interaction without articles")
+        return False
+    
+    # Select first article for interaction
+    selected_article = articles[0]
+    
+    url = f"{API_URL}/user-interaction"
+    headers = {"Authorization": f"Bearer {auth_token}"}
+    payload = {
+        "article_id": selected_article["id"],
+        "interaction_type": "liked",
+        "genre": selected_article.get("genre", "General")
+    }
+    
+    response = requests.post(url, json=payload, headers=headers)
+    
+    print(f"Status Code: {response.status_code}")
+    print(f"Response: {response.text}")
+    
+    if response.status_code == 200:
+        print(f"✅ User interaction recorded successfully")
+        return True
+    else:
+        print("❌ Failed to record user interaction")
+        return False
+
+def test_auto_pick_create_audio():
+    print("Testing auto-pick create audio...")
+    
+    url = f"{API_URL}/auto-pick/create-audio"
+    headers = {"Authorization": f"Bearer {auth_token}"}
+    payload = {
+        "max_articles": 3
+    }
+    
+    start_time = time.time()
+    response = requests.post(url, json=payload, headers=headers)
+    end_time = time.time()
+    processing_time = end_time - start_time
+    
+    print(f"Status Code: {response.status_code}")
+    print(f"Response time: {processing_time:.2f} seconds")
+    print(f"Response: {response.text}")
+    
+    if response.status_code == 200:
+        data = response.json()
+        
+        # Verify audio creation fields
+        has_audio_url = "audio_url" in data
+        has_title = "title" in data and "Auto-Pick" in data["title"]
+        has_script = "script" in data
+        
+        print(f"✅ Auto-pick audio created successfully")
+        print(f"✅ Has audio URL: {has_audio_url}")
+        print(f"✅ Has auto-pick title: {has_title}")
+        print(f"✅ Has script: {has_script}")
+        
+        return True
+    else:
+        print("❌ Failed to create auto-pick audio")
+        return False
+
 def run_all_tests():
     tests = [
         ("User Registration", test_register),
@@ -407,6 +526,10 @@ def run_all_tests():
         ("Create Audio", test_create_audio),
         ("Get Audio Library", test_get_audio_library),
         ("Rename Audio", test_rename_audio),
+        ("User Profile", test_user_profile),
+        ("User Interaction", test_user_interaction),
+        ("Auto-Pick Articles", test_auto_pick_articles),
+        ("Auto-Pick Create Audio", test_auto_pick_create_audio),
         ("Delete Audio", test_delete_audio),
         ("Delete RSS Source", test_delete_rss_source)
     ]

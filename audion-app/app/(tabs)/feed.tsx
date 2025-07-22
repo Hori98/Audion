@@ -97,6 +97,25 @@ export default function FeedScreen() {
         },
         { headers: { Authorization: `Bearer ${token}` } }
       );
+
+      // Record user interactions for personalization
+      for (const article of selectedArticles) {
+        try {
+          await axios.post(
+            `${API}/user-interaction`,
+            {
+              article_id: article.id,
+              interaction_type: 'created_audio',
+              genre: article.genre
+            },
+            { headers: { Authorization: `Bearer ${token}` } }
+          );
+        } catch (interactionError) {
+          console.error('Error recording interaction:', interactionError);
+          // Don't fail the whole operation if interaction recording fails
+        }
+      }
+
       Alert.alert('Success', `Audio created: ${response.data.title}`);
       setSelectedArticleIds([]); // Clear selection after creation
     } catch (error: any) {

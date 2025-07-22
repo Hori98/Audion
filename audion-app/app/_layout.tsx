@@ -1,8 +1,11 @@
 
 import React, { useEffect } from 'react';
 import { AuthProvider, useAuth } from '../context/AuthContext';
+import { AudioProvider } from '../context/AudioContext';
 import { Slot, useRouter, useSegments } from 'expo-router';
-import { ActivityIndicator, View, Alert } from 'react-native'; // Added Alert
+import { ActivityIndicator, View, Alert } from 'react-native';
+import MiniPlayer from '../components/MiniPlayer';
+import FullScreenPlayer from '../components/FullScreenPlayer';
 
 const InitialLayout = () => {
   const { user, loading } = useAuth();
@@ -29,13 +32,21 @@ const InitialLayout = () => {
     );
   }
 
-  return <Slot />;
+  return (
+    <View style={{ flex: 1 }}>
+      <Slot />
+      <MiniPlayer />
+      <FullScreenPlayer />
+    </View>
+  );
 };
 
 export default function RootLayout() {
   return (
     <AuthProvider>
-      <InitialLayout />
+      <AudioProvider>
+        <InitialLayout />
+      </AudioProvider>
     </AuthProvider>
   );
 }

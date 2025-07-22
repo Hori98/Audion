@@ -1,5 +1,5 @@
 import { Tabs } from 'expo-router';
-import { Home, Rss, Library } from 'lucide-react-native';
+import { Home, Rss, Library, Sparkles } from 'lucide-react-native';
 import { useAuth } from '../../context/AuthContext';
 import { TouchableOpacity } from 'react-native';
 import { LogOut } from 'lucide-react-native';
@@ -30,6 +30,14 @@ export default function AppLayout() {
           tabBarLabel: 'Sources',
           headerTitle: 'Sources',
           tabBarIcon: ({ color, size }) => <Rss color={color} size={size} />,
+        }}
+      />
+      <Tabs.Screen
+        name="auto-pick"
+        options={{
+          tabBarLabel: 'Auto-Pick',
+          headerTitle: 'Auto-Pick',
+          tabBarIcon: ({ color, size }) => <Sparkles color={color} size={size} />,
         }}
       />
       <Tabs.Screen

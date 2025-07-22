@@ -34,16 +34,27 @@ export default function AudioPlayerScreen() {
   const [audioItem, setAudioItem] = useState<AudioItem | null>(null);
 
   useEffect(() => {
+    console.log('Received audioData:', audioData);
     if (audioData) {
       try {
-        const parsedAudio = JSON.parse(audioData as string);
+        let parsedAudio;
+        if (typeof audioData === 'string') {
+          parsedAudio = JSON.parse(decodeURIComponent(audioData));
+        } else {
+          parsedAudio = JSON.parse(audioData as string);
+        }
+        console.log('Parsed audio item:', parsedAudio);
         setAudioItem(parsedAudio);
-        setDuration(parsedAudio.duration || 0);
+        setDuration(parsedAudio.duration * 1000 || 0); // Convert to milliseconds
       } catch (error) {
         console.error('Error parsing audio data:', error);
         Alert.alert('Error', 'Invalid audio data');
         router.back();
       }
+    } else {
+      console.error('No audio data received');
+      Alert.alert('Error', 'No audio data provided');
+      router.back();
     }
   }, [audioData]);
 

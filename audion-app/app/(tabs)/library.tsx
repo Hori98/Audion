@@ -1,12 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator, Modal } from 'react-native'; // Added Modal
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator, Modal } from 'react-native';
 import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
+import { useAudio } from '../../context/AudioContext';
 import { useFocusEffect } from '@react-navigation/native';
-import { Audio } from 'expo-av';
 import { format } from 'date-fns';
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
 
 interface AudioItem {
   id: string;
@@ -19,15 +18,13 @@ interface AudioItem {
 
 export default function LibraryScreen() {
   const { token } = useAuth();
+  const { playAudio } = useAudio();
   const [audioItems, setAudioItems] = useState<AudioItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [sound, setSound] = useState<Audio.Sound | null>(null);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [currentAudioId, setCurrentAudioId] = useState<string | null>(null);
-  const [isEditing, setIsEditing] = useState(false); // Added state
-  const [selectedAudioIds, setSelectedAudioIds] = useState<string[]>([]); // Added state
-  const [scriptModalVisible, setScriptModalVisible] = useState(false); // Added state
-  const [currentScript, setCurrentScript] = useState(''); // Added state
+  const [isEditing, setIsEditing] = useState(false);
+  const [selectedAudioIds, setSelectedAudioIds] = useState<string[]>([]);
+  const [scriptModalVisible, setScriptModalVisible] = useState(false);
+  const [currentScript, setCurrentScript] = useState('');
 
   const API = process.env.EXPO_PUBLIC_BACKEND_URL ? `${process.env.EXPO_PUBLIC_BACKEND_URL}/api` : 'http://localhost:8000/api';
 
@@ -37,9 +34,6 @@ export default function LibraryScreen() {
         fetchAudioLibrary();
       }
       return () => {
-        if (sound) {
-          sound.unloadAsync();
-        }
         // Reset editing state when leaving screen
         setIsEditing(false);
         setSelectedAudioIds([]);
@@ -62,63 +56,8 @@ export default function LibraryScreen() {
     }
   };
 
-  const playAudio = async (audioUrl: string, audioId: string) => {
-    console.log('Attempting to play audio:', audioUrl); // Added log
-    console.log('Audio ID:', audioId); // Added log
-    if (sound) {
-      console.log('Unloading existing sound...'); // Added log
-      await sound.unloadAsync();
-      setSound(null);
-      setIsPlaying(false);
-      setCurrentAudioId(null);
-    }
-
-    try {
-      console.log('Creating new sound object...'); // Added log
-      const { sound: newSound } = await Audio.Sound.createAsync(
-        { uri: audioUrl },
-        { shouldPlay: true }
-      );
-      console.log('Sound object created. Playing...'); // Added log
-      setSound(newSound);
-      setIsPlaying(true);
-      setCurrentAudioId(audioId);
-      newSound.setOnPlaybackStatusUpdate((status) => {
-        if (status.isLoaded && status.didJustFinish) {
-          console.log('Audio finished playing.'); // Added log
-          setIsPlaying(false);
-          setCurrentAudioId(null);
-          newSound.unloadAsync();
-        }
-      });
-    } catch (error: any) {
-      console.error('Error playing audio:', error);
-      Alert.alert('Error', 'Failed to play audio.');
-    }
-  };
-
-  const pauseAudio = async () => {
-    if (sound) {
-      await sound.pauseAsync();
-      setIsPlaying(false);
-    }
-  };
-
-  const resumeAudio = async () => {
-    if (sound) {
-      await sound.playAsync();
-      setIsPlaying(true);
-    }
-  };
-
-  const togglePlayPause = (audioUrl: string, audioId: string) => {
-    if (currentAudioId === audioId && isPlaying) {
-      pauseAudio();
-    } else if (currentAudioId === audioId && !isPlaying) {
-      resumeAudio();
-    } else {
-      playAudio(audioUrl, audioId);
-    }
+  const handlePlayAudio = (audioItem: AudioItem) => {
+    playAudio(audioItem);
   };
 
   const toggleAudioSelection = (audioId: string) => {
@@ -137,15 +76,7 @@ export default function LibraryScreen() {
 
     // Temporarily bypass Alert.alert for debugging
     try {
-      // Stop currently playing audio if it's among the deleted ones
-      if (currentAudioId && selectedAudioIds.includes(currentAudioId)) {
-        if (sound) {
-          await sound.unloadAsync();
-          setSound(null);
-          setIsPlaying(false);
-          setCurrentAudioId(null);
-        }
-      }
+      // Note: Audio stopping is now handled by AudioContext
 
       console.log('Attempting to delete audio items:', selectedAudioIds); // Added log
       await Promise.all(
@@ -176,12 +107,6 @@ export default function LibraryScreen() {
     console.log('Viewing script for audio URL:', audioUrl); // Added log
   };
 
-  const openAudioPlayer = (audioItem: AudioItem) => {
-    router.push({
-      pathname: '/audio-player',
-      params: { audioData: JSON.stringify(audioItem) }
-    });
-  };
 
   const closeScriptModal = () => {
     setScriptModalVisible(false);
@@ -203,7 +128,6 @@ export default function LibraryScreen() {
         <TouchableOpacity onPress={() => {
           setIsEditing(!isEditing);
           setSelectedAudioIds([]); // Clear selection when toggling mode
-          if (sound) sound.unloadAsync(); // Stop playing when entering edit mode
         }}>
           <Text style={styles.editButtonText}>{isEditing ? 'Done' : 'Edit'}</Text>
         </TouchableOpacity>
@@ -226,24 +150,17 @@ export default function LibraryScreen() {
             <TouchableOpacity
               key={item.id}
               style={styles.audioCard}
-              onPress={() => isEditing ? toggleAudioSelection(item.id) : togglePlayPause(item.audio_url, item.id)}
+              onPress={() => isEditing ? toggleAudioSelection(item.id) : null}
             >
               <View style={styles.audioInfo}>
                 <Text style={styles.audioTitle}>{item.title}</Text>
                 <Text style={styles.audioDetails}>
-                  {format(new Date(item.created_at), 'MMM dd, yyyy')} • {formatDuration(item.duration)}
+                  {format(new Date(item.created_at), 'MMM dd, yyyy')} · {formatDuration(item.duration)}
                 </Text>
-                {!isEditing && (
-                  <View style={styles.actionButtonsContainer}>
-                    <TouchableOpacity onPress={() => openAudioPlayer(item)} style={styles.playerButton}>
-                      <Text style={styles.playerButtonText}>Open Player</Text>
-                    </TouchableOpacity>
-                    {item.script && (
-                      <TouchableOpacity onPress={() => handleViewScript(item.script, item.audio_url)} style={styles.viewScriptButton}>
-                        <Text style={styles.viewScriptButtonText}>View Script</Text>
-                      </TouchableOpacity>
-                    )}
-                  </View>
+                {!isEditing && item.script && (
+                  <TouchableOpacity onPress={() => handleViewScript(item.script, item.audio_url)} style={styles.viewScriptButton}>
+                    <Text style={styles.viewScriptButtonText}>View Script</Text>
+                  </TouchableOpacity>
                 )}
               </View>
               {isEditing ? (
@@ -253,10 +170,8 @@ export default function LibraryScreen() {
                   color={selectedAudioIds.includes(item.id) ? '#4f46e5' : '#6b7280'}
                 />
               ) : (
-                <TouchableOpacity onPress={() => togglePlayPause(item.audio_url, item.id)} style={styles.playPauseButton}>
-                  <Text style={styles.playPauseButtonText}>
-                    {currentAudioId === item.id && isPlaying ? 'Pause' : 'Play'}
-                  </Text>
+                <TouchableOpacity onPress={() => handlePlayAudio(item)} style={styles.playPauseButton}>
+                  <Text style={styles.playPauseButtonText}>Play</Text>
                 </TouchableOpacity>
               )}
             </TouchableOpacity>
@@ -272,7 +187,7 @@ export default function LibraryScreen() {
       >
         <View style={styles.modalContainer}>
           <Text style={styles.modalTitle}>Audio Script</Text>
-          <Text style={styles.modalUrl}>URL: {currentScript.includes('No script available') ? 'N/A' : audioItems.find(item => item.script === currentScript)?.audio_url || 'Loading...'}</Text> {/* Added URL display */}
+          <Text style={styles.modalUrl}>URL: {currentScript.includes('No script available') ? 'N/A' : audioItems.find(item => item.script === currentScript)?.audio_url || 'Loading...'}</Text>
           <ScrollView style={styles.scriptScrollView}>
             <Text style={styles.scriptText}>{currentScript}</Text>
           </ScrollView>
@@ -429,22 +344,6 @@ const styles = StyleSheet.create({
   closeModalButtonText: {
     color: '#ffffff',
     fontSize: 18,
-    fontWeight: 'bold',
-  },
-  actionButtonsContainer: {
-    flexDirection: 'row',
-    marginTop: 10,
-    gap: 10,
-  },
-  playerButton: {
-    backgroundColor: '#10b981',
-    paddingVertical: 5,
-    paddingHorizontal: 10,
-    borderRadius: 5,
-  },
-  playerButtonText: {
-    color: '#ffffff',
-    fontSize: 14,
     fontWeight: 'bold',
   },
 });
