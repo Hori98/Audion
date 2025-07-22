@@ -136,7 +136,12 @@ export default function FeedScreen() {
 
   return (
     <View style={styles.container}>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.genreButtonsContainer}>
+      <ScrollView 
+        horizontal 
+        showsHorizontalScrollIndicator={false} 
+        style={styles.genreButtonsContainer}
+        contentContainerStyle={styles.genreButtonsContent}
+      >
         {genres.map((genre) => (
           <TouchableOpacity
             key={genre}
@@ -156,7 +161,10 @@ export default function FeedScreen() {
         ))}
       </ScrollView>
 
-      <ScrollView style={styles.articlesContainer}>
+      <ScrollView 
+        style={styles.articlesContainer}
+        contentContainerStyle={styles.articlesContent}
+      >
         {articles.length === 0 ? (
           <Text style={styles.noArticlesText}>No articles found. Add some RSS sources first!</Text>
         ) : (
@@ -226,9 +234,13 @@ const styles = StyleSheet.create({
   },
   genreButtonsContainer: {
     paddingHorizontal: 10,
-    marginBottom: 0, // Set marginBottom to 0 as requested
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+    marginTop: 8,
+    marginBottom: 0,
+    maxHeight: 50,
+  },
+  genreButtonsContent: {
+    paddingVertical: 0,
+    alignItems: 'center',
   },
   genreButton: {
     paddingVertical: 8,
@@ -251,20 +263,26 @@ const styles = StyleSheet.create({
   articlesContainer: {
     flex: 1,
     paddingHorizontal: 10,
-    paddingTop: 0, // Set paddingTop to 0 as requested
+    marginTop: 0,
+  },
+  articlesContent: {
+    paddingTop: 0,
+    paddingBottom: 20,
   },
   articleCard: {
     backgroundColor: '#ffffff',
-    borderRadius: 10,
-    padding: 15,
-    marginBottom: 10,
+    borderRadius: 12,
+    padding: 16,
+    marginTop: 4,
+    marginBottom: 4,
+    minHeight: 120,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 2,
-    flexDirection: 'row', // Added for layout
-    alignItems: 'flex-start', // Added for layout
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 3,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
   },
   articleContent: {
     flex: 1, // Takes up remaining space

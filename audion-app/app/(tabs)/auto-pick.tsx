@@ -237,7 +237,7 @@ export default function AutoPickScreen() {
         ) : (
           <>
             <Ionicons name="musical-notes" size={20} color="#fff" style={{ marginRight: 8 }} />
-            <Text style={styles.createAudioButtonText}>Create Auto-Pick Podcast</Text>
+            <Text style={styles.createAudioButtonText}>Audio it!</Text>
           </>
         )}
       </TouchableOpacity>

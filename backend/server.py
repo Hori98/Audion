@@ -8,7 +8,7 @@ import os
 import logging
 from pathlib import Path
 from pydantic import BaseModel, Field
-from typing import List, Optional
+from typing import List, Optional, Dict, Tuple
 import uuid
 from datetime import datetime
 import feedparser
@@ -17,6 +17,9 @@ import aiofiles
 import json
 import time
 import openai
+import re
+import random
+from collections import Counter
 from mutagen.mp3 import MP3
 import io
 import boto3
@@ -165,31 +168,167 @@ class UserInteraction(BaseModel):
     metadata: Optional[dict] = None  # For additional context like play_duration, completion_percentage
 
 # AI Helper Functions
-def classify_genre(title: str, summary: str) -> str:
-    text = (title + " " + summary).lower()
-    genre = "General"
-    if any(keyword in text for keyword in ["tech", "technology", "ai", "artificial intelligence", "software", "startup", "innovation"]):
-        genre = "Technology"
-    elif any(keyword in text for keyword in ["finance", "economy", "market", "stock", "business", "investment"]):
-        genre = "Finance"
-    elif any(keyword in text for keyword in ["sport", "game", "team", "match", "athlete"]):
-        genre = "Sports"
-    elif any(keyword in text for keyword in ["politics", "government", "election", "law", "policy"]):
-        genre = "Politics"
-    elif any(keyword in text for keyword in ["health", "medical", "disease", "hospital", "doctor"]):
-        genre = "Health"
-    elif any(keyword in text for keyword in ["entertainment", "movie", "music", "celebrity", "art", "culture"]):
-        genre = "Entertainment"
-    elif any(keyword in text for keyword in ["science", "research", "discovery", "space", "biology", "physics"]):
-        genre = "Science"
-    elif any(keyword in text for keyword in ["environment", "climate", "nature", "ecology", "sustainability"]):
-        genre = "Environment"
-    elif any(keyword in text for keyword in ["education", "school", "university", "student", "learning"]):
-        genre = "Education"
-    elif any(keyword in text for keyword in ["travel", "tourism", "destination", "vacation", "trip"]):
-        genre = "Travel"
-    logging.info(f"Classifying: \"{title[:50]}...\" -> {genre}")
-    return genre
+# Enhanced Genre Classification System with weighted keywords
+GENRE_KEYWORDS = {
+    "Technology": {
+        "high": ["ai", "artificial intelligence", "machine learning", "blockchain", "cryptocurrency", "bitcoin", "ethereum", "nft", "metaverse", "vr", "virtual reality", "ar", "augmented reality", "cloud computing", "cybersecurity", "data privacy", "algorithm", "neural network", "quantum computing", "5g", "internet of things", "iot", "robotics", "automation"],
+        "medium": ["tech", "technology", "software", "app", "platform", "digital", "online", "internet", "web", "mobile", "smartphone", "iphone", "android", "google", "apple", "microsoft", "amazon", "facebook", "meta", "twitter", "tesla", "spacex", "openai", "chatgpt"],
+        "low": ["startup", "innovation", "disruption", "silicon valley", "venture capital", "vc", "ipo", "saas", "fintech", "edtech", "medtech"]
+    },
+    "Finance": {
+        "high": ["stock market", "nasdaq", "dow jones", "s&p 500", "federal reserve", "fed", "interest rate", "inflation", "recession", "gdp", "unemployment", "economic growth", "monetary policy", "fiscal policy", "central bank"],
+        "medium": ["finance", "financial", "economy", "economic", "market", "stock", "share", "investment", "investor", "trading", "bank", "banking", "credit", "loan", "mortgage", "insurance", "pension", "retirement"],
+        "low": ["business", "corporate", "earnings", "revenue", "profit", "loss", "merger", "acquisition", "dividend", "portfolio", "asset"]
+    },
+    "Sports": {
+        "high": ["olympic", "olympics", "world cup", "super bowl", "champions league", "nba finals", "world series", "masters tournament", "wimbledon", "uefa", "fifa"],
+        "medium": ["sport", "sports", "game", "match", "championship", "tournament", "league", "team", "player", "athlete", "coach", "victory", "defeat", "goal", "score"],
+        "low": ["football", "soccer", "basketball", "baseball", "tennis", "golf", "hockey", "boxing", "mma", "racing"]
+    },
+    "Politics": {
+        "high": ["president", "prime minister", "congress", "parliament", "senate", "supreme court", "election", "vote", "campaign", "democracy", "republican", "democrat", "conservative", "liberal", "legislation", "bill"],
+        "medium": ["politics", "political", "government", "policy", "minister", "senator", "congressman", "mayor", "governor", "diplomat", "embassy", "foreign policy", "domestic policy"],
+        "low": ["administration", "cabinet", "bureaucracy", "regulation", "governance", "public sector", "civil service", "law"]
+    },
+    "Health": {
+        "high": ["covid", "coronavirus", "pandemic", "vaccine", "vaccination", "hospital", "doctor", "physician", "surgeon", "medical", "medicine", "healthcare", "patient", "treatment", "therapy", "diagnosis", "symptom", "disease", "virus", "bacteria"],
+        "medium": ["health", "healthy", "wellness", "fitness", "nutrition", "diet", "mental health", "depression", "anxiety", "stress", "pharmaceutical", "drug", "medication", "clinical trial", "fda approval"],
+        "low": ["exercise", "workout", "lifestyle", "wellbeing", "prevention", "care", "medical device", "biotech", "healthcare system"]
+    },
+    "Entertainment": {
+        "high": ["movie", "film", "cinema", "hollywood", "oscar", "emmy", "grammy", "music", "album", "song", "concert", "celebrity", "actor", "actress", "singer", "musician", "director", "producer"],
+        "medium": ["entertainment", "show", "series", "tv", "television", "streaming", "netflix", "disney", "amazon prime", "hbo", "art", "artist", "gallery", "museum", "culture", "cultural"],
+        "low": ["theater", "theatre", "performance", "comedy", "drama", "documentary", "animation", "gaming", "video game"]
+    },
+    "Science": {
+        "high": ["research", "study", "scientific", "scientist", "discovery", "breakthrough", "experiment", "laboratory", "university research", "peer review", "journal", "publication"],
+        "medium": ["science", "physics", "chemistry", "biology", "astronomy", "space", "nasa", "mars", "rocket", "satellite", "telescope", "dna", "genetic", "genome"],
+        "low": ["innovation", "development", "analysis", "data", "evidence", "theory", "hypothesis"]
+    },
+    "Environment": {
+        "high": ["climate change", "global warming", "greenhouse gas", "carbon emission", "renewable energy", "solar power", "wind power", "electric vehicle", "ev", "sustainability", "conservation"],
+        "medium": ["environment", "environmental", "climate", "weather", "temperature", "pollution", "air quality", "water quality", "ecosystem", "biodiversity", "wildlife", "forest", "ocean"],
+        "low": ["nature", "natural", "green", "eco", "recycling", "waste", "energy", "resource"]
+    },
+    "Education": {
+        "high": ["education", "educational", "school", "university", "college", "student", "teacher", "professor", "learning", "curriculum", "degree", "graduation", "academic"],
+        "medium": ["classroom", "lesson", "course", "program", "study", "exam", "test", "scholarship", "tuition", "campus"],
+        "low": ["knowledge", "skill", "training", "development", "literacy"]
+    },
+    "Travel": {
+        "high": ["travel", "tourism", "tourist", "vacation", "holiday", "trip", "journey", "destination", "hotel", "resort", "airline", "flight", "airport", "cruise"],
+        "medium": ["visit", "explore", "adventure", "sightseeing", "attraction", "landmark", "culture", "local", "international", "domestic"],
+        "low": ["experience", "discovery", "leisure", "recreation", "hospitality", "service"]
+    }
+}
+
+def calculate_genre_scores(title: str, summary: str) -> Dict[str, float]:
+    """Calculate weighted scores for each genre based on keyword matching"""
+    try:
+        # Input validation
+        if not title and not summary:
+            logging.warning("Empty title and summary provided to calculate_genre_scores")
+            return {genre: 0.0 for genre in GENRE_KEYWORDS.keys()}
+        
+        text = (str(title or '') + " " + str(summary or '')).lower().strip()
+        
+        if not text:
+            logging.warning("Text is empty after processing")
+            return {genre: 0.0 for genre in GENRE_KEYWORDS.keys()}
+        
+        # Remove punctuation and normalize text
+        words = re.findall(r'\b\w+\b', text)
+        text_phrases = text  # Keep original for phrase matching
+        
+        genre_scores = {}
+        
+        for genre, weight_categories in GENRE_KEYWORDS.items():
+            score = 0.0
+            
+            try:
+                # High weight keywords/phrases (3.0 points)
+                if "high" in weight_categories:
+                    for keyword in weight_categories["high"]:
+                        if keyword and keyword in text_phrases:
+                            score += 3.0
+                            if len(keyword.split()) == 1 and keyword in words:  # Exact word match bonus
+                                score += 0.5
+                
+                # Medium weight keywords/phrases (1.5 points)
+                if "medium" in weight_categories:
+                    for keyword in weight_categories["medium"]:
+                        if keyword and keyword in text_phrases:
+                            score += 1.5
+                            if len(keyword.split()) == 1 and keyword in words:
+                                score += 0.25
+                
+                # Low weight keywords/phrases (0.8 points)
+                if "low" in weight_categories:
+                    for keyword in weight_categories["low"]:
+                        if keyword and keyword in text_phrases:
+                            score += 0.8
+                            if len(keyword.split()) == 1 and keyword in words:
+                                score += 0.1
+            except Exception as e:
+                logging.error(f"Error processing genre {genre}: {e}")
+                score = 0.0
+            
+            genre_scores[genre] = score
+        
+        return genre_scores
+    except Exception as e:
+        logging.error(f"Error in calculate_genre_scores: {e}")
+        return {genre: 0.0 for genre in GENRE_KEYWORDS.keys()}
+
+def classify_genre(title: str, summary: str, confidence_threshold: float = 1.0) -> str:
+    """Enhanced genre classification with confidence scoring"""
+    try:
+        genre_scores = calculate_genre_scores(title, summary)
+        
+        if not genre_scores:
+            logging.warning(f"No genre scores calculated for: {title[:50]}...")
+            return "General"
+        
+        # Sort genres by score (highest first)
+        sorted_genres = sorted(genre_scores.items(), key=lambda x: x[1], reverse=True)
+        
+        if not sorted_genres:
+            logging.warning(f"No sorted genres for: {title[:50]}...")
+            return "General"
+        
+        top_genre, top_score = sorted_genres[0]
+        
+        # Apply confidence threshold
+        if top_score >= confidence_threshold:
+            result_genre = top_genre
+        else:
+            result_genre = "General"
+        
+        # Enhanced logging with top 3 scores
+        score_summary = ", ".join([f"{genre}: {score:.1f}" for genre, score in sorted_genres[:3] if score > 0])
+        logging.info(f"Enhanced Classification: \"{title[:50]}...\" -> {result_genre} (scores: {score_summary})")
+        
+        return result_genre
+    except Exception as e:
+        logging.error(f"Error in classify_genre: {e} - Title: {title[:50]}...")
+        return "General"
+
+def get_genre_confidence(title: str, summary: str) -> Tuple[str, float, Dict[str, float]]:
+    """Get genre classification with confidence score and all genre probabilities"""
+    genre_scores = calculate_genre_scores(title, summary)
+    
+    total_score = sum(genre_scores.values())
+    if total_score == 0:
+        return "General", 0.0, genre_scores
+    
+    # Convert to probabilities
+    genre_probabilities = {genre: score/total_score for genre, score in genre_scores.items()}
+    
+    # Get top genre and its confidence
+    top_genre = max(genre_scores.items(), key=lambda x: x[1])[0]
+    confidence = genre_probabilities[top_genre]
+    
+    return top_genre, confidence, genre_probabilities
 
 async def summarize_articles_with_openai(articles_content: List[str]) -> str:
     try:
@@ -833,6 +972,45 @@ async def get_user_insights(current_user: User = Depends(get_current_user)):
         }
     except Exception as e:
         logging.error(f"Error getting user insights: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/test-classification", tags=["Testing"])
+async def test_genre_classification(
+    title: str,
+    summary: str,
+    current_user: User = Depends(get_current_user)
+):
+    """Test the enhanced genre classification system"""
+    try:
+        # Get detailed classification results
+        primary_genre, confidence, all_probabilities = get_genre_confidence(title, summary)
+        genre_scores = calculate_genre_scores(title, summary)
+        
+        # Sort for display
+        sorted_scores = sorted(genre_scores.items(), key=lambda x: x[1], reverse=True)
+        sorted_probabilities = sorted(all_probabilities.items(), key=lambda x: x[1], reverse=True)
+        
+        return {
+            "input": {
+                "title": title,
+                "summary": summary
+            },
+            "classification": {
+                "primary_genre": primary_genre,
+                "confidence": round(confidence, 3),
+                "final_genre": classify_genre(title, summary)  # Apply threshold
+            },
+            "detailed_scores": [
+                {"genre": genre, "score": round(score, 2)} 
+                for genre, score in sorted_scores if score > 0
+            ],
+            "probabilities": [
+                {"genre": genre, "probability": round(prob * 100, 1)} 
+                for genre, prob in sorted_probabilities if prob > 0
+            ]
+        }
+    except Exception as e:
+        logging.error(f"Error testing classification: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/auto-pick/create-audio", response_model=AudioCreation, tags=["Auto-Pick"])

@@ -6,10 +6,12 @@ import {
   TouchableOpacity,
   Image,
   Animated,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAudio } from '../context/AudioContext';
 import { format } from 'date-fns';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function MiniPlayer() {
   const {
@@ -25,6 +27,8 @@ export default function MiniPlayer() {
     showMiniPlayer,
     recordInteraction,
   } = useAudio();
+  
+  const insets = useSafeAreaInsets();
   
   const handleOpenFullScreen = () => {
     recordInteraction('full_screen_opened');
@@ -45,25 +49,13 @@ export default function MiniPlayer() {
   const progressPercentage = duration > 0 ? (position / duration) * 100 : 0;
 
   return (
-    <TouchableOpacity
-      style={styles.container}
-      onPress={handleOpenFullScreen}
-      activeOpacity={0.8}
-    >
-      {/* Progress Bar */}
-      <View style={styles.progressBarContainer}>
-        <View style={styles.progressBar}>
-          <View 
-            style={[
-              styles.progressFill,
-              { width: `${progressPercentage}%` }
-            ]}
-          />
-        </View>
-      </View>
-
+    <View style={[styles.container, { bottom: 49 + insets.bottom }]}>
       {/* Main Content */}
-      <View style={styles.content}>
+      <TouchableOpacity
+        style={styles.content}
+        onPress={handleOpenFullScreen}
+        activeOpacity={0.8}
+      >
         {/* Album Art Placeholder */}
         <View style={styles.albumArt}>
           <Ionicons name="musical-notes" size={24} color="#9ca3af" />
@@ -104,8 +96,20 @@ export default function MiniPlayer() {
             <Ionicons name="close" size={20} color="#6b7280" />
           </TouchableOpacity>
         </View>
+      </TouchableOpacity>
+      
+      {/* Progress Bar at Bottom */}
+      <View style={styles.progressBarContainer}>
+        <View style={styles.progressBar}>
+          <View 
+            style={[
+              styles.progressFill,
+              { width: `${progressPercentage}%` }
+            ]}
+          />
+        </View>
       </View>
-    </TouchableOpacity>
+    </View>
   );
 }
 
@@ -122,9 +126,17 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 8,
     elevation: 10,
+    position: 'absolute',
+    left: 0,
+    right: 0,
+  },
+  content: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
   },
   progressBarContainer: {
-    height: 3,
+    height: 4,
     backgroundColor: '#f3f4f6',
   },
   progressBar: {
@@ -134,11 +146,6 @@ const styles = StyleSheet.create({
   progressFill: {
     height: '100%',
     backgroundColor: '#4f46e5',
-  },
-  content: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 12,
   },
   albumArt: {
     width: 48,
