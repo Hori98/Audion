@@ -8,9 +8,11 @@ interface AuthContextData {
   user: any; // Replace 'any' with a proper user type later
   token: string | null;
   loading: boolean;
+  isNewUser: boolean;
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   register: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
+  setIsNewUser: (value: boolean) => void;
 }
 
 const AuthContext = createContext<AuthContextData>({} as AuthContextData);
@@ -25,9 +27,28 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<any>(null);
   const [token, setToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isNewUser, setIsNewUser] = useState(false);
 
   const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:8000';
   const API = `${BACKEND_URL}/api`;
+
+  // Check if user has RSS sources to determine if they're new
+  const checkUserOnboardStatus = async (userToken: string) => {
+    try {
+      const response = await axios.get(`${API}/rss-sources`, {
+        headers: { Authorization: `Bearer ${userToken}` }
+      });
+      // If user has RSS sources, they're not new
+      if (response.data.length > 0) {
+        setIsNewUser(false);
+      } else {
+        setIsNewUser(true);
+      }
+    } catch (error) {
+      console.log('Could not check user onboard status:', error);
+      setIsNewUser(false); // Default to existing user if check fails
+    }
+  };
 
   useEffect(() => {
     const loadAuthData = async () => {
@@ -39,6 +60,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           // TODO: Fetch user profile from backend to verify token and get user data
           // For now, we'll set a placeholder user
           setUser({ placeholder: true });
+          
+          // Check if user needs onboarding
+          await checkUserOnboardStatus(storedToken);
         }
       } catch (e) {
         console.error("Failed to load auth data", e);
@@ -58,6 +82,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       setUser(user);
       axios.defaults.headers.common['Authorization'] = `Bearer ${access_token}`;
       await AsyncStorage.setItem('token', access_token);
+      
+      // Check if existing user needs onboarding
+      await checkUserOnboardStatus(access_token);
+      
       return { success: true };
     } catch (error: any) {
       return { success: false, error: error.response?.data?.detail || 'Login failed' };
@@ -70,6 +98,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       const { access_token, user } = response.data;
       setToken(access_token);
       setUser(user);
+      setIsNewUser(true); // Mark as new user for onboarding
       axios.defaults.headers.common['Authorization'] = `Bearer ${access_token}`;
       await AsyncStorage.setItem('token', access_token);
       return { success: true };
@@ -81,6 +110,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const logout = async () => {
     setToken(null);
     setUser(null);
+    setIsNewUser(false);
     delete axios.defaults.headers.common['Authorization'];
     await AsyncStorage.removeItem('token');
   };
@@ -89,9 +119,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     user,
     token,
     loading,
+    isNewUser,
     login,
     register,
     logout,
+    setIsNewUser,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

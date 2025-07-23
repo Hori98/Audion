@@ -10,6 +10,11 @@ interface AudioItem {
   duration: number; // in seconds
   created_at: string;
   script?: string;
+  chapters?: Array<{
+    title: string;
+    start_time: number;
+    end_time: number;
+  }>;
 }
 
 interface AudioContextType {
@@ -20,6 +25,7 @@ interface AudioContextType {
   position: number; // in milliseconds
   duration: number; // in milliseconds
   sound: Audio.Sound | null;
+  playbackRate: number; // Playback speed (0.7, 1.0, 1.3, 1.5)
   
   // UI state
   showMiniPlayer: boolean;
@@ -31,6 +37,7 @@ interface AudioContextType {
   resumeAudio: () => Promise<void>;
   stopAudio: () => Promise<void>;
   seekTo: (position: number) => Promise<void>;
+  setPlaybackRate: (rate: number) => Promise<void>;
   setShowFullScreenPlayer: (show: boolean) => void;
   
   // Analytics
@@ -46,6 +53,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   const [position, setPosition] = useState(0);
   const [duration, setDuration] = useState(0);
   const [sound, setSound] = useState<Audio.Sound | null>(null);
+  const [playbackRate, setPlaybackRateState] = useState(1.0);
   const [showMiniPlayer, setShowMiniPlayer] = useState(false);
   const [showFullScreenPlayer, setShowFullScreenPlayer] = useState(false);
   const [playStartTime, setPlayStartTime] = useState<number | null>(null);
@@ -174,6 +182,16 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const setPlaybackRate = async (rate: number) => {
+    if (sound) {
+      await sound.setRateAsync(rate, true); // pitchCorrectionQuality = true
+      setPlaybackRateState(rate);
+      
+      // Record playback rate change interaction
+      await recordInteraction('playback_rate_changed', { rate });
+    }
+  };
+
   const recordInteraction = async (interactionType: string, metadata: any = {}) => {
     if (!currentAudio) return;
 
@@ -231,6 +249,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     position,
     duration,
     sound,
+    playbackRate,
     showMiniPlayer,
     showFullScreenPlayer,
     playAudio,
@@ -238,6 +257,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     resumeAudio,
     stopAudio,
     seekTo,
+    setPlaybackRate,
     setShowFullScreenPlayer,
     recordInteraction,
   };

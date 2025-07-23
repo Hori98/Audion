@@ -1,18 +1,24 @@
 import { Tabs } from 'expo-router';
-import { Home, Rss, Library, Sparkles } from 'lucide-react-native';
+import { Home, Library, Sparkles, Settings } from 'lucide-react-native';
 import { useAuth } from '../../context/AuthContext';
 import { TouchableOpacity } from 'react-native';
-import { LogOut } from 'lucide-react-native';
+import { useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 
 export default function AppLayout() {
   const { logout } = useAuth();
+  const router = useRouter();
+  
   return (
     <Tabs
       screenOptions={{
         tabBarActiveTintColor: '#4f46e5',
-        headerRight: () => (
-          <TouchableOpacity onPress={logout} style={{ marginRight: 15 }}>
-            <LogOut color="#333" size={24} />
+        headerLeft: () => (
+          <TouchableOpacity 
+            onPress={() => router.push('/settings')} 
+            style={{ marginLeft: 15 }}
+          >
+            <Ionicons name="person-circle-outline" size={28} color="#4f46e5" />
           </TouchableOpacity>
         )
       }}>
@@ -22,14 +28,6 @@ export default function AppLayout() {
           tabBarLabel: 'Feed',
           headerTitle: 'Feed',
           tabBarIcon: ({ color, size }) => <Home color={color} size={size} />,
-        }}
-      />
-      <Tabs.Screen
-        name="sources"
-        options={{
-          tabBarLabel: 'Sources',
-          headerTitle: 'Sources',
-          tabBarIcon: ({ color, size }) => <Rss color={color} size={size} />,
         }}
       />
       <Tabs.Screen

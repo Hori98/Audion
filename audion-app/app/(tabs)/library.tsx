@@ -51,13 +51,18 @@ export default function LibraryScreen() {
   const { playAudio } = useAudio();
   
   // Current view state
-  const [currentView, setCurrentView] = useState<'playlists' | 'albums' | 'downloads'>('playlists');
+  const [currentView, setCurrentView] = useState<'playlists' | 'albums' | 'mylist'>('playlists');
   
   // Data states
   const [audioItems, setAudioItems] = useState<AudioItem[]>([]);
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
   const [albums, setAlbums] = useState<Album[]>([]);
   const [downloads, setDownloads] = useState<DownloadItem[]>([]);
+  const [mylistAudioItems, setMylistAudioItems] = useState<AudioItem[]>([]);
+  const [downloadedAudioIds, setDownloadedAudioIds] = useState<Set<string>>(new Set());
+  
+  // Mylist filter state
+  const [showDownloadedOnly, setShowDownloadedOnly] = useState(false);
   
   // UI states
   const [loading, setLoading] = useState(true);
@@ -85,6 +90,7 @@ export default function LibraryScreen() {
         // Reset editing state when leaving screen
         setIsEditing(false);
         setSelectedAudioIds([]);
+        setShowDownloadedOnly(false);
       };
     }, [token, currentView])
   );
@@ -105,11 +111,22 @@ export default function LibraryScreen() {
           });
           setAlbums(albumsResponse.data);
           break;
-        case 'downloads':
+        case 'mylist':
+          // Fetch all audio items
+          const audioResponse = await axios.get(`${API}/audio/library`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          setMylistAudioItems(audioResponse.data);
+          
+          // Fetch downloads to identify downloaded items
           const downloadsResponse = await axios.get(`${API}/downloads`, {
             headers: { Authorization: `Bearer ${token}` },
           });
           setDownloads(downloadsResponse.data);
+          
+          // Create set of downloaded audio IDs for quick lookup
+          const downloadedIds = new Set(downloadsResponse.data.map((item: DownloadItem) => item.audio_data.id));
+          setDownloadedAudioIds(downloadedIds);
           break;
       }
     } catch (error: any) {
@@ -245,6 +262,44 @@ export default function LibraryScreen() {
     }
   };
 
+  const handleDownloadAudio = async (audioId: string) => {
+    try {
+      await axios.post(`${API}/downloads/${audioId}`, {}, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      // Update downloaded audio IDs
+      setDownloadedAudioIds(prev => new Set([...prev, audioId]));
+      Alert.alert('Success', 'Audio downloaded successfully');
+    } catch (error: any) {
+      console.error('Error downloading audio:', error);
+      if (error.response?.status === 400 && error.response?.data?.detail?.includes('already downloaded')) {
+        Alert.alert('Info', 'Audio is already downloaded');
+      } else {
+        Alert.alert('Error', error.response?.data?.detail || 'Failed to download audio');
+      }
+    }
+  };
+
+  const handleRemoveDownload = async (audioId: string) => {
+    try {
+      await axios.delete(`${API}/downloads/${audioId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      // Update downloaded audio IDs
+      setDownloadedAudioIds(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(audioId);
+        return newSet;
+      });
+      Alert.alert('Success', 'Download removed successfully');
+    } catch (error: any) {
+      console.error('Error removing download:', error);
+      Alert.alert('Error', error.response?.data?.detail || 'Failed to remove download');
+    }
+  };
+
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
@@ -258,15 +313,17 @@ export default function LibraryScreen() {
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.title}>Library</Text>
-        <TouchableOpacity onPress={() => {
-          if (currentView === 'playlists') {
-            setCreatePlaylistModalVisible(true);
-          } else if (currentView === 'albums') {
-            setCreateAlbumModalVisible(true);
-          }
-        }}>
-          <Ionicons name="add" size={24} color="#4f46e5" />
-        </TouchableOpacity>
+        {currentView !== 'mylist' && (
+          <TouchableOpacity onPress={() => {
+            if (currentView === 'playlists') {
+              setCreatePlaylistModalVisible(true);
+            } else if (currentView === 'albums') {
+              setCreateAlbumModalVisible(true);
+            }
+          }}>
+            <Ionicons name="add" size={24} color="#4f46e5" />
+          </TouchableOpacity>
+        )}
       </View>
 
       {/* Category Selection Bar */}
@@ -295,11 +352,11 @@ export default function LibraryScreen() {
         </TouchableOpacity>
         
         <TouchableOpacity
-          style={[styles.categoryButton, currentView === 'downloads' && styles.categoryButtonActive]}
-          onPress={() => setCurrentView('downloads')}
+          style={[styles.categoryButton, currentView === 'mylist' && styles.categoryButtonActive]}
+          onPress={() => setCurrentView('mylist')}
         >
-          <Text style={[styles.categoryButtonText, currentView === 'downloads' && styles.categoryButtonTextActive]}>
-            Downloaded
+          <Text style={[styles.categoryButtonText, currentView === 'mylist' && styles.categoryButtonTextActive]}>
+            My List
           </Text>
         </TouchableOpacity>
       </ScrollView>
@@ -364,33 +421,90 @@ export default function LibraryScreen() {
               </>
             )}
 
-            {/* Downloads View */}
-            {currentView === 'downloads' && (
+            {/* My List View */}
+            {currentView === 'mylist' && (
               <>
-                {downloads.length === 0 ? (
-                  <Text style={styles.emptyText}>No downloaded audio yet.</Text>
-                ) : (
-                  downloads.map((download) => (
-                    <TouchableOpacity key={download.audio_data.id} style={styles.listItem}>
-                      <View style={styles.itemIcon}>
-                        <Ionicons name="download" size={24} color="#10b981" />
+                {/* Filter Toggle */}
+                <View style={styles.filterContainer}>
+                  <TouchableOpacity
+                    style={[styles.filterButton, !showDownloadedOnly && styles.filterButtonActive]}
+                    onPress={() => setShowDownloadedOnly(false)}
+                  >
+                    <Text style={[styles.filterButtonText, !showDownloadedOnly && styles.filterButtonTextActive]}>
+                      All ({mylistAudioItems.length})
+                    </Text>
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity
+                    style={[styles.filterButton, showDownloadedOnly && styles.filterButtonActive]}
+                    onPress={() => setShowDownloadedOnly(true)}
+                  >
+                    <Text style={[styles.filterButtonText, showDownloadedOnly && styles.filterButtonTextActive]}>
+                      Downloaded ({downloadedAudioIds.size})
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
+                {/* Audio List */}
+                {(() => {
+                  const filteredAudio = showDownloadedOnly 
+                    ? mylistAudioItems.filter(audio => downloadedAudioIds.has(audio.id))
+                    : mylistAudioItems;
+                  
+                  return filteredAudio.length === 0 ? (
+                    <Text style={styles.emptyText}>
+                      {showDownloadedOnly ? 'No downloaded audio yet.' : 'No audio created yet.'}
+                    </Text>
+                  ) : (
+                    filteredAudio.map((audio) => (
+                      <View key={audio.id} style={styles.audioCard}>
+                        <View style={styles.audioCardLeft}>
+                          <View style={styles.itemIcon}>
+                            <Ionicons 
+                              name={downloadedAudioIds.has(audio.id) ? "download" : "musical-notes"} 
+                              size={24} 
+                              color={downloadedAudioIds.has(audio.id) ? "#10b981" : "#4f46e5"} 
+                            />
+                          </View>
+                          <View style={styles.itemInfo}>
+                            <Text style={styles.itemTitle}>{audio.title}</Text>
+                            <Text style={styles.itemSubtitle}>
+                              {format(new Date(audio.created_at), 'MMM dd, yyyy')} · {formatDuration(audio.duration)}
+                              {downloadedAudioIds.has(audio.id) && ' · Downloaded'}
+                            </Text>
+                          </View>
+                        </View>
+                        
+                        <View style={styles.audioCardActions}>
+                          {/* Play Button */}
+                          <TouchableOpacity 
+                            style={styles.playButton}
+                            onPress={() => handlePlayAudio(audio)}
+                          >
+                            <Ionicons name="play" size={16} color="#fff" />
+                          </TouchableOpacity>
+                          
+                          {/* Download/Remove Button */}
+                          {downloadedAudioIds.has(audio.id) ? (
+                            <TouchableOpacity 
+                              style={styles.downloadedButton}
+                              onPress={() => handleRemoveDownload(audio.id)}
+                            >
+                              <Ionicons name="checkmark-circle" size={20} color="#10b981" />
+                            </TouchableOpacity>
+                          ) : (
+                            <TouchableOpacity 
+                              style={styles.downloadButton}
+                              onPress={() => handleDownloadAudio(audio.id)}
+                            >
+                              <Ionicons name="download-outline" size={20} color="#6b7280" />
+                            </TouchableOpacity>
+                          )}
+                        </View>
                       </View>
-                      <View style={styles.itemInfo}>
-                        <Text style={styles.itemTitle}>{download.audio_data.title}</Text>
-                        <Text style={styles.itemSubtitle}>
-                          Downloaded {format(new Date(download.download_info.downloaded_at), 'MMM dd, yyyy')} · 
-                          {download.download_info.auto_downloaded ? ' Auto' : ' Manual'}
-                        </Text>
-                      </View>
-                      <TouchableOpacity 
-                        style={styles.playButton}
-                        onPress={() => handlePlayAudio(download.audio_data)}
-                      >
-                        <Ionicons name="play" size={20} color="#fff" />
-                      </TouchableOpacity>
-                    </TouchableOpacity>
-                  ))
-                )}
+                    ))
+                  );
+                })()}
               </>
             )}
           </>
@@ -682,5 +796,70 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#ffffff',
+  },
+  // Mylist specific styles
+  filterContainer: {
+    flexDirection: 'row',
+    marginBottom: 20,
+    backgroundColor: '#f3f4f6',
+    borderRadius: 8,
+    padding: 4,
+  },
+  filterButton: {
+    flex: 1,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+    alignItems: 'center',
+  },
+  filterButtonActive: {
+    backgroundColor: '#ffffff',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  filterButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#6b7280',
+  },
+  filterButtonTextActive: {
+    color: '#1f2937',
+  },
+  audioCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  audioCardLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  audioCardActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  downloadButton: {
+    padding: 8,
+    borderRadius: 20,
+    backgroundColor: '#f3f4f6',
+  },
+  downloadedButton: {
+    padding: 8,
+    borderRadius: 20,
+    backgroundColor: '#f0fdf4',
   },
 });

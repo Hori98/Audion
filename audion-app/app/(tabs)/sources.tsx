@@ -32,7 +32,7 @@ export default function SourcesScreen() {
   const fetchSources = async () => {
     setLoading(true);
     try {
-      const response = await axios.get(`${API}/sources`, {
+      const response = await axios.get(`${API}/rss-sources`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       setSources(response.data);
@@ -52,7 +52,7 @@ export default function SourcesScreen() {
     setAddingSource(true);
     try {
       const response = await axios.post(
-        `${API}/sources`,
+        `${API}/rss-sources`,
         { name: newSourceName, url: newSourceUrl },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -72,9 +72,9 @@ export default function SourcesScreen() {
     console.log('handleDeleteSource called for ID:', sourceId); // Added this line
     // Temporarily bypass Alert.alert for debugging
     try {
-      console.log('Attempting DELETE request to:', `${API}/sources/${sourceId}`); // Added log
+      console.log('Attempting DELETE request to:', `${API}/rss-sources/${sourceId}`); // Added log
       console.log('Auth Token (first 10 chars):', token ? token.substring(0, 10) + '...' : 'No token'); // Added log for token
-      await axios.delete(`${API}/sources/${sourceId}`, {
+      await axios.delete(`${API}/rss-sources/${sourceId}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       setSources(sources.filter((source) => source.id !== sourceId));

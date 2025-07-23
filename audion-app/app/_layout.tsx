@@ -8,7 +8,7 @@ import MiniPlayer from '../components/MiniPlayer';
 import FullScreenPlayer from '../components/FullScreenPlayer';
 
 const InitialLayout = () => {
-  const { user, loading } = useAuth();
+  const { user, loading, isNewUser } = useAuth();
   const segments = useSegments();
   const router = useRouter();
 
@@ -16,13 +16,19 @@ const InitialLayout = () => {
     if (loading) return;
 
     const inTabsGroup = segments[0] === '(tabs)';
+    const inOnboard = segments[0] === 'onboard';
 
-    if (user && !inTabsGroup) {
+    if (user && isNewUser && !inOnboard) {
+      // New user should go to onboarding
+      router.replace('/onboard');
+    } else if (user && !isNewUser && !inTabsGroup) {
+      // Existing user should go to main app
       router.replace('/(tabs)/feed');
-    } else if (!user && inTabsGroup) {
+    } else if (!user && (inTabsGroup || inOnboard)) {
+      // Not logged in should go to login
       router.replace('/');
     }
-  }, [user, loading, segments, router]);
+  }, [user, loading, isNewUser, segments, router]);
 
   if (loading) {
     return (

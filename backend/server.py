@@ -4,6 +4,7 @@ from fastapi.responses import FileResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
+from contextlib import asynccontextmanager
 import os
 import logging
 from pathlib import Path
@@ -34,12 +35,9 @@ CACHE_EXPIRY_SECONDS = 300  # Cache for 5 minutes
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-# MongoDB connection
-mongo_url = os.environ['MONGO_URL']
-client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ['DB_NAME']]
-
-# API Keys
+# MongoDB and API configuration
+MONGO_URL = os.environ['MONGO_URL']
+DB_NAME = os.environ['DB_NAME']
 OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY')
 
 # AWS S3 Configuration
@@ -48,8 +46,29 @@ AWS_SECRET_ACCESS_KEY = os.environ.get('AWS_SECRET_ACCESS_KEY')
 AWS_REGION = os.environ.get('AWS_REGION', 'us-east-1')
 S3_BUCKET_NAME = os.environ.get('S3_BUCKET_NAME', 'audion-audio-files')
 
+# Global database connection variable
+db = None
+
+# Lifespan event handler
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    global db
+    client = AsyncIOMotorClient(MONGO_URL)
+    db = client[DB_NAME]
+    logging.info("Connected to MongoDB")
+    
+    # Initialize preset categories on startup
+    await initialize_preset_categories()
+    
+    yield
+    
+    # Shutdown
+    client.close()
+    logging.info("Disconnected from MongoDB")
+
 # Create the main app
-app = FastAPI()
+app = FastAPI(lifespan=lifespan)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -126,6 +145,7 @@ class AudioCreation(BaseModel):
     audio_url: str
     duration: int
     script: Optional[str] = None
+    chapters: Optional[List[dict]] = None  # [{"title": "Article Title", "start_time": 0, "end_time": 30000}]
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 class AudioCreationRequest(BaseModel):
@@ -135,6 +155,15 @@ class AudioCreationRequest(BaseModel):
 
 class RenameRequest(BaseModel):
     new_title: str
+
+class MisreadingFeedback(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    user_id: str
+    audio_id: str
+    timestamp: int  # Position in milliseconds where misreading occurred
+    reported_text: Optional[str] = None  # What the user heard
+    expected_text: Optional[str] = None  # What should have been said
+    created_at: datetime = Field(default_factory=datetime.utcnow)
 
 class UserProfile(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -230,6 +259,22 @@ class DownloadedAudio(BaseModel):
     file_size: Optional[int] = None
     download_quality: str = "standard"  # standard, high
     auto_downloaded: bool = True  # True if auto-downloaded on creation
+
+# Onboard Preset Models
+class PresetCategory(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    name: str
+    display_name: str
+    description: str
+    icon: str
+    color: str
+    rss_sources: List[Dict[str, str]]  # [{"name": "TechCrunch", "url": "https://..."}]
+    sample_audio_url: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+class OnboardRequest(BaseModel):
+    selected_categories: List[str]  # category names
+    user_preferences: Optional[Dict] = None
 
 # AI Helper Functions
 # Enhanced Genre Classification System with weighted keywords
@@ -657,14 +702,14 @@ def calculate_contextual_relevance(article: Article, user_profile: UserProfile) 
     if 6 <= current_hour <= 10:
         if article.genre in ['news', 'business', 'politics']:
             time_bonus = 0.2
-        elif len(article.title + (article.description or '')) < 200:  # Shorter articles
+        elif len(article.title + (article.summary or '')) < 200:  # Shorter articles
             time_bonus = 0.1
     
     # Evening (18-22): Prefer deeper, analytical content
     elif 18 <= current_hour <= 22:
         if article.genre in ['technology', 'science', 'culture', 'analysis']:
             time_bonus = 0.2
-        elif len(article.title + (article.description or '')) > 300:  # Longer articles
+        elif len(article.title + (article.summary or '')) > 300:  # Longer articles
             time_bonus = 0.1
     
     # Night (22-24, 0-6): Prefer lighter, entertainment content
@@ -792,18 +837,18 @@ async def login(user_data: UserLogin):
     user_obj = User(**user)
     return {"access_token": user_obj.id, "token_type": "bearer", "user": user_obj}
 
-@app.get("/api/sources", response_model=List[RSSSource], tags=["RSS"])
+@app.get("/api/rss-sources", response_model=List[RSSSource], tags=["RSS"])
 async def get_user_sources(current_user: User = Depends(get_current_user)):
     sources = await db.rss_sources.find({"user_id": current_user.id}).to_list(100)
     return [RSSSource(**source) for source in sources]
 
-@app.post("/api/sources", response_model=RSSSource, tags=["RSS"])
+@app.post("/api/rss-sources", response_model=RSSSource, tags=["RSS"])
 async def add_rss_source(source_data: RSSSourceCreate, current_user: User = Depends(get_current_user)):
     source = RSSSource(user_id=current_user.id, **source_data.dict())
     await db.rss_sources.insert_one(source.dict())
     return source
 
-@app.delete("/api/sources/{source_id}", tags=["RSS"])
+@app.delete("/api/rss-sources/{source_id}", tags=["RSS"])
 async def delete_rss_source(source_id: str, current_user: User = Depends(get_current_user)):
     result = await db.rss_sources.delete_one({"id": source_id, "user_id": current_user.id})
     if result.deleted_count == 0: 
@@ -873,6 +918,19 @@ async def create_audio(request: AudioCreationRequest, current_user: User = Depen
 
         title = request.custom_title or generated_title
         
+        # Generate chapters based on article count and duration
+        chapters = []
+        if len(request.article_titles) > 1:
+            chapter_duration = duration // len(request.article_titles)
+            for i, article_title in enumerate(request.article_titles):
+                start_time = i * chapter_duration
+                end_time = (i + 1) * chapter_duration if i < len(request.article_titles) - 1 else duration
+                chapters.append({
+                    "title": article_title,
+                    "start_time": start_time,
+                    "end_time": end_time
+                })
+        
         audio_creation = AudioCreation(
             user_id=current_user.id, 
             title=title, 
@@ -880,7 +938,8 @@ async def create_audio(request: AudioCreationRequest, current_user: User = Depen
             article_titles=request.article_titles, 
             audio_url=audio_url,
             duration=duration,
-            script=script
+            script=script,
+            chapters=chapters
         )
         logging.info(f"Saving AudioCreation to DB with audio_url: {audio_creation.audio_url}")
         
@@ -926,8 +985,12 @@ async def rename_audio(audio_id: str, request: RenameRequest, current_user: User
 async def get_auto_picked_articles(request: AutoPickRequest, current_user: User = Depends(get_current_user)):
     """Get auto-picked articles based on user preferences"""
     try:
+        logging.info(f"Auto-pick request from user: {current_user.id}")
+        
         # Get user's RSS sources first
         sources = await db.rss_sources.find({"user_id": current_user.id}).to_list(100)
+        logging.info(f"Found {len(sources)} RSS sources for user {current_user.id}")
+        
         if not sources:
             raise HTTPException(status_code=404, detail="No RSS sources found. Please add some sources first.")
         
@@ -976,8 +1039,10 @@ async def get_auto_picked_articles(request: AutoPickRequest, current_user: User 
         return picked_articles
         
     except Exception as e:
+        import traceback
         logging.error(f"Auto-pick error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logging.error(f"Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Auto-pick failed: {str(e)}")
 
 @app.get("/api/user-profile", response_model=UserProfile, tags=["Auto-Pick"])
 async def get_user_profile(current_user: User = Depends(get_current_user)):
@@ -1217,7 +1282,81 @@ async def create_auto_picked_audio(request: AutoPickRequest, current_user: User 
         logging.error(f"Auto-pick create audio error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.on_event("startup")
+async def initialize_preset_categories():
+    """Initialize preset categories if they don't exist"""
+    existing_count = await db.preset_categories.count_documents({})
+    if existing_count > 0:
+        return
+    
+    preset_categories = [
+        {
+            "name": "technology",
+            "display_name": "Technology",
+            "description": "Latest tech news, AI, startups, and innovation",
+            "icon": "laptop-outline",
+            "color": "#3B82F6",
+            "rss_sources": [
+                {"name": "TechCrunch", "url": "https://techcrunch.com/feed/"},
+                {"name": "The Verge", "url": "https://www.theverge.com/rss/index.xml"},
+                {"name": "Wired", "url": "https://www.wired.com/feed/rss"}
+            ]
+        },
+        {
+            "name": "business",
+            "display_name": "Business",
+            "description": "Market news, finance, economics, and business insights",
+            "icon": "trending-up-outline",
+            "color": "#10B981",
+            "rss_sources": [
+                {"name": "Reuters Business", "url": "https://feeds.reuters.com/reuters/businessNews"},
+                {"name": "Bloomberg", "url": "https://feeds.bloomberg.com/markets/news.rss"},
+                {"name": "Fortune", "url": "https://fortune.com/feed/"}
+            ]
+        },
+        {
+            "name": "global",
+            "display_name": "Global News",
+            "description": "International news, politics, and world events",
+            "icon": "earth-outline",
+            "color": "#8B5CF6",
+            "rss_sources": [
+                {"name": "BBC World", "url": "http://feeds.bbci.co.uk/news/world/rss.xml"},
+                {"name": "CNN International", "url": "http://rss.cnn.com/rss/edition.rss"},
+                {"name": "Reuters World", "url": "https://feeds.reuters.com/Reuters/worldNews"}
+            ]
+        },
+        {
+            "name": "science",
+            "display_name": "Science",
+            "description": "Scientific discoveries, research, and innovation",
+            "icon": "flask-outline",
+            "color": "#F59E0B",
+            "rss_sources": [
+                {"name": "Science Daily", "url": "https://www.sciencedaily.com/rss/all.xml"},
+                {"name": "Nature News", "url": "https://www.nature.com/nature.rss"},
+                {"name": "Scientific American", "url": "https://rss.sciam.com/ScientificAmerican-Global"}
+            ]
+        },
+        {
+            "name": "entertainment",
+            "display_name": "Entertainment",
+            "description": "Movies, music, TV, celebrities, and pop culture",
+            "icon": "film-outline",
+            "color": "#EF4444",
+            "rss_sources": [
+                {"name": "Entertainment Weekly", "url": "https://ew.com/feed/"},
+                {"name": "Variety", "url": "https://variety.com/feed/"},
+                {"name": "The Hollywood Reporter", "url": "https://www.hollywoodreporter.com/feed/"}
+            ]
+        }
+    ]
+    
+    for category_data in preset_categories:
+        category = PresetCategory(**category_data)
+        await db.preset_categories.insert_one(category.dict())
+    
+    logging.info(f"Initialized {len(preset_categories)} preset categories")
+
 async def startup_event():
     logging.info("--- SERVER STARTUP ---")
     await db.users.create_index("email", unique=True)
@@ -1225,9 +1364,25 @@ async def startup_event():
     await db.audio_creations.create_index([("user_id", 1), ("created_at", -1)])
     await db.user_profiles.create_index("user_id", unique=True)
     await db.user_profiles.create_index([("user_id", 1), ("updated_at", -1)])
+    await db.preset_categories.create_index("name", unique=True)
     logging.info("Database indexes created.")
+    
+    # Initialize preset categories
+    await initialize_preset_categories()
+    
     if not OPENAI_API_KEY: 
         logging.warning("OpenAI API key not found")
+
+async def shutdown_event():
+    client.close()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    await startup_event()
+    yield
+    # Shutdown
+    await shutdown_event()
 
 # ==================== PLAYLIST ENDPOINTS ====================
 @app.get("/api/playlists", response_model=List[Playlist], tags=["Playlists"])
@@ -1499,9 +1654,153 @@ async def remove_download(audio_id: str, current_user: User = Depends(get_curren
         raise HTTPException(status_code=404, detail="Downloaded audio not found")
     return {"message": "Download removed"}
 
-@app.on_event("shutdown")
-async def shutdown_db_client():
-    client.close()
+@app.post("/api/feedback/misreading", tags=["Feedback"])
+async def report_misreading(
+    audio_id: str,
+    timestamp: int,
+    reported_text: Optional[str] = None,
+    current_user: User = Depends(get_current_user)
+):
+    """Report a misreading at specific timestamp in audio"""
+    # Verify audio exists and belongs to user
+    audio = await db.audio_creations.find_one({"id": audio_id, "user_id": current_user.id})
+    if not audio:
+        raise HTTPException(status_code=404, detail="Audio not found")
+    
+    feedback = MisreadingFeedback(
+        user_id=current_user.id,
+        audio_id=audio_id,
+        timestamp=timestamp,
+        reported_text=reported_text
+    )
+    
+    await db.misreading_feedback.insert_one(feedback.dict())
+    return {"message": "Feedback recorded successfully"}
+
+# ==================== ONBOARD PRESET ENDPOINTS ====================
+@app.get("/api/onboard/categories", response_model=List[PresetCategory], tags=["Onboard"])
+async def get_preset_categories():
+    """Get all available preset categories for onboarding"""
+    categories = await db.preset_categories.find({}).to_list(100)
+    return [PresetCategory(**category) for category in categories]
+
+@app.post("/api/onboard/setup", tags=["Onboard"])
+async def setup_user_onboard(request: OnboardRequest, current_user: User = Depends(get_current_user)):
+    """Setup user account with selected preset categories"""
+    try:
+        # Get selected categories
+        categories = await db.preset_categories.find({
+            "name": {"$in": request.selected_categories}
+        }).to_list(100)
+        
+        if not categories:
+            raise HTTPException(status_code=400, detail="No valid categories selected")
+        
+        # Add RSS sources for each selected category
+        added_sources = []
+        for category in categories:
+            for rss_source in category["rss_sources"]:
+                try:
+                    source = RSSSource(
+                        user_id=current_user.id,
+                        name=rss_source["name"],
+                        url=rss_source["url"]
+                    )
+                    await db.rss_sources.insert_one(source.dict())
+                    added_sources.append(rss_source["name"])
+                except Exception as e:
+                    # Skip if source already exists or other error
+                    logging.warning(f"Failed to add RSS source {rss_source['name']}: {e}")
+                    continue
+        
+        # Initialize or update user profile with selected preferences
+        try:
+            # Check if profile already exists
+            existing_profile = await db.user_profiles.find_one({"user_id": current_user.id})
+            
+            if existing_profile:
+                # Update existing profile
+                await db.user_profiles.update_one(
+                    {"user_id": current_user.id},
+                    {"$set": {
+                        "genre_preferences": {category["name"]: 1.5 for category in categories},
+                        "updated_at": datetime.utcnow()
+                    }}
+                )
+                logging.info(f"Updated existing user profile for user {current_user.id}")
+            else:
+                # Create new profile
+                user_profile = UserProfile(
+                    user_id=current_user.id,
+                    genre_preferences={category["name"]: 1.5 for category in categories}
+                )
+                await db.user_profiles.insert_one(user_profile.dict())
+                logging.info(f"Created new user profile for user {current_user.id}")
+        except Exception as e:
+            logging.error(f"User profile setup failed: {e}")
+        
+        # Create welcome sample audio (optional)
+        welcome_audio = None
+        try:
+            # Create a sample audio from the first category
+            if categories:
+                sample_articles = []
+                first_category = categories[0]
+                
+                # Fetch some articles from the first RSS source
+                first_rss = first_category["rss_sources"][0]
+                feed = feedparser.parse(first_rss["url"])
+                
+                for entry in feed.entries[:3]:  # Take first 3 articles
+                    sample_articles.append({
+                        "title": entry.get('title', 'Sample Article'),
+                        "summary": entry.get('summary', entry.get('description', 'Sample content'))[:200]
+                    })
+                
+                if sample_articles:
+                    # Generate welcome audio
+                    articles_content = [f"Title: {article['title']}\nSummary: {article['summary']}" for article in sample_articles]
+                    script = await summarize_articles_with_openai(articles_content)
+                    generated_title = f"Welcome to {first_category['display_name']} News"
+                    
+                    audio_data = await convert_text_to_speech(script)
+                    
+                    welcome_audio = AudioCreation(
+                        user_id=current_user.id,
+                        title=generated_title,
+                        article_ids=[],
+                        article_titles=[article['title'] for article in sample_articles],
+                        audio_url=audio_data['url'],
+                        duration=audio_data['duration'],
+                        script=script
+                    )
+                    
+                    await db.audio_creations.insert_one(welcome_audio.dict())
+                    
+                    # Auto-download the welcome audio
+                    auto_download = DownloadedAudio(
+                        user_id=current_user.id,
+                        audio_id=welcome_audio.id,
+                        auto_downloaded=True
+                    )
+                    await db.downloaded_audio.insert_one(auto_download.dict())
+                    
+        except Exception as e:
+            logging.error(f"Failed to create welcome audio: {e}")
+            # Don't fail the whole onboarding process
+        
+        return {
+            "message": "Onboarding completed successfully",
+            "added_sources": added_sources,
+            "selected_categories": [cat["display_name"] for cat in categories],
+            "welcome_audio": welcome_audio.dict() if welcome_audio else None
+        }
+        
+    except Exception as e:
+        logging.error(f"Onboarding setup error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Lifespan events now handled above
 
 # Uvicorn runner for Render
 import uvicorn
