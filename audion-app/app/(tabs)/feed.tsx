@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
 import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
+import { useAudio } from '../../context/AudioContext';
 import { format } from 'date-fns';
 import { useFocusEffect } from '@react-navigation/native';
 import * as WebBrowser from 'expo-web-browser';
@@ -23,6 +24,7 @@ interface Article {
 
 export default function FeedScreen() {
   const { token } = useAuth();
+  const { showMiniPlayer } = useAudio();
   const [articles, setArticles] = useState<Article[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedGenre, setSelectedGenre] = useState('All');
@@ -203,7 +205,7 @@ export default function FeedScreen() {
         )}
       </ScrollView>
 
-      {selectedArticleIds.length > 0 && (
+      {selectedArticleIds.length > 0 && !showMiniPlayer && (
         <TouchableOpacity
           style={styles.createAudioButton}
           onPress={handleCreateAudio}
@@ -213,6 +215,21 @@ export default function FeedScreen() {
             <ActivityIndicator color="#fff" />
           ) : (
             <Text style={styles.createAudioButtonText}>Create Audio ({selectedArticleIds.length})</Text>
+          )}
+        </TouchableOpacity>
+      )}
+
+      {/* Floating Action Button - Show when mini player is active and articles are selected */}
+      {selectedArticleIds.length > 0 && showMiniPlayer && (
+        <TouchableOpacity
+          style={styles.floatingActionButton}
+          onPress={handleCreateAudio}
+          disabled={creatingAudio}
+        >
+          {creatingAudio ? (
+            <ActivityIndicator color="#fff" size={20} />
+          ) : (
+            <Ionicons name="add" size={24} color="#fff" />
           )}
         </TouchableOpacity>
       )}
@@ -346,5 +363,24 @@ const styles = StyleSheet.create({
     marginTop: 50,
     fontSize: 16,
     color: '#6b7280',
+  },
+  floatingActionButton: {
+    position: 'absolute',
+    bottom: 80, // Above mini player
+    right: 20,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#4f46e5',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 8,
   },
 });

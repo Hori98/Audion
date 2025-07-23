@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator, Modal } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator, Modal, TextInput } from 'react-native';
 import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
 import { useAudio } from '../../context/AudioContext';
@@ -16,30 +16,109 @@ interface AudioItem {
   script?: string; // Added script field
 }
 
+interface Playlist {
+  id: string;
+  name: string;
+  description: string;
+  audio_ids: string[];
+  created_at: string;
+  updated_at: string;
+  is_public: boolean;
+}
+
+interface Album {
+  id: string;
+  name: string;
+  description: string;
+  audio_ids: string[];
+  created_at: string;
+  updated_at: string;
+  is_public: boolean;
+  tags: string[];
+}
+
+interface DownloadItem {
+  download_info: {
+    id: string;
+    downloaded_at: string;
+    auto_downloaded: boolean;
+  };
+  audio_data: AudioItem;
+}
+
 export default function LibraryScreen() {
   const { token } = useAuth();
   const { playAudio } = useAudio();
+  
+  // Current view state
+  const [currentView, setCurrentView] = useState<'playlists' | 'albums' | 'downloads'>('playlists');
+  
+  // Data states
   const [audioItems, setAudioItems] = useState<AudioItem[]>([]);
+  const [playlists, setPlaylists] = useState<Playlist[]>([]);
+  const [albums, setAlbums] = useState<Album[]>([]);
+  const [downloads, setDownloads] = useState<DownloadItem[]>([]);
+  
+  // UI states
   const [loading, setLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
   const [selectedAudioIds, setSelectedAudioIds] = useState<string[]>([]);
   const [scriptModalVisible, setScriptModalVisible] = useState(false);
   const [currentScript, setCurrentScript] = useState('');
+  
+  // Create modals
+  const [createPlaylistModalVisible, setCreatePlaylistModalVisible] = useState(false);
+  const [createAlbumModalVisible, setCreateAlbumModalVisible] = useState(false);
+  const [newPlaylistName, setNewPlaylistName] = useState('');
+  const [newPlaylistDescription, setNewPlaylistDescription] = useState('');
+  const [newAlbumName, setNewAlbumName] = useState('');
+  const [newAlbumDescription, setNewAlbumDescription] = useState('');
 
   const API = process.env.EXPO_PUBLIC_BACKEND_URL ? `${process.env.EXPO_PUBLIC_BACKEND_URL}/api` : 'http://localhost:8000/api';
 
   useFocusEffect(
     React.useCallback(() => {
       if (token) {
-        fetchAudioLibrary();
+        fetchLibraryData();
       }
       return () => {
         // Reset editing state when leaving screen
         setIsEditing(false);
         setSelectedAudioIds([]);
       };
-    }, [token])
+    }, [token, currentView])
   );
+
+  const fetchLibraryData = async () => {
+    setLoading(true);
+    try {
+      switch (currentView) {
+        case 'playlists':
+          const playlistsResponse = await axios.get(`${API}/playlists`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          setPlaylists(playlistsResponse.data);
+          break;
+        case 'albums':
+          const albumsResponse = await axios.get(`${API}/albums`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          setAlbums(albumsResponse.data);
+          break;
+        case 'downloads':
+          const downloadsResponse = await axios.get(`${API}/downloads`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          setDownloads(downloadsResponse.data);
+          break;
+      }
+    } catch (error: any) {
+      console.error(`Error fetching ${currentView}:`, error);
+      Alert.alert('Error', error.response?.data?.detail || `Failed to fetch ${currentView}.`);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const fetchAudioLibrary = async () => {
     setLoading(true);
@@ -113,6 +192,59 @@ export default function LibraryScreen() {
     setCurrentScript('');
   };
 
+  const createPlaylist = async () => {
+    if (!newPlaylistName.trim()) {
+      Alert.alert('Error', 'Please enter a playlist name');
+      return;
+    }
+
+    try {
+      await axios.post(`${API}/playlists`, {
+        name: newPlaylistName.trim(),
+        description: newPlaylistDescription.trim(),
+        is_public: false
+      }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      setCreatePlaylistModalVisible(false);
+      setNewPlaylistName('');
+      setNewPlaylistDescription('');
+      fetchLibraryData();
+      Alert.alert('Success', 'Playlist created successfully');
+    } catch (error: any) {
+      console.error('Error creating playlist:', error);
+      Alert.alert('Error', error.response?.data?.detail || 'Failed to create playlist');
+    }
+  };
+
+  const createAlbum = async () => {
+    if (!newAlbumName.trim()) {
+      Alert.alert('Error', 'Please enter an album name');
+      return;
+    }
+
+    try {
+      await axios.post(`${API}/albums`, {
+        name: newAlbumName.trim(),
+        description: newAlbumDescription.trim(),
+        is_public: false,
+        tags: []
+      }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      setCreateAlbumModalVisible(false);
+      setNewAlbumName('');
+      setNewAlbumDescription('');
+      fetchLibraryData();
+      Alert.alert('Success', 'Album created successfully');
+    } catch (error: any) {
+      console.error('Error creating album:', error);
+      Alert.alert('Error', error.response?.data?.detail || 'Failed to create album');
+    }
+  };
+
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
@@ -123,77 +255,249 @@ export default function LibraryScreen() {
 
   return (
     <View style={styles.container}>
+      {/* Header */}
       <View style={styles.header}>
         <Text style={styles.title}>Library</Text>
         <TouchableOpacity onPress={() => {
-          setIsEditing(!isEditing);
-          setSelectedAudioIds([]); // Clear selection when toggling mode
+          if (currentView === 'playlists') {
+            setCreatePlaylistModalVisible(true);
+          } else if (currentView === 'albums') {
+            setCreateAlbumModalVisible(true);
+          }
         }}>
-          <Text style={styles.editButtonText}>{isEditing ? 'Done' : 'Edit'}</Text>
+          <Ionicons name="add" size={24} color="#4f46e5" />
         </TouchableOpacity>
       </View>
 
-      {isEditing && selectedAudioIds.length > 0 && (
+      {/* Category Selection Bar */}
+      <ScrollView 
+        horizontal 
+        showsHorizontalScrollIndicator={false} 
+        style={styles.categoryBar}
+        contentContainerStyle={styles.categoryBarContent}
+      >
         <TouchableOpacity
-          style={styles.deleteSelectedButton}
-          onPress={handleDeleteSelected}
+          style={[styles.categoryButton, currentView === 'playlists' && styles.categoryButtonActive]}
+          onPress={() => setCurrentView('playlists')}
         >
-          <Text style={styles.deleteSelectedButtonText}>Delete Selected ({selectedAudioIds.length})</Text>
+          <Text style={[styles.categoryButtonText, currentView === 'playlists' && styles.categoryButtonTextActive]}>
+            Playlists
+          </Text>
         </TouchableOpacity>
-      )}
+        
+        <TouchableOpacity
+          style={[styles.categoryButton, currentView === 'albums' && styles.categoryButtonActive]}
+          onPress={() => setCurrentView('albums')}
+        >
+          <Text style={[styles.categoryButtonText, currentView === 'albums' && styles.categoryButtonTextActive]}>
+            Albums
+          </Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity
+          style={[styles.categoryButton, currentView === 'downloads' && styles.categoryButtonActive]}
+          onPress={() => setCurrentView('downloads')}
+        >
+          <Text style={[styles.categoryButtonText, currentView === 'downloads' && styles.categoryButtonTextActive]}>
+            Downloaded
+          </Text>
+        </TouchableOpacity>
+      </ScrollView>
 
-      <ScrollView style={styles.audioListContainer}>
-        {audioItems.length === 0 ? (
-          <Text style={styles.noAudioText}>No audio items in your library yet.</Text>
+      {/* Main Content */}
+      <ScrollView style={styles.contentContainer}>
+        {loading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color="#4f46e5" />
+          </View>
         ) : (
-          audioItems.map((item) => (
-            <TouchableOpacity
-              key={item.id}
-              style={styles.audioCard}
-              onPress={() => isEditing ? toggleAudioSelection(item.id) : null}
-            >
-              <View style={styles.audioInfo}>
-                <Text style={styles.audioTitle}>{item.title}</Text>
-                <Text style={styles.audioDetails}>
-                  {format(new Date(item.created_at), 'MMM dd, yyyy')} · {formatDuration(item.duration)}
-                </Text>
-                {!isEditing && item.script && (
-                  <TouchableOpacity onPress={() => handleViewScript(item.script, item.audio_url)} style={styles.viewScriptButton}>
-                    <Text style={styles.viewScriptButtonText}>View Script</Text>
-                  </TouchableOpacity>
+          <>
+            {/* Playlists View */}
+            {currentView === 'playlists' && (
+              <>
+                {playlists.length === 0 ? (
+                  <Text style={styles.emptyText}>No playlists yet. Create your first playlist!</Text>
+                ) : (
+                  playlists.map((playlist) => (
+                    <TouchableOpacity key={playlist.id} style={styles.listItem}>
+                      <View style={styles.itemIcon}>
+                        <Ionicons name="musical-notes" size={24} color="#4f46e5" />
+                      </View>
+                      <View style={styles.itemInfo}>
+                        <Text style={styles.itemTitle}>{playlist.name}</Text>
+                        <Text style={styles.itemSubtitle}>
+                          {playlist.audio_ids.length} songs · {format(new Date(playlist.updated_at), 'MMM dd, yyyy')}
+                        </Text>
+                      </View>
+                      <TouchableOpacity style={styles.itemAction}>
+                        <Ionicons name="chevron-forward" size={20} color="#6b7280" />
+                      </TouchableOpacity>
+                    </TouchableOpacity>
+                  ))
                 )}
-              </View>
-              {isEditing ? (
-                <Ionicons
-                  name={selectedAudioIds.includes(item.id) ? 'checkmark-circle' : 'ellipse-outline'}
-                  size={28}
-                  color={selectedAudioIds.includes(item.id) ? '#4f46e5' : '#6b7280'}
-                />
-              ) : (
-                <TouchableOpacity onPress={() => handlePlayAudio(item)} style={styles.playPauseButton}>
-                  <Text style={styles.playPauseButtonText}>Play</Text>
-                </TouchableOpacity>
-              )}
-            </TouchableOpacity>
-          ))
+              </>
+            )}
+
+            {/* Albums View */}
+            {currentView === 'albums' && (
+              <>
+                {albums.length === 0 ? (
+                  <Text style={styles.emptyText}>No albums yet. Create your first album!</Text>
+                ) : (
+                  albums.map((album) => (
+                    <TouchableOpacity key={album.id} style={styles.listItem}>
+                      <View style={styles.itemIcon}>
+                        <Ionicons name="albums" size={24} color="#4f46e5" />
+                      </View>
+                      <View style={styles.itemInfo}>
+                        <Text style={styles.itemTitle}>{album.name}</Text>
+                        <Text style={styles.itemSubtitle}>
+                          {album.audio_ids.length} songs · {format(new Date(album.updated_at), 'MMM dd, yyyy')}
+                        </Text>
+                      </View>
+                      <TouchableOpacity style={styles.itemAction}>
+                        <Ionicons name="chevron-forward" size={20} color="#6b7280" />
+                      </TouchableOpacity>
+                    </TouchableOpacity>
+                  ))
+                )}
+              </>
+            )}
+
+            {/* Downloads View */}
+            {currentView === 'downloads' && (
+              <>
+                {downloads.length === 0 ? (
+                  <Text style={styles.emptyText}>No downloaded audio yet.</Text>
+                ) : (
+                  downloads.map((download) => (
+                    <TouchableOpacity key={download.audio_data.id} style={styles.listItem}>
+                      <View style={styles.itemIcon}>
+                        <Ionicons name="download" size={24} color="#10b981" />
+                      </View>
+                      <View style={styles.itemInfo}>
+                        <Text style={styles.itemTitle}>{download.audio_data.title}</Text>
+                        <Text style={styles.itemSubtitle}>
+                          Downloaded {format(new Date(download.download_info.downloaded_at), 'MMM dd, yyyy')} · 
+                          {download.download_info.auto_downloaded ? ' Auto' : ' Manual'}
+                        </Text>
+                      </View>
+                      <TouchableOpacity 
+                        style={styles.playButton}
+                        onPress={() => handlePlayAudio(download.audio_data)}
+                      >
+                        <Ionicons name="play" size={20} color="#fff" />
+                      </TouchableOpacity>
+                    </TouchableOpacity>
+                  ))
+                )}
+              </>
+            )}
+          </>
         )}
       </ScrollView>
 
+      {/* Create Playlist Modal */}
       <Modal
         animationType="slide"
-        transparent={false}
-        visible={scriptModalVisible}
-        onRequestClose={closeScriptModal}
+        transparent={true}
+        visible={createPlaylistModalVisible}
+        onRequestClose={() => setCreatePlaylistModalVisible(false)}
       >
-        <View style={styles.modalContainer}>
-          <Text style={styles.modalTitle}>Audio Script</Text>
-          <Text style={styles.modalUrl}>URL: {currentScript.includes('No script available') ? 'N/A' : audioItems.find(item => item.script === currentScript)?.audio_url || 'Loading...'}</Text>
-          <ScrollView style={styles.scriptScrollView}>
-            <Text style={styles.scriptText}>{currentScript}</Text>
-          </ScrollView>
-          <TouchableOpacity onPress={closeScriptModal} style={styles.closeModalButton}>
-            <Text style={styles.closeModalButtonText}>Close</Text>
-          </TouchableOpacity>
+        <View style={styles.modalOverlay}>
+          <View style={styles.createModalContainer}>
+            <Text style={styles.createModalTitle}>Create Playlist</Text>
+            
+            <TextInput
+              style={styles.textInput}
+              placeholder="Playlist name"
+              value={newPlaylistName}
+              onChangeText={setNewPlaylistName}
+              maxLength={50}
+            />
+            
+            <TextInput
+              style={[styles.textInput, styles.textInputMultiline]}
+              placeholder="Description (optional)"
+              value={newPlaylistDescription}
+              onChangeText={setNewPlaylistDescription}
+              multiline
+              numberOfLines={3}
+              maxLength={200}
+            />
+            
+            <View style={styles.modalButtons}>
+              <TouchableOpacity 
+                style={styles.cancelButton}
+                onPress={() => {
+                  setCreatePlaylistModalVisible(false);
+                  setNewPlaylistName('');
+                  setNewPlaylistDescription('');
+                }}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={styles.createButton}
+                onPress={createPlaylist}
+              >
+                <Text style={styles.createButtonText}>Create</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Create Album Modal */}
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={createAlbumModalVisible}
+        onRequestClose={() => setCreateAlbumModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.createModalContainer}>
+            <Text style={styles.createModalTitle}>Create Album</Text>
+            
+            <TextInput
+              style={styles.textInput}
+              placeholder="Album name"
+              value={newAlbumName}
+              onChangeText={setNewAlbumName}
+              maxLength={50}
+            />
+            
+            <TextInput
+              style={[styles.textInput, styles.textInputMultiline]}
+              placeholder="Description (optional)"
+              value={newAlbumDescription}
+              onChangeText={setNewAlbumDescription}
+              multiline
+              numberOfLines={3}
+              maxLength={200}
+            />
+            
+            <View style={styles.modalButtons}>
+              <TouchableOpacity 
+                style={styles.cancelButton}
+                onPress={() => {
+                  setCreateAlbumModalVisible(false);
+                  setNewAlbumName('');
+                  setNewAlbumDescription('');
+                }}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={styles.createButton}
+                onPress={createAlbum}
+              >
+                <Text style={styles.createButtonText}>Create</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
         </View>
       </Modal>
     </View>
@@ -203,147 +507,180 @@ export default function LibraryScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f0f4f8',
-    paddingTop: 10,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#f0f4f8',
-  },
-  audioListContainer: {
-    flex: 1,
-    paddingHorizontal: 15,
-  },
-  noAudioText: {
-    textAlign: 'center',
-    marginTop: 50,
-    fontSize: 16,
-    color: '#6b7280',
-  },
-  audioCard: {
-    backgroundColor: '#ffffff',
-    borderRadius: 10,
-    padding: 15,
-    marginBottom: 10,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  audioInfo: {
-    flex: 1,
-    marginRight: 10,
-  },
-  audioTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#1f2937',
-  },
-  audioDetails: {
-    fontSize: 12,
-    color: '#6b7280',
-    marginTop: 5,
-  },
-  playPauseButton: {
-    backgroundColor: '#4f46e5',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 5,
-  },
-  playPauseButtonText: {
-    color: '#ffffff',
-    fontWeight: 'bold',
+    backgroundColor: '#f9fafb',
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 15,
-    paddingVertical: 10,
+    paddingHorizontal: 20,
+    paddingVertical: 15,
     backgroundColor: '#ffffff',
     borderBottomWidth: 1,
-    borderBottomColor: '#e2e8f0',
+    borderBottomColor: '#e5e7eb',
   },
-  editButtonText: {
-    color: '#4f46e5',
-    fontSize: 16,
+  title: {
+    fontSize: 28,
     fontWeight: 'bold',
-  },
-  deleteSelectedButton: {
-    backgroundColor: '#ef4444',
-    paddingVertical: 12,
-    marginHorizontal: 15,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 10,
-    marginBottom: 10,
-  },
-  deleteSelectedButtonText: {
-    color: '#ffffff',
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  viewScriptButton: {
-    backgroundColor: '#e0e7ff',
-    paddingVertical: 5,
-    paddingHorizontal: 10,
-    borderRadius: 5,
-    marginTop: 10,
-    alignSelf: 'flex-start',
-  },
-  viewScriptButtonText: {
-    color: '#4f46e5',
-    fontSize: 14,
-    fontWeight: 'bold',
-  },
-  modalContainer: {
-    flex: 1,
-    padding: 20,
-    paddingTop: 50,
-    backgroundColor: '#f0f4f8',
-  },
-  modalTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    marginBottom: 10,
-    textAlign: 'center',
     color: '#1f2937',
   },
-  modalUrl: {
-    fontSize: 12,
+  categoryBar: {
+    backgroundColor: '#ffffff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e7eb',
+    maxHeight: 50,
+  },
+  categoryBarContent: {
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  categoryButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    backgroundColor: '#f3f4f6',
+    marginRight: 12,
+  },
+  categoryButtonActive: {
+    backgroundColor: '#4f46e5',
+  },
+  categoryButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
     color: '#6b7280',
-    marginBottom: 15,
+  },
+  categoryButtonTextActive: {
+    color: '#ffffff',
+  },
+  contentContainer: {
+    flex: 1,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingTop: 100,
+  },
+  emptyText: {
+    textAlign: 'center',
+    fontSize: 16,
+    color: '#6b7280',
+    marginTop: 60,
+    lineHeight: 24,
+  },
+  listItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  itemIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 8,
+    backgroundColor: '#f3f4f6',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 16,
+  },
+  itemInfo: {
+    flex: 1,
+  },
+  itemTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1f2937',
+    marginBottom: 4,
+  },
+  itemSubtitle: {
+    fontSize: 14,
+    color: '#6b7280',
+  },
+  itemAction: {
+    padding: 8,
+  },
+  playButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#4f46e5',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  createModalContainer: {
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    padding: 24,
+    width: '90%',
+    maxWidth: 400,
+  },
+  createModalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#1f2937',
+    marginBottom: 20,
     textAlign: 'center',
   },
-  scriptScrollView: {
-    flex: 1,
-    backgroundColor: '#ffffff',
-    borderRadius: 10,
-    padding: 15,
-    marginBottom: 20,
-  },
-  scriptText: {
+  textInput: {
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     fontSize: 16,
-    lineHeight: 24,
-    color: '#4b5563',
+    marginBottom: 16,
+    backgroundColor: '#f9fafb',
   },
-  closeModalButton: {
-    backgroundColor: '#4f46e5',
-    paddingVertical: 15,
-    borderRadius: 10,
+  textInputMultiline: {
+    height: 80,
+    textAlignVertical: 'top',
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 8,
+  },
+  cancelButton: {
+    flex: 1,
+    paddingVertical: 12,
+    marginRight: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#d1d5db',
     alignItems: 'center',
-    justifyContent: 'center',
   },
-  closeModalButtonText: {
+  cancelButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#6b7280',
+  },
+  createButton: {
+    flex: 1,
+    paddingVertical: 12,
+    marginLeft: 8,
+    borderRadius: 8,
+    backgroundColor: '#4f46e5',
+    alignItems: 'center',
+  },
+  createButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
     color: '#ffffff',
-    fontSize: 18,
-    fontWeight: 'bold',
   },
 });

@@ -167,6 +167,70 @@ class UserInteraction(BaseModel):
     timestamp: datetime = Field(default_factory=datetime.utcnow)
     metadata: Optional[dict] = None  # For additional context like play_duration, completion_percentage
 
+# Playlist and Album Models
+class Playlist(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    user_id: str
+    name: str
+    description: Optional[str] = ""
+    audio_ids: List[str] = []
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    is_public: bool = False
+    cover_image_url: Optional[str] = None
+
+class PlaylistCreate(BaseModel):
+    name: str
+    description: Optional[str] = ""
+    is_public: bool = False
+
+class PlaylistUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    is_public: Optional[bool] = None
+
+class PlaylistAddAudio(BaseModel):
+    audio_ids: List[str]
+
+class Album(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    user_id: str  # creator of the album
+    name: str
+    description: Optional[str] = ""
+    audio_ids: List[str] = []
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    is_public: bool = False
+    cover_image_url: Optional[str] = None
+    tags: List[str] = []  # for categorization (e.g., "daily news", "tech news", "series")
+    series_info: Optional[Dict] = None  # for series metadata like episode number, season
+
+class AlbumCreate(BaseModel):
+    name: str
+    description: Optional[str] = ""
+    is_public: bool = False
+    tags: List[str] = []
+
+class AlbumUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    is_public: Optional[bool] = None
+    tags: Optional[List[str]] = None
+
+class AlbumAddAudio(BaseModel):
+    audio_ids: List[str]
+
+# Download Management
+class DownloadedAudio(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    user_id: str
+    audio_id: str
+    downloaded_at: datetime = Field(default_factory=datetime.utcnow)
+    local_file_path: Optional[str] = None
+    file_size: Optional[int] = None
+    download_quality: str = "standard"  # standard, high
+    auto_downloaded: bool = True  # True if auto-downloaded on creation
+
 # AI Helper Functions
 # Enhanced Genre Classification System with weighted keywords
 GENRE_KEYWORDS = {
@@ -329,6 +393,31 @@ def get_genre_confidence(title: str, summary: str) -> Tuple[str, float, Dict[str
     confidence = genre_probabilities[top_genre]
     
     return top_genre, confidence, genre_probabilities
+
+async def generate_audio_title_with_openai(articles_content: List[str]) -> str:
+    """Generate an engaging title for the audio based on article content"""
+    try:
+        if not OPENAI_API_KEY or OPENAI_API_KEY == "your-openai-key":
+            return f"AI News Summary - {datetime.now().strftime('%Y-%m-%d')}"
+        
+        client = openai.AsyncOpenAI(api_key=OPENAI_API_KEY)
+        system_message = "You are an expert news editor. Create a concise, engaging title for a news audio summary. The title should be 3-8 words, capture the main theme, and be suitable for a podcast episode. Avoid generic phrases like 'News Summary' or 'Daily Update'."
+        combined_content = "\n\n--- Article ---\n\n".join(articles_content)
+        user_message = f"Create an engaging title for a news audio that covers these articles:\n\n{combined_content}"
+        
+        chat_completion = await client.chat.completions.create(
+            messages=[{"role": "system", "content": system_message}, {"role": "user", "content": user_message}],
+            model="gpt-4o",
+        )
+        
+        generated_title = chat_completion.choices[0].message.content.strip()
+        # Remove quotes if present
+        generated_title = generated_title.strip('"').strip("'")
+        return generated_title
+        
+    except Exception as e:
+        logging.error(f"OpenAI title generation error: {e}")
+        return f"AI News Summary - {datetime.now().strftime('%Y-%m-%d')}"
 
 async def summarize_articles_with_openai(articles_content: List[str]) -> str:
     try:
@@ -766,14 +855,23 @@ async def get_articles(current_user: User = Depends(get_current_user), genre: Op
 @app.post("/api/audio/create", response_model=AudioCreation, tags=["Audio"])
 async def create_audio(request: AudioCreationRequest, current_user: User = Depends(get_current_user)):
     try:
-        articles_content = [f"Article: {title}\n\nThis is the full content of the article..." for title in request.article_titles]
+        # Get actual article content from database
+        articles_content = []
+        for article_id in request.article_ids:
+            article = await db.articles.find_one({"id": article_id})
+            if article:
+                content = f"Title: {article['title']}\nSummary: {article['summary']}\nSource: {article['source_name']}"
+                articles_content.append(content)
+        
+        # Generate script and title based on actual content
         script = await summarize_articles_with_openai(articles_content)
+        generated_title = await generate_audio_title_with_openai(articles_content)
         
         audio_data = await convert_text_to_speech(script)
         audio_url = audio_data['url']
         duration = audio_data['duration']
 
-        title = request.custom_title or f"AI News Summary - {datetime.now().strftime('%Y-%m-%d')}"
+        title = request.custom_title or generated_title
         
         audio_creation = AudioCreation(
             user_id=current_user.id, 
@@ -787,6 +885,15 @@ async def create_audio(request: AudioCreationRequest, current_user: User = Depen
         logging.info(f"Saving AudioCreation to DB with audio_url: {audio_creation.audio_url}")
         
         await db.audio_creations.insert_one(audio_creation.dict())
+        
+        # Auto-download the created audio
+        auto_download = DownloadedAudio(
+            user_id=current_user.id,
+            audio_id=audio_creation.id,
+            auto_downloaded=True
+        )
+        await db.downloaded_audio.insert_one(auto_download.dict())
+        
         return audio_creation
     except Exception as e:
         logging.error(f"Audio creation error: {e}")
@@ -1065,14 +1172,15 @@ async def create_auto_picked_audio(request: AutoPickRequest, current_user: User 
             raise HTTPException(status_code=404, detail="No suitable articles found for auto-pick")
         
         # Create audio from picked articles
-        articles_content = [f"Article: {article.title}\n\n{article.summary}" for article in picked_articles]
+        articles_content = [f"Title: {article.title}\nSummary: {article.summary}\nSource: {article.source_name}" for article in picked_articles]
         script = await summarize_articles_with_openai(articles_content)
+        generated_title = await generate_audio_title_with_openai(articles_content)
         
         audio_data = await convert_text_to_speech(script)
         audio_url = audio_data['url']
         duration = audio_data['duration']
 
-        title = f"Auto-Pick Podcast - {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+        title = generated_title
         
         audio_creation = AudioCreation(
             user_id=current_user.id, 
@@ -1085,6 +1193,14 @@ async def create_auto_picked_audio(request: AutoPickRequest, current_user: User 
         )
         
         await db.audio_creations.insert_one(audio_creation.dict())
+        
+        # Auto-download the created audio
+        auto_download = DownloadedAudio(
+            user_id=current_user.id,
+            audio_id=audio_creation.id,
+            auto_downloaded=True
+        )
+        await db.downloaded_audio.insert_one(auto_download.dict())
         
         # Record interactions for picked articles
         for article in picked_articles:
@@ -1112,6 +1228,276 @@ async def startup_event():
     logging.info("Database indexes created.")
     if not OPENAI_API_KEY: 
         logging.warning("OpenAI API key not found")
+
+# ==================== PLAYLIST ENDPOINTS ====================
+@app.get("/api/playlists", response_model=List[Playlist], tags=["Playlists"])
+async def get_user_playlists(current_user: User = Depends(get_current_user)):
+    """Get all playlists for the current user"""
+    playlists = await db.playlists.find({"user_id": current_user.id}).sort("updated_at", -1).to_list(100)
+    return [Playlist(**playlist) for playlist in playlists]
+
+@app.post("/api/playlists", response_model=Playlist, tags=["Playlists"])
+async def create_playlist(request: PlaylistCreate, current_user: User = Depends(get_current_user)):
+    """Create a new playlist"""
+    playlist = Playlist(
+        user_id=current_user.id,
+        name=request.name,
+        description=request.description,
+        is_public=request.is_public
+    )
+    await db.playlists.insert_one(playlist.dict())
+    return playlist
+
+@app.put("/api/playlists/{playlist_id}", response_model=Playlist, tags=["Playlists"])
+async def update_playlist(playlist_id: str, request: PlaylistUpdate, current_user: User = Depends(get_current_user)):
+    """Update playlist details"""
+    update_data = {k: v for k, v in request.dict().items() if v is not None}
+    update_data["updated_at"] = datetime.utcnow()
+    
+    result = await db.playlists.update_one(
+        {"id": playlist_id, "user_id": current_user.id},
+        {"$set": update_data}
+    )
+    
+    if result.modified_count == 0:
+        raise HTTPException(status_code=404, detail="Playlist not found")
+    
+    playlist = await db.playlists.find_one({"id": playlist_id, "user_id": current_user.id})
+    return Playlist(**playlist)
+
+@app.delete("/api/playlists/{playlist_id}", tags=["Playlists"])
+async def delete_playlist(playlist_id: str, current_user: User = Depends(get_current_user)):
+    """Delete a playlist"""
+    result = await db.playlists.delete_one({"id": playlist_id, "user_id": current_user.id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Playlist not found")
+    return {"message": "Playlist deleted"}
+
+@app.post("/api/playlists/{playlist_id}/audio", tags=["Playlists"])
+async def add_audio_to_playlist(playlist_id: str, request: PlaylistAddAudio, current_user: User = Depends(get_current_user)):
+    """Add audio items to playlist"""
+    # Verify audio items belong to user
+    audio_count = await db.audio_creations.count_documents({
+        "id": {"$in": request.audio_ids},
+        "user_id": current_user.id
+    })
+    
+    if audio_count != len(request.audio_ids):
+        raise HTTPException(status_code=400, detail="Some audio items not found or don't belong to user")
+    
+    result = await db.playlists.update_one(
+        {"id": playlist_id, "user_id": current_user.id},
+        {
+            "$addToSet": {"audio_ids": {"$each": request.audio_ids}},
+            "$set": {"updated_at": datetime.utcnow()}
+        }
+    )
+    
+    if result.modified_count == 0:
+        raise HTTPException(status_code=404, detail="Playlist not found")
+    
+    return {"message": f"Added {len(request.audio_ids)} audio items to playlist"}
+
+@app.delete("/api/playlists/{playlist_id}/audio/{audio_id}", tags=["Playlists"])
+async def remove_audio_from_playlist(playlist_id: str, audio_id: str, current_user: User = Depends(get_current_user)):
+    """Remove audio item from playlist"""
+    result = await db.playlists.update_one(
+        {"id": playlist_id, "user_id": current_user.id},
+        {
+            "$pull": {"audio_ids": audio_id},
+            "$set": {"updated_at": datetime.utcnow()}
+        }
+    )
+    
+    if result.modified_count == 0:
+        raise HTTPException(status_code=404, detail="Playlist not found")
+    
+    return {"message": "Audio removed from playlist"}
+
+@app.get("/api/playlists/{playlist_id}/audio", response_model=List[AudioCreation], tags=["Playlists"])
+async def get_playlist_audio(playlist_id: str, current_user: User = Depends(get_current_user)):
+    """Get all audio items in a playlist"""
+    playlist = await db.playlists.find_one({"id": playlist_id, "user_id": current_user.id})
+    if not playlist:
+        raise HTTPException(status_code=404, detail="Playlist not found")
+    
+    if not playlist["audio_ids"]:
+        return []
+    
+    audio_items = await db.audio_creations.find({
+        "id": {"$in": playlist["audio_ids"]},
+        "user_id": current_user.id
+    }).to_list(100)
+    
+    # Maintain playlist order
+    audio_dict = {audio["id"]: audio for audio in audio_items}
+    ordered_audio = [audio_dict[audio_id] for audio_id in playlist["audio_ids"] if audio_id in audio_dict]
+    
+    return [AudioCreation(**audio) for audio in ordered_audio]
+
+# ==================== ALBUM ENDPOINTS ====================
+@app.get("/api/albums", response_model=List[Album], tags=["Albums"])
+async def get_user_albums(current_user: User = Depends(get_current_user)):
+    """Get all albums for the current user"""
+    albums = await db.albums.find({"user_id": current_user.id}).sort("updated_at", -1).to_list(100)
+    return [Album(**album) for album in albums]
+
+@app.post("/api/albums", response_model=Album, tags=["Albums"])
+async def create_album(request: AlbumCreate, current_user: User = Depends(get_current_user)):
+    """Create a new album"""
+    album = Album(
+        user_id=current_user.id,
+        name=request.name,
+        description=request.description,
+        is_public=request.is_public,
+        tags=request.tags
+    )
+    await db.albums.insert_one(album.dict())
+    return album
+
+@app.put("/api/albums/{album_id}", response_model=Album, tags=["Albums"])
+async def update_album(album_id: str, request: AlbumUpdate, current_user: User = Depends(get_current_user)):
+    """Update album details"""
+    update_data = {k: v for k, v in request.dict().items() if v is not None}
+    update_data["updated_at"] = datetime.utcnow()
+    
+    result = await db.albums.update_one(
+        {"id": album_id, "user_id": current_user.id},
+        {"$set": update_data}
+    )
+    
+    if result.modified_count == 0:
+        raise HTTPException(status_code=404, detail="Album not found")
+    
+    album = await db.albums.find_one({"id": album_id, "user_id": current_user.id})
+    return Album(**album)
+
+@app.delete("/api/albums/{album_id}", tags=["Albums"])
+async def delete_album(album_id: str, current_user: User = Depends(get_current_user)):
+    """Delete an album"""
+    result = await db.albums.delete_one({"id": album_id, "user_id": current_user.id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Album not found")
+    return {"message": "Album deleted"}
+
+@app.post("/api/albums/{album_id}/audio", tags=["Albums"])
+async def add_audio_to_album(album_id: str, request: AlbumAddAudio, current_user: User = Depends(get_current_user)):
+    """Add audio items to album"""
+    # Verify audio items belong to user
+    audio_count = await db.audio_creations.count_documents({
+        "id": {"$in": request.audio_ids},
+        "user_id": current_user.id
+    })
+    
+    if audio_count != len(request.audio_ids):
+        raise HTTPException(status_code=400, detail="Some audio items not found or don't belong to user")
+    
+    result = await db.albums.update_one(
+        {"id": album_id, "user_id": current_user.id},
+        {
+            "$addToSet": {"audio_ids": {"$each": request.audio_ids}},
+            "$set": {"updated_at": datetime.utcnow()}
+        }
+    )
+    
+    if result.modified_count == 0:
+        raise HTTPException(status_code=404, detail="Album not found")
+    
+    return {"message": f"Added {len(request.audio_ids)} audio items to album"}
+
+@app.delete("/api/albums/{album_id}/audio/{audio_id}", tags=["Albums"])
+async def remove_audio_from_album(album_id: str, audio_id: str, current_user: User = Depends(get_current_user)):
+    """Remove audio item from album"""
+    result = await db.albums.update_one(
+        {"id": album_id, "user_id": current_user.id},
+        {
+            "$pull": {"audio_ids": audio_id},
+            "$set": {"updated_at": datetime.utcnow()}
+        }
+    )
+    
+    if result.modified_count == 0:
+        raise HTTPException(status_code=404, detail="Album not found")
+    
+    return {"message": "Audio removed from album"}
+
+@app.get("/api/albums/{album_id}/audio", response_model=List[AudioCreation], tags=["Albums"])
+async def get_album_audio(album_id: str, current_user: User = Depends(get_current_user)):
+    """Get all audio items in an album"""
+    album = await db.albums.find_one({"id": album_id, "user_id": current_user.id})
+    if not album:
+        raise HTTPException(status_code=404, detail="Album not found")
+    
+    if not album["audio_ids"]:
+        return []
+    
+    audio_items = await db.audio_creations.find({
+        "id": {"$in": album["audio_ids"]},
+        "user_id": current_user.id
+    }).to_list(100)
+    
+    # Maintain album order
+    audio_dict = {audio["id"]: audio for audio in audio_items}
+    ordered_audio = [audio_dict[audio_id] for audio_id in album["audio_ids"] if audio_id in audio_dict]
+    
+    return [AudioCreation(**audio) for audio in ordered_audio]
+
+# ==================== DOWNLOAD ENDPOINTS ====================
+@app.get("/api/downloads", response_model=List[Dict], tags=["Downloads"])
+async def get_downloaded_audio(current_user: User = Depends(get_current_user)):
+    """Get all downloaded audio for the current user"""
+    downloads = await db.downloaded_audio.find({"user_id": current_user.id}).sort("downloaded_at", -1).to_list(100)
+    
+    # Get audio details
+    audio_ids = [download["audio_id"] for download in downloads]
+    audio_items = await db.audio_creations.find({
+        "id": {"$in": audio_ids},
+        "user_id": current_user.id
+    }).to_list(100)
+    
+    audio_dict = {audio["id"]: audio for audio in audio_items}
+    
+    result = []
+    for download in downloads:
+        if download["audio_id"] in audio_dict:
+            audio_data = audio_dict[download["audio_id"]]
+            result.append({
+                "download_info": DownloadedAudio(**download),
+                "audio_data": AudioCreation(**audio_data)
+            })
+    
+    return result
+
+@app.post("/api/downloads/{audio_id}", tags=["Downloads"])
+async def download_audio(audio_id: str, current_user: User = Depends(get_current_user)):
+    """Mark audio as downloaded (simulate download process)"""
+    # Verify audio belongs to user
+    audio = await db.audio_creations.find_one({"id": audio_id, "user_id": current_user.id})
+    if not audio:
+        raise HTTPException(status_code=404, detail="Audio not found")
+    
+    # Check if already downloaded
+    existing = await db.downloaded_audio.find_one({"user_id": current_user.id, "audio_id": audio_id})
+    if existing:
+        return {"message": "Audio already downloaded"}
+    
+    # Create download record
+    download = DownloadedAudio(
+        user_id=current_user.id,
+        audio_id=audio_id,
+        auto_downloaded=False  # Manual download
+    )
+    
+    await db.downloaded_audio.insert_one(download.dict())
+    return {"message": "Audio downloaded successfully"}
+
+@app.delete("/api/downloads/{audio_id}", tags=["Downloads"])
+async def remove_download(audio_id: str, current_user: User = Depends(get_current_user)):
+    """Remove audio from downloads"""
+    result = await db.downloaded_audio.delete_one({"user_id": current_user.id, "audio_id": audio_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Downloaded audio not found")
+    return {"message": "Download removed"}
 
 @app.on_event("shutdown")
 async def shutdown_db_client():

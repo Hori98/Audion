@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
+import { useAudio } from '../../context/AudioContext';
 import { useFocusEffect } from '@react-navigation/native';
 import { format } from 'date-fns';
 import { Ionicons } from '@expo/vector-icons';
@@ -54,6 +55,7 @@ interface UserInsights {
 
 export default function AutoPickScreen() {
   const { token } = useAuth();
+  const { showMiniPlayer } = useAudio();
   const [loading, setLoading] = useState(false);
   const [autoPickedArticles, setAutoPickedArticles] = useState<Article[]>([]);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
@@ -226,21 +228,23 @@ export default function AutoPickScreen() {
         </View>
       </View>
 
-      {/* Create Audio Button */}
-      <TouchableOpacity
-        style={styles.createAudioButton}
-        onPress={handleCreateAudio}
-        disabled={creatingAudio}
-      >
-        {creatingAudio ? (
-          <ActivityIndicator color="#fff" />
-        ) : (
-          <>
-            <Ionicons name="musical-notes" size={20} color="#fff" style={{ marginRight: 8 }} />
-            <Text style={styles.createAudioButtonText}>Audio it!</Text>
-          </>
-        )}
-      </TouchableOpacity>
+      {/* Create Audio Button - Hide when mini player is active */}
+      {!showMiniPlayer && (
+        <TouchableOpacity
+          style={styles.createAudioButton}
+          onPress={handleCreateAudio}
+          disabled={creatingAudio}
+        >
+          {creatingAudio ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <>
+              <Ionicons name="musical-notes" size={20} color="#fff" style={{ marginRight: 8 }} />
+              <Text style={styles.createAudioButtonText}>Audio it!</Text>
+            </>
+          )}
+        </TouchableOpacity>
+      )}
 
       {/* Articles List */}
       <ScrollView 
@@ -353,6 +357,21 @@ export default function AutoPickScreen() {
           </ScrollView>
         </View>
       </Modal>
+      
+      {/* Floating Action Button - Show when mini player is active */}
+      {showMiniPlayer && (
+        <TouchableOpacity
+          style={styles.floatingActionButton}
+          onPress={handleCreateAudio}
+          disabled={creatingAudio}
+        >
+          {creatingAudio ? (
+            <ActivityIndicator color="#fff" size={20} />
+          ) : (
+            <Ionicons name="add" size={24} color="#fff" />
+          )}
+        </TouchableOpacity>
+      )}
     </View>
   );
 }
@@ -407,6 +426,25 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  floatingActionButton: {
+    position: 'absolute',
+    bottom: 80, // Above mini player
+    right: 20,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#4f46e5',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 8,
   },
   createAudioButtonText: {
     color: '#ffffff',
