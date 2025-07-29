@@ -30,6 +30,7 @@ interface AudioContextType {
   // UI state
   showMiniPlayer: boolean;
   showFullScreenPlayer: boolean;
+  openDirectToScript: boolean;
   
   // Actions
   playAudio: (audioItem: AudioItem) => Promise<void>;
@@ -38,7 +39,10 @@ interface AudioContextType {
   stopAudio: () => Promise<void>;
   seekTo: (position: number) => Promise<void>;
   setPlaybackRate: (rate: number) => Promise<void>;
-  setShowFullScreenPlayer: (show: boolean) => void;
+  setShowFullScreenPlayer: (show: boolean, openToScript?: boolean) => void;
+  
+  // Cleanup
+  cleanupAudio: (audioId: string) => void;
   
   // Analytics
   recordInteraction: (interactionType: string, metadata?: any) => Promise<void>;
@@ -56,6 +60,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   const [playbackRate, setPlaybackRateState] = useState(1.0);
   const [showMiniPlayer, setShowMiniPlayer] = useState(false);
   const [showFullScreenPlayer, setShowFullScreenPlayer] = useState(false);
+  const [openDirectToScript, setOpenDirectToScript] = useState(false);
   const [playStartTime, setPlayStartTime] = useState<number | null>(null);
   
   const API = process.env.EXPO_PUBLIC_BACKEND_URL ? `${process.env.EXPO_PUBLIC_BACKEND_URL}/api` : 'http://localhost:8000/api';
@@ -176,9 +181,69 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   };
 
   const seekTo = async (newPosition: number) => {
-    if (sound && isFinite(newPosition) && newPosition >= 0) {
-      await sound.setPositionAsync(newPosition);
+    console.log('AudioContext: Attempting to seek to position:', newPosition, 'ms');
+    
+    if (!sound) {
+      console.warn('AudioContext: No sound object available for seeking');
+      return;
+    }
+
+    if (!isFinite(newPosition) || newPosition < 0) {
+      console.warn('AudioContext: Invalid seek position:', newPosition);
+      return;
+    }
+
+    if (newPosition >= duration) {
+      console.warn('AudioContext: Seek position exceeds duration:', newPosition, 'vs', duration);
+      return;
+    }
+
+    try {
+      // Get current status to ensure sound is loaded
+      const status = await sound.getStatusAsync();
+      
+      if (!status.isLoaded) {
+        console.warn('AudioContext: Sound not loaded, cannot seek');
+        return;
+      }
+
+      console.log('AudioContext: Current position before seek:', status.positionMillis);
+      console.log('AudioContext: Sound duration:', status.durationMillis);
+      console.log('AudioContext: Seeking to:', newPosition);
+
+      // Pause before seeking for better reliability
+      const wasPlaying = status.isPlaying;
+      if (wasPlaying) {
+        await sound.pauseAsync();
+      }
+
+      // Perform the seek operation
+      await sound.setPositionAsync(newPosition, {
+        toleranceMillisBefore: 1000,
+        toleranceMillisAfter: 1000,
+      });
+
+      // Update position state immediately
       setPosition(newPosition);
+
+      // Resume playback if it was playing before
+      if (wasPlaying) {
+        await sound.playAsync();
+      }
+
+      // Verify the seek worked
+      const newStatus = await sound.getStatusAsync();
+      console.log('AudioContext: Position after seek:', newStatus.isLoaded ? newStatus.positionMillis : 'not loaded');
+
+    } catch (error) {
+      console.error('AudioContext: Error during seek operation:', error);
+      // Fallback: try a simpler seek approach
+      try {
+        await sound.setPositionAsync(newPosition);
+        setPosition(newPosition);
+      } catch (fallbackError) {
+        console.error('AudioContext: Fallback seek also failed:', fallbackError);
+      }
     }
   };
 
@@ -192,8 +257,35 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const cleanupAudio = (audioId: string) => {
+    // If the deleted audio is currently playing, stop it and clean up
+    if (currentAudio && currentAudio.id === audioId) {
+      console.log('AudioContext: Cleaning up deleted audio:', audioId);
+      
+      // Stop the audio and clean up
+      if (sound) {
+        sound.unloadAsync().catch(error => {
+          console.error('Error unloading sound during cleanup:', error);
+        });
+        setSound(null);
+      }
+      
+      // Reset all audio state
+      setCurrentAudio(null);
+      setIsPlaying(false);
+      setPosition(0);
+      setDuration(0);
+      setShowMiniPlayer(false);
+      setShowFullScreenPlayer(false);
+      setPlayStartTime(null);
+    }
+  };
+
   const recordInteraction = async (interactionType: string, metadata: any = {}) => {
-    if (!currentAudio) return;
+    if (!currentAudio) {
+      console.warn('No current audio for interaction tracking');
+      return;
+    }
 
     try {
       const token = await AsyncStorage.getItem('token');
@@ -236,10 +328,21 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
         completion: completionPercentage?.toFixed(1) + '%',
         duration: playDuration + 's'
       });
-    } catch (error) {
+    } catch (error: any) {
+      // If it's a 404 or 500 error, the audio might have been deleted
+      if (error.response?.status === 404 || error.response?.status === 500) {
+        console.warn('Audio might have been deleted, skipping interaction recording for:', currentAudio.id);
+        return;
+      }
+      
       console.error('Failed to record interaction:', error);
       // Don't throw - analytics failures shouldn't break the app
     }
+  };
+
+  const setShowFullScreenPlayerWithScript = (show: boolean, openToScript: boolean = false) => {
+    setShowFullScreenPlayer(show);
+    setOpenDirectToScript(openToScript);
   };
 
   const value: AudioContextType = {
@@ -252,13 +355,15 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     playbackRate,
     showMiniPlayer,
     showFullScreenPlayer,
+    openDirectToScript,
     playAudio,
     pauseAudio,
     resumeAudio,
     stopAudio,
     seekTo,
     setPlaybackRate,
-    setShowFullScreenPlayer,
+    setShowFullScreenPlayer: setShowFullScreenPlayerWithScript,
+    cleanupAudio,
     recordInteraction,
   };
 

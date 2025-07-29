@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -7,11 +7,14 @@ import {
   Image,
   Animated,
   Platform,
+  ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAudio } from '../context/AudioContext';
+import { useTheme } from '../context/ThemeContext';
 import { format } from 'date-fns';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { usePathname } from 'expo-router';
 
 export default function MiniPlayer() {
   const {
@@ -26,13 +29,36 @@ export default function MiniPlayer() {
     setShowFullScreenPlayer,
     showMiniPlayer,
     recordInteraction,
+    playbackRate,
   } = useAudio();
+  const { theme } = useTheme();
   
   const insets = useSafeAreaInsets();
+  const pathname = usePathname();
+  
+  // Calculate bottom position based on current route
+  const calculateBottomPosition = () => {
+    // Tab routes that have tab bar
+    const tabRoutes = ['/feed', '/auto-pick', '/library', '/sources'];
+    const isTabRoute = tabRoutes.some(route => pathname.startsWith(route));
+    
+    if (isTabRoute) {
+      // Tab bar height + safe area
+      return 49 + insets.bottom;
+    } else {
+      // No tab bar, just safe area
+      return insets.bottom;
+    }
+  };
   
   const handleOpenFullScreen = () => {
     recordInteraction('full_screen_opened');
     setShowFullScreenPlayer(true);
+  };
+
+  const handleOpenFullScreenWithScript = () => {
+    recordInteraction('script_opened_from_mini');
+    setShowFullScreenPlayer(true, true); // Open directly to script
   };
 
   if (!showMiniPlayer || !currentAudio) {
@@ -49,7 +75,7 @@ export default function MiniPlayer() {
   const progressPercentage = duration > 0 ? (position / duration) * 100 : 0;
 
   return (
-    <View style={[styles.container, { bottom: 49 + insets.bottom }]}>
+    <View style={[styles.container, { bottom: calculateBottomPosition(), backgroundColor: theme.surface, borderTopColor: theme.border }]}>
       {/* Main Content */}
       <TouchableOpacity
         style={styles.content}
@@ -57,34 +83,43 @@ export default function MiniPlayer() {
         activeOpacity={0.8}
       >
         {/* Album Art Placeholder */}
-        <View style={styles.albumArt}>
-          <Ionicons name="musical-notes" size={24} color="#9ca3af" />
+        <View style={[styles.albumArt, { backgroundColor: theme.accent }]}>
+          <Ionicons name="musical-notes" size={24} color={theme.textMuted} />
         </View>
 
         {/* Audio Info */}
         <View style={styles.audioInfo}>
-          <Text style={styles.title} numberOfLines={1}>
+          <Text style={[styles.title, { color: theme.text }]} numberOfLines={1}>
             {currentAudio.title}
           </Text>
-          <Text style={styles.subtitle}>
+          <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
             {format(new Date(currentAudio.created_at), 'MMM dd, yyyy')} · {formatTime(position)} / {formatTime(duration)}
           </Text>
         </View>
 
         {/* Controls */}
         <View style={styles.controls}>
+          {currentAudio?.script && (
+            <TouchableOpacity
+              onPress={handleOpenFullScreenWithScript}
+              style={styles.scriptButton}
+            >
+              <Ionicons name="document-text-outline" size={20} color={theme.textMuted} />
+            </TouchableOpacity>
+          )}
+          
           <TouchableOpacity
             onPress={isPlaying ? pauseAudio : resumeAudio}
             style={styles.playButton}
             disabled={isLoading}
           >
             {isLoading ? (
-              <Ionicons name="hourglass" size={24} color="#4f46e5" />
+              <Ionicons name="hourglass" size={24} color={theme.primary} />
             ) : (
               <Ionicons
                 name={isPlaying ? "pause" : "play"}
                 size={24}
-                color="#4f46e5"
+                color={theme.primary}
               />
             )}
           </TouchableOpacity>
@@ -93,18 +128,18 @@ export default function MiniPlayer() {
             onPress={stopAudio}
             style={styles.stopButton}
           >
-            <Ionicons name="close" size={20} color="#6b7280" />
+            <Ionicons name="close" size={20} color={theme.textMuted} />
           </TouchableOpacity>
         </View>
       </TouchableOpacity>
       
       {/* Progress Bar at Bottom */}
       <View style={styles.progressBarContainer}>
-        <View style={styles.progressBar}>
+        <View style={[styles.progressBar, { backgroundColor: theme.divider }]}>
           <View 
             style={[
               styles.progressFill,
-              { width: `${progressPercentage}%` }
+              { width: `${progressPercentage}%`, backgroundColor: theme.primary }
             ]}
           />
         </View>
@@ -180,5 +215,9 @@ const styles = StyleSheet.create({
   },
   stopButton: {
     padding: 8,
+  },
+  scriptButton: {
+    padding: 8,
+    marginRight: 4,
   },
 });

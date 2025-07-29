@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIn
 import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
 import { useAudio } from '../../context/AudioContext';
+import { useTheme } from '../../context/ThemeContext';
 import { useFocusEffect } from '@react-navigation/native';
 import { format } from 'date-fns';
 import { Ionicons } from '@expo/vector-icons';
@@ -48,7 +49,8 @@ interface DownloadItem {
 
 export default function LibraryScreen() {
   const { token } = useAuth();
-  const { playAudio } = useAudio();
+  const { playAudio, cleanupAudio, currentAudio, isPlaying, pauseAudio, resumeAudio, setShowFullScreenPlayer } = useAudio();
+  const { theme } = useTheme();
   
   // Current view state
   const [currentView, setCurrentView] = useState<'playlists' | 'albums' | 'mylist'>('playlists');
@@ -66,7 +68,7 @@ export default function LibraryScreen() {
   
   // UI states
   const [loading, setLoading] = useState(true);
-  const [isEditing, setIsEditing] = useState(false);
+  const [isEditingMyList, setIsEditingMyList] = useState(false);
   const [selectedAudioIds, setSelectedAudioIds] = useState<string[]>([]);
   const [scriptModalVisible, setScriptModalVisible] = useState(false);
   const [currentScript, setCurrentScript] = useState('');
@@ -88,7 +90,7 @@ export default function LibraryScreen() {
       }
       return () => {
         // Reset editing state when leaving screen
-        setIsEditing(false);
+        setIsEditingMyList(false);
         setSelectedAudioIds([]);
         setShowDownloadedOnly(false);
       };
@@ -153,7 +155,18 @@ export default function LibraryScreen() {
   };
 
   const handlePlayAudio = (audioItem: AudioItem) => {
-    playAudio(audioItem);
+    // Check if the same audio is currently loaded
+    if (currentAudio && currentAudio.id === audioItem.id) {
+      // Same audio: toggle play/pause
+      if (isPlaying) {
+        pauseAudio();
+      } else {
+        resumeAudio();
+      }
+    } else {
+      // Different audio or no audio loaded: play the new audio
+      playAudio(audioItem);
+    }
   };
 
   const toggleAudioSelection = (audioId: string) => {
@@ -164,30 +177,57 @@ export default function LibraryScreen() {
     );
   };
 
-  const handleDeleteSelected = async () => {
+  const handleDeleteSelectedFromMyList = async () => {
+    console.log('handleDeleteSelectedFromMyList called');
+    console.log('selectedAudioIds:', selectedAudioIds);
+    console.log('showDownloadedOnly:', showDownloadedOnly);
+    console.log('token:', token);
+    console.log('API URL:', API);
+
     if (selectedAudioIds.length === 0) {
-      Alert.alert('No items selected', 'Please select audio items to delete.');
+      Alert.alert('No items selected', 'Please select items to remove from My List.');
       return;
     }
 
-    // Temporarily bypass Alert.alert for debugging
+    console.log('Starting deletion process - removing audio files completely from both tabs...');
     try {
-      // Note: Audio stopping is now handled by AudioContext
-
-      console.log('Attempting to delete audio items:', selectedAudioIds); // Added log
-      await Promise.all(
-        selectedAudioIds.map((id) =>
-          axios.delete(`${API}/audio/${id}`, {
+      // Always delete audio files completely (removes from both All and Downloaded tabs)
+      for (const id of selectedAudioIds) {
+        console.log(`Deleting audio file completely for ID: ${id}`);
+        try {
+          const response = await axios.delete(`${API}/audio/${id}`, {
             headers: { Authorization: `Bearer ${token}` },
-          })
-        )
-      );
-      Alert.alert('Success', 'Selected audio items deleted.');
+          });
+          console.log(`Successfully deleted audio file ${id}:`, response.data);
+          
+          // Cleanup audio player if this audio is currently playing
+          cleanupAudio(id);
+        } catch (deleteError: any) {
+          console.error(`Error deleting audio file ${id}:`, deleteError);
+          console.error('Delete error response:', deleteError.response?.data);
+          throw deleteError;
+        }
+      }
+      
+      // Update downloaded audio IDs to reflect removal
+      setDownloadedAudioIds(prev => {
+        const newSet = new Set(prev);
+        selectedAudioIds.forEach(id => newSet.delete(id));
+        return newSet;
+      });
+      
+      Alert.alert('Success', 'Audio files deleted from My List.');
+      
+      console.log('All deletions completed successfully');
       setSelectedAudioIds([]);
-      fetchAudioLibrary(); // Re-fetch the list after deletion
+      setIsEditingMyList(false);
+      fetchLibraryData(); // Re-fetch the list after deletion
     } catch (error: any) {
-      console.error('Error deleting audio items:', error);
-      Alert.alert('Error', error.response?.data?.detail || 'Failed to delete audio items.');
+      console.error('Error removing items from My List:', error);
+      console.error('Error response data:', error.response?.data);
+      console.error('Error status:', error.response?.status);
+      console.error('Error headers:', error.response?.headers);
+      Alert.alert('Error', error.response?.data?.detail || 'Failed to remove items from My List.');
     }
   };
 
@@ -302,18 +342,33 @@ export default function LibraryScreen() {
 
   if (loading) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#4f46e5" />
+      <View style={[styles.loadingContainer, { backgroundColor: theme.background }]}>
+        <ActivityIndicator size="large" color={theme.primary} />
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: theme.background }]}>
       {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.title}>Library</Text>
-        {currentView !== 'mylist' && (
+      <View style={[styles.header, { backgroundColor: theme.surface, borderBottomColor: theme.border }]}>
+        <Text style={[styles.title, { color: theme.text }]}>Library</Text>
+        {currentView === 'mylist' ? (
+          <TouchableOpacity onPress={() => {
+            if (isEditingMyList) {
+              setIsEditingMyList(false);
+              setSelectedAudioIds([]);
+            } else {
+              setIsEditingMyList(true);
+            }
+          }}>
+            <Ionicons 
+              name={isEditingMyList ? "checkmark" : "create-outline"} 
+              size={24} 
+              color={isEditingMyList ? theme.success : theme.primary} 
+            />
+          </TouchableOpacity>
+        ) : (
           <TouchableOpacity onPress={() => {
             if (currentView === 'playlists') {
               setCreatePlaylistModalVisible(true);
@@ -321,7 +376,7 @@ export default function LibraryScreen() {
               setCreateAlbumModalVisible(true);
             }
           }}>
-            <Ionicons name="add" size={24} color="#4f46e5" />
+            <Ionicons name="add" size={24} color={theme.primary} />
           </TouchableOpacity>
         )}
       </View>
@@ -330,32 +385,32 @@ export default function LibraryScreen() {
       <ScrollView 
         horizontal 
         showsHorizontalScrollIndicator={false} 
-        style={styles.categoryBar}
+        style={[styles.categoryBar, { backgroundColor: theme.surface, borderBottomColor: theme.border }]}
         contentContainerStyle={styles.categoryBarContent}
       >
         <TouchableOpacity
-          style={[styles.categoryButton, currentView === 'playlists' && styles.categoryButtonActive]}
+          style={[styles.categoryButton, { backgroundColor: currentView === 'playlists' ? theme.primary : theme.accent }]}
           onPress={() => setCurrentView('playlists')}
         >
-          <Text style={[styles.categoryButtonText, currentView === 'playlists' && styles.categoryButtonTextActive]}>
+          <Text style={[styles.categoryButtonText, { color: currentView === 'playlists' ? '#ffffff' : theme.textSecondary }]}>
             Playlists
           </Text>
         </TouchableOpacity>
         
         <TouchableOpacity
-          style={[styles.categoryButton, currentView === 'albums' && styles.categoryButtonActive]}
+          style={[styles.categoryButton, { backgroundColor: currentView === 'albums' ? theme.primary : theme.accent }]}
           onPress={() => setCurrentView('albums')}
         >
-          <Text style={[styles.categoryButtonText, currentView === 'albums' && styles.categoryButtonTextActive]}>
+          <Text style={[styles.categoryButtonText, { color: currentView === 'albums' ? '#ffffff' : theme.textSecondary }]}>
             Albums
           </Text>
         </TouchableOpacity>
         
         <TouchableOpacity
-          style={[styles.categoryButton, currentView === 'mylist' && styles.categoryButtonActive]}
+          style={[styles.categoryButton, { backgroundColor: currentView === 'mylist' ? theme.primary : theme.accent }]}
           onPress={() => setCurrentView('mylist')}
         >
-          <Text style={[styles.categoryButtonText, currentView === 'mylist' && styles.categoryButtonTextActive]}>
+          <Text style={[styles.categoryButtonText, { color: currentView === 'mylist' ? '#ffffff' : theme.textSecondary }]}>
             My List
           </Text>
         </TouchableOpacity>
@@ -376,18 +431,18 @@ export default function LibraryScreen() {
                   <Text style={styles.emptyText}>No playlists yet. Create your first playlist!</Text>
                 ) : (
                   playlists.map((playlist) => (
-                    <TouchableOpacity key={playlist.id} style={styles.listItem}>
-                      <View style={styles.itemIcon}>
-                        <Ionicons name="musical-notes" size={24} color="#4f46e5" />
+                    <TouchableOpacity key={playlist.id} style={[styles.listItem, { backgroundColor: theme.surface }]}>
+                      <View style={[styles.itemIcon, { backgroundColor: theme.accent }]}>
+                        <Ionicons name="musical-notes" size={24} color={theme.primary} />
                       </View>
                       <View style={styles.itemInfo}>
-                        <Text style={styles.itemTitle}>{playlist.name}</Text>
-                        <Text style={styles.itemSubtitle}>
+                        <Text style={[styles.itemTitle, { color: theme.text }]}>{playlist.name}</Text>
+                        <Text style={[styles.itemSubtitle, { color: theme.textSecondary }]}>
                           {playlist.audio_ids.length} songs · {format(new Date(playlist.updated_at), 'MMM dd, yyyy')}
                         </Text>
                       </View>
                       <TouchableOpacity style={styles.itemAction}>
-                        <Ionicons name="chevron-forward" size={20} color="#6b7280" />
+                        <Ionicons name="chevron-forward" size={20} color={theme.textMuted} />
                       </TouchableOpacity>
                     </TouchableOpacity>
                   ))
@@ -402,18 +457,18 @@ export default function LibraryScreen() {
                   <Text style={styles.emptyText}>No albums yet. Create your first album!</Text>
                 ) : (
                   albums.map((album) => (
-                    <TouchableOpacity key={album.id} style={styles.listItem}>
-                      <View style={styles.itemIcon}>
-                        <Ionicons name="albums" size={24} color="#4f46e5" />
+                    <TouchableOpacity key={album.id} style={[styles.listItem, { backgroundColor: theme.surface }]}>
+                      <View style={[styles.itemIcon, { backgroundColor: theme.accent }]}>
+                        <Ionicons name="albums" size={24} color={theme.primary} />
                       </View>
                       <View style={styles.itemInfo}>
-                        <Text style={styles.itemTitle}>{album.name}</Text>
-                        <Text style={styles.itemSubtitle}>
+                        <Text style={[styles.itemTitle, { color: theme.text }]}>{album.name}</Text>
+                        <Text style={[styles.itemSubtitle, { color: theme.textSecondary }]}>
                           {album.audio_ids.length} songs · {format(new Date(album.updated_at), 'MMM dd, yyyy')}
                         </Text>
                       </View>
                       <TouchableOpacity style={styles.itemAction}>
-                        <Ionicons name="chevron-forward" size={20} color="#6b7280" />
+                        <Ionicons name="chevron-forward" size={20} color={theme.textMuted} />
                       </TouchableOpacity>
                     </TouchableOpacity>
                   ))
@@ -425,25 +480,64 @@ export default function LibraryScreen() {
             {currentView === 'mylist' && (
               <>
                 {/* Filter Toggle */}
-                <View style={styles.filterContainer}>
+                <View style={[styles.filterContainer, { backgroundColor: theme.background }]}>
                   <TouchableOpacity
-                    style={[styles.filterButton, !showDownloadedOnly && styles.filterButtonActive]}
+                    style={[
+                      styles.filterButton, 
+                      { backgroundColor: !showDownloadedOnly ? theme.primary : theme.surface, borderColor: theme.border },
+                      !showDownloadedOnly && styles.filterButtonActive
+                    ]}
                     onPress={() => setShowDownloadedOnly(false)}
                   >
-                    <Text style={[styles.filterButtonText, !showDownloadedOnly && styles.filterButtonTextActive]}>
+                    <Text style={[
+                      styles.filterButtonText, 
+                      { color: !showDownloadedOnly ? '#ffffff' : theme.textSecondary },
+                      !showDownloadedOnly && styles.filterButtonTextActive
+                    ]}>
                       All ({mylistAudioItems.length})
                     </Text>
                   </TouchableOpacity>
                   
                   <TouchableOpacity
-                    style={[styles.filterButton, showDownloadedOnly && styles.filterButtonActive]}
+                    style={[
+                      styles.filterButton, 
+                      { backgroundColor: showDownloadedOnly ? theme.primary : theme.surface, borderColor: theme.border },
+                      showDownloadedOnly && styles.filterButtonActive
+                    ]}
                     onPress={() => setShowDownloadedOnly(true)}
                   >
-                    <Text style={[styles.filterButtonText, showDownloadedOnly && styles.filterButtonTextActive]}>
+                    <Text style={[
+                      styles.filterButtonText, 
+                      { color: showDownloadedOnly ? '#ffffff' : theme.textSecondary },
+                      showDownloadedOnly && styles.filterButtonTextActive
+                    ]}>
                       Downloaded ({downloadedAudioIds.size})
                     </Text>
                   </TouchableOpacity>
                 </View>
+
+                {/* Edit Mode Instructions */}
+                {isEditingMyList && (
+                  <View style={[styles.editInstructions, { backgroundColor: theme.accent }]}>
+                    <Text style={[styles.editInstructionsText, { color: theme.textSecondary }]}>
+                      Select items to remove from My List
+                    </Text>
+                    {selectedAudioIds.length > 0 && (
+                      <TouchableOpacity 
+                        style={[styles.deleteSelectedButton, { backgroundColor: theme.error }]}
+                        onPress={() => {
+                          console.log('Delete button pressed');
+                          handleDeleteSelectedFromMyList();
+                        }}
+                      >
+                        <Ionicons name="trash-outline" size={16} color="#fff" />
+                        <Text style={styles.deleteSelectedButtonText}>
+                          Remove ({selectedAudioIds.length})
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                )}
 
                 {/* Audio List */}
                 {(() => {
@@ -457,51 +551,89 @@ export default function LibraryScreen() {
                     </Text>
                   ) : (
                     filteredAudio.map((audio) => (
-                      <View key={audio.id} style={styles.audioCard}>
+                      <TouchableOpacity
+                        key={audio.id}
+                        style={[
+                          styles.audioCard,
+                          { backgroundColor: theme.surface },
+                          isEditingMyList && selectedAudioIds.includes(audio.id) && [styles.audioCardSelected, { borderColor: theme.error }]
+                        ]}
+                        onPress={() => {
+                          if (isEditingMyList) {
+                            toggleAudioSelection(audio.id);
+                          } else {
+                            // Load audio and open full screen player
+                            playAudio(audio);
+                            setShowFullScreenPlayer(true);
+                          }
+                        }}
+                      >
                         <View style={styles.audioCardLeft}>
-                          <View style={styles.itemIcon}>
+                          {isEditingMyList && (
+                            <TouchableOpacity 
+                              style={styles.selectionCheckbox}
+                              onPress={() => toggleAudioSelection(audio.id)}
+                            >
+                              <Ionicons 
+                                name={selectedAudioIds.includes(audio.id) ? "checkmark-circle" : "ellipse-outline"} 
+                                size={24} 
+                                color={selectedAudioIds.includes(audio.id) ? theme.error : theme.textMuted} 
+                              />
+                            </TouchableOpacity>
+                          )}
+                          <View style={[styles.itemIcon, { backgroundColor: theme.accent }]}>
                             <Ionicons 
                               name={downloadedAudioIds.has(audio.id) ? "download" : "musical-notes"} 
                               size={24} 
-                              color={downloadedAudioIds.has(audio.id) ? "#10b981" : "#4f46e5"} 
+                              color={downloadedAudioIds.has(audio.id) ? theme.success : theme.primary} 
                             />
                           </View>
                           <View style={styles.itemInfo}>
-                            <Text style={styles.itemTitle}>{audio.title}</Text>
-                            <Text style={styles.itemSubtitle}>
+                            <Text style={[styles.itemTitle, { color: theme.text }]}>{audio.title}</Text>
+                            <Text style={[styles.itemSubtitle, { color: theme.textSecondary }]}>
                               {format(new Date(audio.created_at), 'MMM dd, yyyy')} · {formatDuration(audio.duration)}
                               {downloadedAudioIds.has(audio.id) && ' · Downloaded'}
                             </Text>
                           </View>
                         </View>
                         
-                        <View style={styles.audioCardActions}>
-                          {/* Play Button */}
-                          <TouchableOpacity 
-                            style={styles.playButton}
-                            onPress={() => handlePlayAudio(audio)}
-                          >
-                            <Ionicons name="play" size={16} color="#fff" />
-                          </TouchableOpacity>
-                          
-                          {/* Download/Remove Button */}
-                          {downloadedAudioIds.has(audio.id) ? (
+                        {!isEditingMyList && (
+                          <View style={styles.audioCardActions}>
+                            {/* Play/Pause Button */}
                             <TouchableOpacity 
-                              style={styles.downloadedButton}
-                              onPress={() => handleRemoveDownload(audio.id)}
+                              style={styles.playButton}
+                              onPress={() => handlePlayAudio(audio)}
                             >
-                              <Ionicons name="checkmark-circle" size={20} color="#10b981" />
+                              <Ionicons 
+                                name={
+                                  currentAudio && currentAudio.id === audio.id && isPlaying 
+                                    ? "pause" 
+                                    : "play"
+                                } 
+                                size={16} 
+                                color="#fff" 
+                              />
                             </TouchableOpacity>
-                          ) : (
-                            <TouchableOpacity 
-                              style={styles.downloadButton}
-                              onPress={() => handleDownloadAudio(audio.id)}
-                            >
-                              <Ionicons name="download-outline" size={20} color="#6b7280" />
-                            </TouchableOpacity>
-                          )}
-                        </View>
-                      </View>
+                            
+                            {/* Download/Remove Button */}
+                            {downloadedAudioIds.has(audio.id) ? (
+                              <TouchableOpacity 
+                                style={styles.downloadedButton}
+                                onPress={() => handleRemoveDownload(audio.id)}
+                              >
+                                <Ionicons name="checkmark-circle" size={20} color={theme.success} />
+                              </TouchableOpacity>
+                            ) : (
+                              <TouchableOpacity 
+                                style={styles.downloadButton}
+                                onPress={() => handleDownloadAudio(audio.id)}
+                              >
+                                <Ionicons name="download-outline" size={20} color={theme.textMuted} />
+                              </TouchableOpacity>
+                            )}
+                          </View>
+                        )}
+                      </TouchableOpacity>
                     ))
                   );
                 })()}
@@ -519,20 +651,22 @@ export default function LibraryScreen() {
         onRequestClose={() => setCreatePlaylistModalVisible(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.createModalContainer}>
-            <Text style={styles.createModalTitle}>Create Playlist</Text>
+          <View style={[styles.createModalContainer, { backgroundColor: theme.surface }]}>
+            <Text style={[styles.createModalTitle, { color: theme.text }]}>Create Playlist</Text>
             
             <TextInput
-              style={styles.textInput}
+              style={[styles.textInput, { backgroundColor: theme.background, color: theme.text, borderColor: theme.border }]}
               placeholder="Playlist name"
+              placeholderTextColor={theme.textMuted}
               value={newPlaylistName}
               onChangeText={setNewPlaylistName}
               maxLength={50}
             />
             
             <TextInput
-              style={[styles.textInput, styles.textInputMultiline]}
+              style={[styles.textInput, styles.textInputMultiline, { backgroundColor: theme.background, color: theme.text, borderColor: theme.border }]}
               placeholder="Description (optional)"
+              placeholderTextColor={theme.textMuted}
               value={newPlaylistDescription}
               onChangeText={setNewPlaylistDescription}
               multiline
@@ -542,18 +676,18 @@ export default function LibraryScreen() {
             
             <View style={styles.modalButtons}>
               <TouchableOpacity 
-                style={styles.cancelButton}
+                style={[styles.cancelButton, { backgroundColor: theme.background, borderColor: theme.border }]}
                 onPress={() => {
                   setCreatePlaylistModalVisible(false);
                   setNewPlaylistName('');
                   setNewPlaylistDescription('');
                 }}
               >
-                <Text style={styles.cancelButtonText}>Cancel</Text>
+                <Text style={[styles.cancelButtonText, { color: theme.textSecondary }]}>Cancel</Text>
               </TouchableOpacity>
               
               <TouchableOpacity 
-                style={styles.createButton}
+                style={[styles.createButton, { backgroundColor: theme.primary }]}
                 onPress={createPlaylist}
               >
                 <Text style={styles.createButtonText}>Create</Text>
@@ -571,20 +705,22 @@ export default function LibraryScreen() {
         onRequestClose={() => setCreateAlbumModalVisible(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.createModalContainer}>
-            <Text style={styles.createModalTitle}>Create Album</Text>
+          <View style={[styles.createModalContainer, { backgroundColor: theme.surface }]}>
+            <Text style={[styles.createModalTitle, { color: theme.text }]}>Create Album</Text>
             
             <TextInput
-              style={styles.textInput}
+              style={[styles.textInput, { backgroundColor: theme.background, color: theme.text, borderColor: theme.border }]}
               placeholder="Album name"
+              placeholderTextColor={theme.textMuted}
               value={newAlbumName}
               onChangeText={setNewAlbumName}
               maxLength={50}
             />
             
             <TextInput
-              style={[styles.textInput, styles.textInputMultiline]}
+              style={[styles.textInput, styles.textInputMultiline, { backgroundColor: theme.background, color: theme.text, borderColor: theme.border }]}
               placeholder="Description (optional)"
+              placeholderTextColor={theme.textMuted}
               value={newAlbumDescription}
               onChangeText={setNewAlbumDescription}
               multiline
@@ -594,18 +730,18 @@ export default function LibraryScreen() {
             
             <View style={styles.modalButtons}>
               <TouchableOpacity 
-                style={styles.cancelButton}
+                style={[styles.cancelButton, { backgroundColor: theme.background, borderColor: theme.border }]}
                 onPress={() => {
                   setCreateAlbumModalVisible(false);
                   setNewAlbumName('');
                   setNewAlbumDescription('');
                 }}
               >
-                <Text style={styles.cancelButtonText}>Cancel</Text>
+                <Text style={[styles.cancelButtonText, { color: theme.textSecondary }]}>Cancel</Text>
               </TouchableOpacity>
               
               <TouchableOpacity 
-                style={styles.createButton}
+                style={[styles.createButton, { backgroundColor: theme.primary }]}
                 onPress={createAlbum}
               >
                 <Text style={styles.createButtonText}>Create</Text>
@@ -861,5 +997,45 @@ const styles = StyleSheet.create({
     padding: 8,
     borderRadius: 20,
     backgroundColor: '#f0fdf4',
+  },
+  // Edit mode specific styles
+  editInstructions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#fff3cd',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 16,
+    borderLeftWidth: 4,
+    borderLeftColor: '#ffc107',
+  },
+  editInstructionsText: {
+    fontSize: 14,
+    color: '#856404',
+    fontWeight: '500',
+    flex: 1,
+  },
+  deleteSelectedButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ef4444',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+    gap: 4,
+  },
+  deleteSelectedButtonText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  audioCardSelected: {
+    borderColor: '#ef4444',
+    borderWidth: 2,
+    backgroundColor: '#fef2f2',
+  },
+  selectionCheckbox: {
+    marginRight: 12,
   },
 });

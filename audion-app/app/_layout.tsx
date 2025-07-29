@@ -2,15 +2,22 @@
 import React, { useEffect } from 'react';
 import { AuthProvider, useAuth } from '../context/AuthContext';
 import { AudioProvider } from '../context/AudioContext';
+import { ThemeProvider } from '../context/ThemeContext';
 import { Slot, useRouter, useSegments } from 'expo-router';
 import { ActivityIndicator, View, Alert } from 'react-native';
 import MiniPlayer from '../components/MiniPlayer';
 import FullScreenPlayer from '../components/FullScreenPlayer';
+import { useSiriShortcuts } from '../hooks/useSiriShortcuts';
+import { useAppIconShortcuts } from '../hooks/useAppIconShortcuts';
 
 const InitialLayout = () => {
   const { user, loading, isNewUser } = useAuth();
   const segments = useSegments();
   const router = useRouter();
+  
+  // Initialize Siri shortcuts and app icon shortcuts
+  useSiriShortcuts();
+  useAppIconShortcuts();
 
   useEffect(() => {
     if (loading) return;
@@ -21,8 +28,8 @@ const InitialLayout = () => {
     if (user && isNewUser && !inOnboard) {
       // New user should go to onboarding
       router.replace('/onboard');
-    } else if (user && !isNewUser && !inTabsGroup) {
-      // Existing user should go to main app
+    } else if (user && !isNewUser && !inTabsGroup && segments[0] !== 'settings' && segments[0] !== 'sources') {
+      // Existing user should go to main app (but allow settings and sources navigation)
       router.replace('/(tabs)/feed');
     } else if (!user && (inTabsGroup || inOnboard)) {
       // Not logged in should go to login
@@ -49,10 +56,12 @@ const InitialLayout = () => {
 
 export default function RootLayout() {
   return (
-    <AuthProvider>
-      <AudioProvider>
-        <InitialLayout />
-      </AudioProvider>
-    </AuthProvider>
+    <ThemeProvider>
+      <AuthProvider>
+        <AudioProvider>
+          <InitialLayout />
+        </AudioProvider>
+      </AuthProvider>
+    </ThemeProvider>
   );
 }

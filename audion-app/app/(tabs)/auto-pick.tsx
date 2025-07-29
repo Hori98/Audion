@@ -13,10 +13,15 @@ import {
 import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
 import { useAudio } from '../../context/AudioContext';
+import { useTheme } from '../../context/ThemeContext';
+import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { format } from 'date-fns';
 import { Ionicons } from '@expo/vector-icons';
 import * as WebBrowser from 'expo-web-browser';
+import { useSiriShortcuts } from '../../hooks/useSiriShortcuts';
+import AudioCreationSuccessModal from '../../components/AudioCreationSuccessModal';
+import CacheService from '../../services/CacheService';
 
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:8000';
 const API = `${BACKEND_URL}/api`;
@@ -56,6 +61,9 @@ interface UserInsights {
 export default function AutoPickScreen() {
   const { token } = useAuth();
   const { showMiniPlayer } = useAudio();
+  const { theme } = useTheme();
+  const router = useRouter();
+  const { donateShortcut } = useSiriShortcuts();
   const [loading, setLoading] = useState(false);
   const [autoPickedArticles, setAutoPickedArticles] = useState<Article[]>([]);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
@@ -63,7 +71,11 @@ export default function AutoPickScreen() {
   const [profileModalVisible, setProfileModalVisible] = useState(false);
   const [insightsModalVisible, setInsightsModalVisible] = useState(false);
   const [creatingAudio, setCreatingAudio] = useState(false);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [createdAudio, setCreatedAudio] = useState<any>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [excludedArticles, setExcludedArticles] = useState<Set<string>>(new Set());
+  const [shuffling, setShuffling] = useState(false);
 
   const genres = [
     'Technology', 'Finance', 'Sports', 'Politics', 'Health',
@@ -105,11 +117,24 @@ export default function AutoPickScreen() {
   const fetchAutoPickedArticles = async () => {
     setLoading(true);
     try {
+      // Try cache first
+      const cachedArticles = await CacheService.getAutoPickedArticles();
+      if (cachedArticles) {
+        console.log('Using cached auto-picked articles');
+        setAutoPickedArticles(cachedArticles);
+        setLoading(false);
+        return;
+      }
+
+      console.log('Fetching auto-picked articles from API');
       const response = await axios.post(
         `${API}/auto-pick`,
         { max_articles: 10 },
         { headers: { Authorization: `Bearer ${token}` } }
       );
+      
+      // Cache the results
+      await CacheService.setAutoPickedArticles(response.data);
       setAutoPickedArticles(response.data);
     } catch (error: any) {
       console.error('Error fetching auto-picked articles:', error);
@@ -121,6 +146,8 @@ export default function AutoPickScreen() {
 
   const onRefresh = async () => {
     setRefreshing(true);
+    // Clear cache to force fresh data on refresh
+    await CacheService.remove('auto_picked_articles');
     await Promise.all([fetchUserProfile(), fetchUserInsights(), fetchAutoPickedArticles()]);
     setRefreshing(false);
   };
@@ -168,20 +195,115 @@ export default function AutoPickScreen() {
     }
   };
 
-  const handleCreateAudio = async () => {
-    setCreatingAudio(true);
+  const handleShuffle = async () => {
+    setShuffling(true);
     try {
+      // Clear cache to force fresh data
+      await CacheService.remove('auto_picked_articles');
+      
       const response = await axios.post(
-        `${API}/auto-pick/create-audio`,
-        { max_articles: 3 },
+        `${API}/auto-pick`,
+        { max_articles: 10 },
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      Alert.alert('Success', `Audio created: ${response.data.title}`);
-      await fetchUserProfile(); // Refresh profile after creating audio
+      
+      // Cache the new results
+      await CacheService.setAutoPickedArticles(response.data);
+      setAutoPickedArticles(response.data);
+      setExcludedArticles(new Set()); // Clear excluded articles on shuffle
     } catch (error: any) {
+      console.error('Error shuffling articles:', error);
+      Alert.alert('Error', error.response?.data?.detail || 'Failed to shuffle articles.');
+    } finally {
+      setShuffling(false);
+    }
+  };
+
+  const handleExcludeArticle = (articleId: string) => {
+    setExcludedArticles(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(articleId)) {
+        newSet.delete(articleId);
+      } else {
+        newSet.add(articleId);
+      }
+      return newSet;
+    });
+  };
+
+  const handleCreateAudio = async () => {
+    console.log('=== AUTO-PICK AUDIO CREATION STARTED ===');
+    
+    setCreatingAudio(true);
+    try {
+      // Filter out excluded articles for audio creation
+      const availableArticles = autoPickedArticles.filter(article => !excludedArticles.has(article.id));
+      const articleIds = availableArticles.slice(0, 3).map(article => article.id);
+      
+      console.log('Available articles:', availableArticles.slice(0, 3).map(a => ({ id: a.id, title: a.title, link: a.link })));
+      console.log('Article IDs:', articleIds);
+      
+      if (articleIds.length === 0) {
+        Alert.alert('No Articles', 'Please ensure at least one article is not excluded.');
+        return;
+      }
+
+      const response = await axios.post(
+        `${API}/audio/create`,
+        { 
+          article_ids: articleIds,
+          article_titles: availableArticles.slice(0, 3).map(article => article.title),
+          article_urls: availableArticles.slice(0, 3).map(article => article.link)
+        },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      console.log('Auto-pick audio creation response:', response.data);
+      
+      // Record user interactions for personalization
+      for (const article of availableArticles.slice(0, 3)) {
+        try {
+          await axios.post(
+            `${API}/user-interaction`,
+            {
+              article_id: article.id,
+              interaction_type: 'created_audio',
+              genre: article.genre
+            },
+            { headers: { Authorization: `Bearer ${token}` } }
+          );
+        } catch (interactionError) {
+          console.error('Error recording interaction:', interactionError);
+        }
+      }
+      
+      console.log('=== SHOWING SUCCESS MODAL ===');
+      console.log('Created audio data:', response.data);
+      
+      // Show success modal instead of alert
+      setCreatedAudio(response.data);
+      setShowSuccessModal(true);
+      
+      console.log('Success modal state set, refreshing profile...');
+      
+      // Refresh profile in background to avoid blocking UI
+      fetchUserProfile().then(() => {
+        console.log('Profile refreshed successfully');
+      }).catch((profileError) => {
+        console.error('Error refreshing profile:', profileError);
+      });
+      
+      console.log('=== AUTO-PICK AUDIO CREATION COMPLETED ===');
+      
+      // Donate shortcut to Siri for auto-pick functionality
+      donateShortcut('auto-pick');
+    } catch (error: any) {
+      console.error('=== AUTO-PICK ERROR ===');
       console.error('Error creating auto-picked audio:', error);
+      console.error('Error response:', error.response?.data);
       Alert.alert('Error', error.response?.data?.detail || 'Failed to create audio.');
     } finally {
+      console.log('=== SETTING CREATING AUDIO TO FALSE ===');
       setCreatingAudio(false);
     }
   };
@@ -200,50 +322,49 @@ export default function AutoPickScreen() {
 
   if (loading && autoPickedArticles.length === 0) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#4f46e5" />
-        <Text style={styles.loadingText}>Finding articles you'll love...</Text>
+      <View style={[styles.loadingContainer, { backgroundColor: theme.background }]}>
+        <ActivityIndicator size="large" color={theme.primary} />
+        <Text style={[styles.loadingText, { color: theme.textSecondary }]}>Finding articles you'll love...</Text>
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.title}>Auto-Pick</Text>
-        <View style={styles.headerButtons}>
-          <TouchableOpacity 
-            onPress={() => setProfileModalVisible(true)}
-            style={styles.profileButton}
+    <View style={[styles.container, { backgroundColor: theme.background }]}>
+
+      {/* Action Buttons - Hide when mini player is active */}
+      {!showMiniPlayer && (
+        <View style={styles.actionButtonsContainer}>
+          <TouchableOpacity
+            style={[styles.shuffleButton, { backgroundColor: theme.surface, borderColor: theme.primary }]}
+            onPress={handleShuffle}
+            disabled={shuffling || loading}
           >
-            <Ionicons name="person-circle" size={24} color="#4f46e5" />
+            {shuffling ? (
+              <ActivityIndicator color={theme.primary} size={16} />
+            ) : (
+              <>
+                <Ionicons name="shuffle" size={18} color={theme.primary} style={{ marginRight: 6 }} />
+                <Text style={[styles.shuffleButtonText, { color: theme.primary }]}>Shuffle</Text>
+              </>
+            )}
           </TouchableOpacity>
-          <TouchableOpacity 
-            onPress={fetchAutoPickedArticles}
-            style={styles.refreshButton}
+          
+          <TouchableOpacity
+            style={[styles.createAudioButton, { backgroundColor: theme.primary }]}
+            onPress={handleCreateAudio}
+            disabled={creatingAudio}
           >
-            <Ionicons name="refresh" size={24} color="#4f46e5" />
+            {creatingAudio ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <>
+                <Ionicons name="musical-notes" size={20} color="#fff" style={{ marginRight: 8 }} />
+                <Text style={styles.createAudioButtonText}>Audio it!</Text>
+              </>
+            )}
           </TouchableOpacity>
         </View>
-      </View>
-
-      {/* Create Audio Button - Hide when mini player is active */}
-      {!showMiniPlayer && (
-        <TouchableOpacity
-          style={styles.createAudioButton}
-          onPress={handleCreateAudio}
-          disabled={creatingAudio}
-        >
-          {creatingAudio ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <>
-              <Ionicons name="musical-notes" size={20} color="#fff" style={{ marginRight: 8 }} />
-              <Text style={styles.createAudioButtonText}>Audio it!</Text>
-            </>
-          )}
-        </TouchableOpacity>
       )}
 
       {/* Articles List */}
@@ -254,48 +375,80 @@ export default function AutoPickScreen() {
         }
       >
         {autoPickedArticles.length === 0 && !loading ? (
-          <Text style={styles.noArticlesText}>
+          <Text style={[styles.noArticlesText, { color: theme.textSecondary }]}>
             No articles available. Try adding some RSS sources first!
           </Text>
         ) : (
-          autoPickedArticles.map((article) => (
-            <View key={article.id} style={styles.articleCard}>
-              <TouchableOpacity 
-                onPress={() => handleArticlePress(article.link)}
-                style={styles.articleContent}
+          autoPickedArticles.map((article) => {
+            const isExcluded = excludedArticles.has(article.id);
+            return (
+              <View 
+                key={article.id} 
+                style={[
+                  styles.articleCard, 
+                  { backgroundColor: theme.surface },
+                  isExcluded && styles.excludedCard
+                ]}
               >
-                <View style={styles.articleHeader}>
-                  <Text style={styles.articleSource}>{article.source_name}</Text>
-                  <View style={styles.genreTag}>
-                    <Text style={styles.genreText}>{article.genre}</Text>
+                {isExcluded && (
+                  <View style={styles.excludedBadge}>
+                    <Text style={styles.excludedBadgeText}>Excluded</Text>
                   </View>
+                )}
+                
+                <TouchableOpacity 
+                  onPress={() => handleArticlePress(article.link)}
+                  style={[styles.articleContent, isExcluded && styles.excludedContent]}
+                  disabled={isExcluded}
+                >
+                  <View style={styles.articleHeader}>
+                    <Text style={[styles.articleSource, { color: isExcluded ? theme.textMuted : theme.textMuted }]}>{article.source_name}</Text>
+                    <View style={[styles.genreTag, { backgroundColor: isExcluded ? theme.border : theme.secondary }]}>
+                      <Text style={[styles.genreText, { color: isExcluded ? theme.textMuted : theme.primary }]}>{article.genre}</Text>
+                    </View>
+                  </View>
+                  <Text style={[styles.articleTitle, { color: isExcluded ? theme.textMuted : theme.text }]}>{article.title}</Text>
+                  <Text style={[styles.articleSummary, { color: isExcluded ? theme.textMuted : theme.textSecondary }]} numberOfLines={3}>
+                    {article.summary}
+                  </Text>
+                  <Text style={[styles.articlePublished, { color: theme.textMuted }]}>
+                    {article.published ? format(new Date(article.published), 'MMM dd, yyyy') : 'Unknown Date'}
+                  </Text>
+                </TouchableOpacity>
+                
+                {/* Action Buttons */}
+                <View style={styles.actionButtons}>
+                  <TouchableOpacity 
+                    onPress={() => handleLikeArticle(article)}
+                    style={[styles.likeButton, { backgroundColor: theme.accent }]}
+                    disabled={isExcluded}
+                  >
+                    <Ionicons name="heart" size={20} color={isExcluded ? theme.textMuted : theme.success} />
+                  </TouchableOpacity>
+                  <TouchableOpacity 
+                    onPress={() => handleDislikeArticle(article)}
+                    style={[styles.dislikeButton, { backgroundColor: theme.accent }]}
+                    disabled={isExcluded}
+                  >
+                    <Ionicons name="close-circle" size={20} color={isExcluded ? theme.textMuted : theme.error} />
+                  </TouchableOpacity>
+                  <TouchableOpacity 
+                    onPress={() => handleExcludeArticle(article.id)}
+                    style={[
+                      styles.excludeButton, 
+                      { backgroundColor: isExcluded ? theme.primary : theme.accent }
+                    ]}
+                  >
+                    <Ionicons 
+                      name={isExcluded ? "eye" : "eye-off"} 
+                      size={20} 
+                      color={isExcluded ? "#fff" : theme.textSecondary} 
+                    />
+                  </TouchableOpacity>
                 </View>
-                <Text style={styles.articleTitle}>{article.title}</Text>
-                <Text style={styles.articleSummary} numberOfLines={3}>
-                  {article.summary}
-                </Text>
-                <Text style={styles.articlePublished}>
-                  {article.published ? format(new Date(article.published), 'MMM dd, yyyy') : 'Unknown Date'}
-                </Text>
-              </TouchableOpacity>
-              
-              {/* Like/Dislike Buttons */}
-              <View style={styles.actionButtons}>
-                <TouchableOpacity 
-                  onPress={() => handleLikeArticle(article)}
-                  style={styles.likeButton}
-                >
-                  <Ionicons name="heart" size={20} color="#10b981" />
-                </TouchableOpacity>
-                <TouchableOpacity 
-                  onPress={() => handleDislikeArticle(article)}
-                  style={styles.dislikeButton}
-                >
-                  <Ionicons name="close-circle" size={20} color="#ef4444" />
-                </TouchableOpacity>
               </View>
-            </View>
-          ))
+            );
+          })
         )}
       </ScrollView>
 
@@ -306,20 +459,20 @@ export default function AutoPickScreen() {
         visible={profileModalVisible}
         onRequestClose={() => setProfileModalVisible(false)}
       >
-        <View style={styles.modalContainer}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Your Preferences</Text>
+        <View style={[styles.modalContainer, { backgroundColor: theme.background }]}>
+          <View style={[styles.modalHeader, { backgroundColor: theme.surface, borderBottomColor: theme.border }]}>
+            <Text style={[styles.modalTitle, { color: theme.text }]}>Your Preferences</Text>
             <TouchableOpacity 
               onPress={() => setProfileModalVisible(false)}
               style={styles.modalCloseButton}
             >
-              <Ionicons name="close" size={24} color="#1f2937" />
+              <Ionicons name="close" size={24} color={theme.text} />
             </TouchableOpacity>
           </View>
           
           <ScrollView style={styles.modalContent}>
-            <Text style={styles.sectionTitle}>Genre Preferences</Text>
-            <Text style={styles.sectionDescription}>
+            <Text style={[styles.sectionTitle, { color: theme.text }]}>Genre Preferences</Text>
+            <Text style={[styles.sectionDescription, { color: theme.textSecondary }]}>
               Based on your interactions, here's what we've learned about your interests:
             </Text>
             
@@ -328,8 +481,8 @@ export default function AutoPickScreen() {
                 {genres.map((genre) => {
                   const preference = userProfile.genre_preferences[genre] || 1.0;
                   return (
-                    <View key={genre} style={styles.preferenceItem}>
-                      <Text style={styles.genreName}>{genre}</Text>
+                    <View key={genre} style={[styles.preferenceItem, { borderBottomColor: theme.divider }]}>
+                      <Text style={[styles.genreName, { color: theme.text }]}>{genre}</Text>
                       <View style={styles.preferenceIndicator}>
                         <View 
                           style={[
@@ -350,8 +503,8 @@ export default function AutoPickScreen() {
               </View>
             )}
             
-            <Text style={styles.sectionTitle}>Recent Activity</Text>
-            <Text style={styles.activityCount}>
+            <Text style={[styles.sectionTitle, { color: theme.text }]}>Recent Activity</Text>
+            <Text style={[styles.activityCount, { color: theme.primary }]}>
               {userProfile?.interaction_history?.length || 0} interactions recorded
             </Text>
           </ScrollView>
@@ -361,7 +514,7 @@ export default function AutoPickScreen() {
       {/* Floating Action Button - Show when mini player is active */}
       {showMiniPlayer && (
         <TouchableOpacity
-          style={styles.floatingActionButton}
+          style={[styles.floatingActionButton, { backgroundColor: theme.primary }]}
           onPress={handleCreateAudio}
           disabled={creatingAudio}
         >
@@ -372,6 +525,17 @@ export default function AutoPickScreen() {
           )}
         </TouchableOpacity>
       )}
+
+      {/* Success Modal */}
+      <AudioCreationSuccessModal
+        visible={showSuccessModal}
+        audioTitle={createdAudio?.title || ''}
+        audioItem={createdAudio}
+        onClose={() => {
+          setShowSuccessModal(false);
+          setCreatedAudio(null);
+        }}
+      />
     </View>
   );
 }
@@ -417,11 +581,29 @@ const styles = StyleSheet.create({
   refreshButton: {
     padding: 8,
   },
+  actionButtonsContainer: {
+    flexDirection: 'row',
+    paddingHorizontal: 20,
+    paddingTop: 15,
+    gap: 12,
+  },
+  shuffleButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  shuffleButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
   createAudioButton: {
+    flex: 2,
     backgroundColor: '#4f46e5',
-    paddingVertical: 15,
-    marginHorizontal: 20,
-    marginTop: 15,
+    paddingVertical: 12,
     borderRadius: 10,
     flexDirection: 'row',
     alignItems: 'center',
@@ -530,6 +712,35 @@ const styles = StyleSheet.create({
     padding: 8,
     borderRadius: 20,
     backgroundColor: '#fef2f2',
+  },
+  excludeButton: {
+    padding: 8,
+    borderRadius: 20,
+    backgroundColor: '#f3f4f6',
+  },
+  excludedCard: {
+    opacity: 0.6,
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    borderStyle: 'dashed',
+  },
+  excludedContent: {
+    opacity: 0.7,
+  },
+  excludedBadge: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    backgroundColor: '#ef4444',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 12,
+    zIndex: 1,
+  },
+  excludedBadgeText: {
+    color: '#ffffff',
+    fontSize: 10,
+    fontWeight: '600',
   },
   modalContainer: {
     flex: 1,

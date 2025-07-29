@@ -12,6 +12,7 @@ interface AuthContextData {
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   register: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
+  forceLogout: () => void; // Force logout for debugging
   setIsNewUser: (value: boolean) => void;
 }
 
@@ -115,6 +116,34 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     await AsyncStorage.removeItem('token');
   };
 
+  const forceLogout = async () => {
+    console.log('=== FORCE LOGOUT TRIGGERED ===');
+    setToken(null);
+    setUser(null);
+    setIsNewUser(false);
+    delete axios.defaults.headers.common['Authorization'];
+    
+    // Clear all AsyncStorage auth-related items
+    try {
+      await AsyncStorage.multiRemove([
+        'token',
+        'user',
+        'isNewUser',
+        'feed_selected_articles'
+      ]);
+      console.log('Auth storage cleared successfully');
+    } catch (error) {
+      console.error('Error clearing auth storage:', error);
+    }
+    
+    // Force reload by setting loading state
+    setLoading(true);
+    setTimeout(() => {
+      setLoading(false);
+      console.log('Force logout completed');
+    }, 100);
+  };
+
   const value = {
     user,
     token,
@@ -123,6 +152,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     login,
     register,
     logout,
+    forceLogout,
     setIsNewUser,
   };
 

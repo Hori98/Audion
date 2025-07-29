@@ -9,7 +9,36 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "associatedDomains": ["applinks:audion.app"],
+      "infoPlist": {
+        "NSUserActivityTypes": [
+          "INSendMessageIntent",
+          "INSearchForMessagesIntent",
+          "com.audion.create-audio",
+          "com.audion.auto-pick"
+        ],
+        "UIApplicationShortcutItems": [
+          {
+            "UIApplicationShortcutItemType": "com.audion.auto-pick",
+            "UIApplicationShortcutItemTitle": "Auto Pick",
+            "UIApplicationShortcutItemSubtitle": "Create audio from recommended articles",
+            "UIApplicationShortcutItemIconType": "UIApplicationShortcutIconTypePlay"
+          },
+          {
+            "UIApplicationShortcutItemType": "com.audion.feed",
+            "UIApplicationShortcutItemTitle": "Browse Feed",
+            "UIApplicationShortcutItemSubtitle": "Select articles manually",
+            "UIApplicationShortcutItemIconType": "UIApplicationShortcutIconTypeSearch"
+          },
+          {
+            "UIApplicationShortcutItemType": "com.audion.library",
+            "UIApplicationShortcutItemTitle": "My Library",
+            "UIApplicationShortcutItemSubtitle": "Access saved audio",
+            "UIApplicationShortcutItemIconType": "UIApplicationShortcutIconTypeBookmark"
+          }
+        ]
+      }
     },
     "android": {
       "adaptiveIcon": {

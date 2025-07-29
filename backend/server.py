@@ -78,7 +78,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # Allow all origins for debugging
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -120,11 +120,15 @@ class RSSSource(BaseModel):
     user_id: str
     name: str
     url: str
+    is_active: bool = True
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 class RSSSourceCreate(BaseModel):
     name: str
     url: str
+
+class RSSSourceUpdate(BaseModel):
+    is_active: bool
 
 class Article(BaseModel):
     id: str
@@ -145,13 +149,14 @@ class AudioCreation(BaseModel):
     audio_url: str
     duration: int
     script: Optional[str] = None
-    chapters: Optional[List[dict]] = None  # [{"title": "Article Title", "start_time": 0, "end_time": 30000}]
+    chapters: Optional[List[dict]] = None  # [{"title": "Article Title", "start_time": 0, "end_time": 30000, "original_url": "https://..."}] (times in milliseconds)
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 class AudioCreationRequest(BaseModel):
     article_ids: List[str]
     article_titles: List[str]
     custom_title: Optional[str] = None
+    article_urls: Optional[List[str]] = None  # Add URLs for auto-pick articles
 
 class RenameRequest(BaseModel):
     new_title: str
@@ -275,6 +280,19 @@ class PresetCategory(BaseModel):
 class OnboardRequest(BaseModel):
     selected_categories: List[str]  # category names
     user_preferences: Optional[Dict] = None
+
+class PresetSourceSearch(BaseModel):
+    query: str
+    category: Optional[str] = None
+
+class PresetSource(BaseModel):
+    name: str
+    url: str
+    category: str
+    category_display_name: str
+    description: str
+    icon: str
+    color: str
 
 # AI Helper Functions
 # Enhanced Genre Classification System with weighted keywords
@@ -467,11 +485,11 @@ async def generate_audio_title_with_openai(articles_content: List[str]) -> str:
 async def summarize_articles_with_openai(articles_content: List[str]) -> str:
     try:
         if not OPENAI_API_KEY or OPENAI_API_KEY == "your-openai-key":
-            return "HOST 1: This is a mock response because the API key is not configured."
+            return "Breaking news today as technology companies continue to shape our digital landscape. Recent developments include major updates to artificial intelligence systems and significant changes in social media platforms. Industry analysts report growing investments in sustainable technology solutions, while cybersecurity experts emphasize the importance of data protection in an increasingly connected world. These developments signal continued innovation across the tech sector."
         client = openai.AsyncOpenAI(api_key=OPENAI_API_KEY)
-        system_message = "You are an expert news summarizer. Create an engaging conversational script between two professional news hosts discussing the provided articles. Make it sound natural and informative, like a real news podcast. Keep it around 200-300 words."
+        system_message = "You are an expert news summarizer. Create a clean, professional news script for a single narrator to read aloud. The script should be written in a clear, natural speaking style without any host names, speaker labels, or dialogue markers. Focus on delivering the key information in an engaging, journalistic tone suitable for audio narration. Keep it around 200-300 words."
         combined_content = "\n\n--- Article ---\n\n".join(articles_content)
-        user_message = f"Please create a conversational script between two news hosts discussing these articles:\n\n{combined_content}"
+        user_message = f"Please create a single-narrator news script summarizing these articles:\n\n{combined_content}\n\nWrite only the script content without any speaker labels, host names, or dialogue markers."
         chat_completion = await client.chat.completions.create(
             messages=[{"role": "system", "content": system_message}, {"role": "user", "content": user_message}],
             model="gpt-4o",
@@ -479,7 +497,7 @@ async def summarize_articles_with_openai(articles_content: List[str]) -> str:
         return chat_completion.choices[0].message.content
     except Exception as e:
         logging.error(f"OpenAI summarization error: {e}")
-        return "HOST 1: An error occurred during summarization. This is a fallback mock response."
+        return "An error occurred during summarization. We apologize for the technical difficulty and are working to resolve the issue. Please try again shortly for the latest news updates."
 
 def create_mock_audio_file() -> tuple[str, int]:
     dummy_audio_url = "https://6yzcao8mrwa5n5rr.public.blob.vercel-storage.com/SampleAudio_0.4mb.mp3"
@@ -848,6 +866,27 @@ async def add_rss_source(source_data: RSSSourceCreate, current_user: User = Depe
     await db.rss_sources.insert_one(source.dict())
     return source
 
+@app.patch("/api/rss-sources/{source_id}", response_model=RSSSource, tags=["RSS"])
+async def update_rss_source(source_id: str, update_data: RSSSourceUpdate, current_user: User = Depends(get_current_user)):
+    # Check if source exists and belongs to user
+    existing_source = await db.rss_sources.find_one({"id": source_id, "user_id": current_user.id})
+    if not existing_source:
+        raise HTTPException(status_code=404, detail="RSS source not found")
+    
+    # Update the source
+    update_dict = update_data.dict(exclude_unset=True)
+    result = await db.rss_sources.update_one(
+        {"id": source_id, "user_id": current_user.id},
+        {"$set": update_dict}
+    )
+    
+    if result.modified_count == 0:
+        raise HTTPException(status_code=400, detail="Failed to update RSS source")
+    
+    # Return updated source
+    updated_source = await db.rss_sources.find_one({"id": source_id, "user_id": current_user.id})
+    return RSSSource(**updated_source)
+
 @app.delete("/api/rss-sources/{source_id}", tags=["RSS"])
 async def delete_rss_source(source_id: str, current_user: User = Depends(get_current_user)):
     result = await db.rss_sources.delete_one({"id": source_id, "user_id": current_user.id})
@@ -856,21 +895,28 @@ async def delete_rss_source(source_id: str, current_user: User = Depends(get_cur
     return {"message": "Source deleted"}
 
 @app.get("/api/articles", response_model=List[Article], tags=["Articles"])
-async def get_articles(current_user: User = Depends(get_current_user), genre: Optional[str] = None):
-    sources = await db.rss_sources.find({"user_id": current_user.id}).to_list(100)
+async def get_articles(current_user: User = Depends(get_current_user), genre: Optional[str] = None, source: Optional[str] = None):
+    # Get only active sources
+    source_filter = {"user_id": current_user.id, "is_active": {"$ne": False}}
+    
+    # Add source name filter if specified
+    if source and source != "All":
+        source_filter["name"] = source
+    
+    sources = await db.rss_sources.find(source_filter).to_list(100)
     all_articles = []
-    for source in sources:
+    for source_doc in sources:
         try:
-            cache_key = source["url"]
+            cache_key = source_doc["url"]
             current_time = time.time()
 
             if cache_key in RSS_CACHE and (current_time - RSS_CACHE[cache_key]['timestamp'] < CACHE_EXPIRY_SECONDS):
                 feed = RSS_CACHE[cache_key]['feed']
-                logging.info(f"Using cached feed for {source['name']}")
+                logging.info(f"Using cached feed for {source_doc['name']}")
             else:
-                feed = feedparser.parse(source["url"])
+                feed = feedparser.parse(source_doc["url"])
                 RSS_CACHE[cache_key] = {'feed': feed, 'timestamp': current_time}
-                logging.info(f"Fetched new feed for {source['name']}")
+                logging.info(f"Fetched new feed for {source_doc['name']}")
 
             for entry in feed.entries[:10]:
                 article_title = getattr(entry, 'title', "No Title")
@@ -882,12 +928,12 @@ async def get_articles(current_user: User = Depends(get_current_user), genre: Op
                     summary=article_summary,
                     link=getattr(entry, 'link', ""),
                     published=time.strftime('%Y-%m-%dT%H:%M:%SZ', entry.published_parsed) if hasattr(entry, 'published_parsed') and entry.published_parsed else "",
-                    source_name=source["name"],
+                    source_name=source_doc["name"],
                     content=getattr(entry, 'summary', getattr(entry, 'description', "No content available")),
                     genre=article_genre
                 ))
         except Exception as e:
-            logging.warning(f"Error parsing RSS feed {source['url']}: {e}")
+            logging.warning(f"Error parsing RSS feed {source_doc['url']}: {e}")
             continue
     
     logging.info(f"Fetched {len(all_articles)} articles before filtering.")
@@ -899,6 +945,12 @@ async def get_articles(current_user: User = Depends(get_current_user), genre: Op
 
 @app.post("/api/audio/create", response_model=AudioCreation, tags=["Audio"])
 async def create_audio(request: AudioCreationRequest, current_user: User = Depends(get_current_user)):
+    logging.info(f"=== AUDIO CREATION REQUEST RECEIVED ===")
+    logging.info(f"User: {current_user.email}")
+    logging.info(f"Article IDs: {request.article_ids}")
+    logging.info(f"Article titles: {request.article_titles}")
+    logging.info(f"Article URLs: {request.article_urls}")
+    logging.info(f"Custom title: {request.custom_title}")
     try:
         # Get actual article content from database
         articles_content = []
@@ -922,13 +974,61 @@ async def create_audio(request: AudioCreationRequest, current_user: User = Depen
         chapters = []
         if len(request.article_titles) > 1:
             chapter_duration = duration // len(request.article_titles)
-            for i, article_title in enumerate(request.article_titles):
-                start_time = i * chapter_duration
-                end_time = (i + 1) * chapter_duration if i < len(request.article_titles) - 1 else duration
+            
+            # Get articles data for original URLs
+            # Try both "id" field and "_id" field for MongoDB compatibility
+            articles = await db.articles.find({"id": {"$in": request.article_ids}}).to_list(None)
+            if not articles:
+                # Fallback: try searching by _id field
+                articles = await db.articles.find({"_id": {"$in": request.article_ids}}).to_list(None)
+            
+            articles_dict = {article.get("id", article.get("_id")): article for article in articles}
+            
+            logging.info(f"Debug: Found {len(articles)} articles for IDs: {request.article_ids}")
+            logging.info(f"Debug: articles_dict keys: {list(articles_dict.keys())}")
+            
+            # Check first article structure to understand data format
+            if articles:
+                first_article = articles[0]
+                logging.info(f"Debug: First article keys: {list(first_article.keys())}")
+                logging.info(f"Debug: First article sample: {first_article}")
+            
+            for i, (article_id, article_title) in enumerate(zip(request.article_ids, request.article_titles)):
+                start_time = i * chapter_duration * 1000  # Convert to milliseconds
+                end_time = ((i + 1) * chapter_duration if i < len(request.article_titles) - 1 else duration) * 1000  # Convert to milliseconds
+                
+                # Get original URL from article data
+                original_url = ""
+                
+                # First, try to get URL from provided article_urls (for auto-pick)
+                if request.article_urls and i < len(request.article_urls):
+                    original_url = request.article_urls[i]
+                    logging.info(f"Debug: Using provided URL for auto-pick article: {original_url}")
+                else:
+                    # Fallback to database lookup (for feed articles)
+                    article_key = article_id
+                    if article_id not in articles_dict:
+                        # Try to find by any key in articles_dict (for debugging)
+                        for key in articles_dict.keys():
+                            if str(key) == str(article_id):
+                                article_key = key
+                                break
+                    
+                    if article_key in articles_dict:
+                        article_data = articles_dict[article_key]
+                        original_url = article_data.get("link", "")
+                        logging.info(f"Debug: article_data keys: {list(article_data.keys())}")
+                        logging.info(f"Debug: article_data link field: {article_data.get('link', 'NOT_FOUND')}")
+                    else:
+                        logging.warning(f"Debug: Article {article_id} not found in database! This might be an auto-pick generated article without provided URLs.")
+                
+                logging.info(f"Debug: article_id={article_id}, found_in_dict={article_key in articles_dict if 'article_key' in locals() else False}, url={original_url}")
+                
                 chapters.append({
                     "title": article_title,
                     "start_time": start_time,
-                    "end_time": end_time
+                    "end_time": end_time,
+                    "original_url": original_url
                 })
         
         audio_creation = AudioCreation(
@@ -955,7 +1055,9 @@ async def create_audio(request: AudioCreationRequest, current_user: User = Depen
         
         return audio_creation
     except Exception as e:
+        import traceback
         logging.error(f"Audio creation error: {e}")
+        logging.error(f"Full traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/audio/library", response_model=List[AudioCreation], tags=["Audio"])
@@ -965,10 +1067,31 @@ async def get_audio_library(current_user: User = Depends(get_current_user)):
 
 @app.delete("/api/audio/{audio_id}", tags=["Audio"])
 async def delete_audio(audio_id: str, current_user: User = Depends(get_current_user)):
-    result = await db.audio_creations.delete_one({"id": audio_id, "user_id": current_user.id})
-    if result.deleted_count == 0:
+    from datetime import datetime, timedelta
+    
+    # Find the audio first
+    audio = await db.audio_creations.find_one({"id": audio_id, "user_id": current_user.id})
+    if not audio:
         raise HTTPException(status_code=404, detail="Audio not found")
-    return {"message": "Audio deleted"}
+    
+    # Move to deleted_audio collection with deletion metadata
+    deleted_audio_doc = {
+        **audio,  # Copy all original audio data
+        "deleted_at": datetime.utcnow(),
+        "permanent_delete_at": datetime.utcnow() + timedelta(days=14),
+        "original_collection": "audio_creations"
+    }
+    
+    # Insert into deleted_audio collection
+    await db.deleted_audio.insert_one(deleted_audio_doc)
+    
+    # Remove from original collection
+    result = await db.audio_creations.delete_one({"id": audio_id, "user_id": current_user.id})
+    
+    # Also remove from downloads if exists
+    await db.downloaded_audio.delete_many({"audio_id": audio_id})
+    
+    return {"message": "Audio moved to trash (recoverable for 14 days)"}
 
 @app.put("/api/audio/{audio_id}/rename", tags=["Audio"])
 async def rename_audio(audio_id: str, request: RenameRequest, current_user: User = Depends(get_current_user)):
@@ -979,6 +1102,93 @@ async def rename_audio(audio_id: str, request: RenameRequest, current_user: User
     if result.modified_count == 0:
         raise HTTPException(status_code=404, detail="Audio not found")
     return {"message": "Audio renamed"}
+
+# Deleted Audio Management Endpoints
+@app.get("/api/audio/deleted", tags=["Audio"])
+async def get_deleted_audio(current_user: User = Depends(get_current_user)):
+    """Get list of deleted audio files that can be recovered (within 14 days)"""
+    from datetime import datetime
+    
+    # Only return audio that hasn't passed the permanent deletion date
+    deleted_audio = await db.deleted_audio.find({
+        "user_id": current_user.id,
+        "permanent_delete_at": {"$gt": datetime.utcnow()}
+    }).sort("deleted_at", -1).to_list(100)
+    
+    return [
+        {
+            "id": audio["id"],
+            "title": audio["title"],
+            "deleted_at": audio["deleted_at"].isoformat(),
+            "permanent_delete_at": audio["permanent_delete_at"].isoformat(),
+            "days_remaining": (audio["permanent_delete_at"] - datetime.utcnow()).days
+        }
+        for audio in deleted_audio
+    ]
+
+@app.post("/api/audio/{audio_id}/restore", tags=["Audio"])
+async def restore_deleted_audio(audio_id: str, current_user: User = Depends(get_current_user)):
+    """Restore a deleted audio file back to the library"""
+    from datetime import datetime
+    
+    # Find the deleted audio
+    deleted_audio = await db.deleted_audio.find_one({
+        "id": audio_id, 
+        "user_id": current_user.id,
+        "permanent_delete_at": {"$gt": datetime.utcnow()}
+    })
+    
+    if not deleted_audio:
+        raise HTTPException(status_code=404, detail="Deleted audio not found or expired")
+    
+    # Create restored audio document (remove deletion metadata)
+    restored_audio = {k: v for k, v in deleted_audio.items() 
+                     if k not in ["deleted_at", "permanent_delete_at", "original_collection"]}
+    
+    # Insert back into original collection
+    await db.audio_creations.insert_one(restored_audio)
+    
+    # Remove from deleted collection
+    await db.deleted_audio.delete_one({"id": audio_id, "user_id": current_user.id})
+    
+    return {"message": "Audio restored successfully"}
+
+@app.delete("/api/audio/{audio_id}/permanent", tags=["Audio"])
+async def permanently_delete_audio(audio_id: str, current_user: User = Depends(get_current_user)):
+    """Permanently delete an audio file from trash (cannot be recovered)"""
+    result = await db.deleted_audio.delete_one({"id": audio_id, "user_id": current_user.id})
+    
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Deleted audio not found")
+    
+    # TODO: Also delete the actual audio file from S3/storage if implemented
+    
+    return {"message": "Audio permanently deleted"}
+
+@app.delete("/api/audio/deleted/clear-all", tags=["Audio"])
+async def clear_all_deleted_audio(current_user: User = Depends(get_current_user)):
+    """Permanently delete all audio files from trash"""
+    result = await db.deleted_audio.delete_many({"user_id": current_user.id})
+    
+    # TODO: Also delete the actual audio files from S3/storage if implemented
+    
+    return {"message": f"Permanently deleted {result.deleted_count} audio files"}
+
+# Background cleanup task for expired deleted audio
+async def cleanup_expired_deleted_audio():
+    """Remove deleted audio that has passed the 14-day retention period"""
+    from datetime import datetime
+    
+    try:
+        result = await db.deleted_audio.delete_many({
+            "permanent_delete_at": {"$lt": datetime.utcnow()}
+        })
+        
+        if result.deleted_count > 0:
+            print(f"Cleaned up {result.deleted_count} expired deleted audio files")
+            
+    except Exception as e:
+        print(f"Error during cleanup: {e}")
 
 # Auto-Pick Endpoints
 @app.post("/api/auto-pick", response_model=List[Article], tags=["Auto-Pick"])
@@ -1247,14 +1457,30 @@ async def create_auto_picked_audio(request: AutoPickRequest, current_user: User 
 
         title = generated_title
         
+        # Generate chapters based on article count and duration
+        chapters = []
+        article_titles = [article.title for article in picked_articles]
+        if len(article_titles) > 1:
+            chapter_duration = duration // len(article_titles)
+            for i, (article, article_title) in enumerate(zip(picked_articles, article_titles)):
+                start_time = i * chapter_duration * 1000  # Convert to milliseconds
+                end_time = ((i + 1) * chapter_duration if i < len(article_titles) - 1 else duration) * 1000  # Convert to milliseconds
+                chapters.append({
+                    "title": article_title,
+                    "start_time": start_time,
+                    "end_time": end_time,
+                    "original_url": article.link
+                })
+        
         audio_creation = AudioCreation(
             user_id=current_user.id, 
             title=title, 
             article_ids=[article.id for article in picked_articles],
-            article_titles=[article.title for article in picked_articles], 
+            article_titles=article_titles, 
             audio_url=audio_url,
             duration=duration,
-            script=script
+            script=script,
+            chapters=chapters
         )
         
         await db.audio_creations.insert_one(audio_creation.dict())
@@ -1298,7 +1524,10 @@ async def initialize_preset_categories():
             "rss_sources": [
                 {"name": "TechCrunch", "url": "https://techcrunch.com/feed/"},
                 {"name": "The Verge", "url": "https://www.theverge.com/rss/index.xml"},
-                {"name": "Wired", "url": "https://www.wired.com/feed/rss"}
+                {"name": "Wired", "url": "https://www.wired.com/feed/rss"},
+                {"name": "Ars Technica", "url": "http://feeds.arstechnica.com/arstechnica/index"},
+                {"name": "Engadget", "url": "https://www.engadget.com/rss.xml"},
+                {"name": "ZDNet", "url": "https://www.zdnet.com/news/rss.xml"}
             ]
         },
         {
@@ -1310,7 +1539,10 @@ async def initialize_preset_categories():
             "rss_sources": [
                 {"name": "Reuters Business", "url": "https://feeds.reuters.com/reuters/businessNews"},
                 {"name": "Bloomberg", "url": "https://feeds.bloomberg.com/markets/news.rss"},
-                {"name": "Fortune", "url": "https://fortune.com/feed/"}
+                {"name": "Fortune", "url": "https://fortune.com/feed/"},
+                {"name": "Forbes", "url": "https://www.forbes.com/real-time/feed2/"},
+                {"name": "Wall Street Journal", "url": "https://feeds.a.dj.com/rss/RSSWorldNews.xml"},
+                {"name": "Harvard Business Review", "url": "http://feeds.harvardbusiness.org/harvardbusiness"}
             ]
         },
         {
@@ -1322,7 +1554,10 @@ async def initialize_preset_categories():
             "rss_sources": [
                 {"name": "BBC World", "url": "http://feeds.bbci.co.uk/news/world/rss.xml"},
                 {"name": "CNN International", "url": "http://rss.cnn.com/rss/edition.rss"},
-                {"name": "Reuters World", "url": "https://feeds.reuters.com/Reuters/worldNews"}
+                {"name": "Reuters World", "url": "https://feeds.reuters.com/Reuters/worldNews"},
+                {"name": "Associated Press", "url": "https://feeds.apnews.com/rss/apf-topnews"},
+                {"name": "NPR News", "url": "https://feeds.npr.org/1001/rss.xml"},
+                {"name": "The Guardian", "url": "https://www.theguardian.com/world/rss"}
             ]
         },
         {
@@ -1334,7 +1569,10 @@ async def initialize_preset_categories():
             "rss_sources": [
                 {"name": "Science Daily", "url": "https://www.sciencedaily.com/rss/all.xml"},
                 {"name": "Nature News", "url": "https://www.nature.com/nature.rss"},
-                {"name": "Scientific American", "url": "https://rss.sciam.com/ScientificAmerican-Global"}
+                {"name": "Scientific American", "url": "https://rss.sciam.com/ScientificAmerican-Global"},
+                {"name": "New Scientist", "url": "https://www.newscientist.com/feed/home/"},
+                {"name": "Science Magazine", "url": "https://www.science.org/rss/news_current.xml"},
+                {"name": "MIT Technology Review", "url": "https://www.technologyreview.com/feed/"}
             ]
         },
         {
@@ -1346,7 +1584,52 @@ async def initialize_preset_categories():
             "rss_sources": [
                 {"name": "Entertainment Weekly", "url": "https://ew.com/feed/"},
                 {"name": "Variety", "url": "https://variety.com/feed/"},
-                {"name": "The Hollywood Reporter", "url": "https://www.hollywoodreporter.com/feed/"}
+                {"name": "The Hollywood Reporter", "url": "https://www.hollywoodreporter.com/feed/"},
+                {"name": "Rolling Stone", "url": "https://www.rollingstone.com/feed/"},
+                {"name": "Billboard", "url": "https://www.billboard.com/feed/"},
+                {"name": "IGN", "url": "http://feeds.ign.com/ign/all"}
+            ]
+        },
+        {
+            "name": "sports",
+            "display_name": "Sports",
+            "description": "Sports news, updates, and analysis",
+            "icon": "football-outline",
+            "color": "#06B6D4",
+            "rss_sources": [
+                {"name": "ESPN", "url": "https://www.espn.com/espn/rss/news"},
+                {"name": "Sports Illustrated", "url": "https://www.si.com/rss/si_topstories.rss"},
+                {"name": "CBS Sports", "url": "https://www.cbssports.com/rss/headlines/"},
+                {"name": "The Athletic", "url": "https://theathletic.com/rss/"},
+                {"name": "Bleacher Report", "url": "http://bleacherreport.com/articles/feed"}
+            ]
+        },
+        {
+            "name": "health",
+            "display_name": "Health & Medicine",
+            "description": "Health news, medical research, and wellness",
+            "icon": "medical-outline",
+            "color": "#EC4899",
+            "rss_sources": [
+                {"name": "WebMD", "url": "https://www.webmd.com/rss/rss.aspx?RSSSource=RSS_PUBLIC"},
+                {"name": "Healthline", "url": "https://www.healthline.com/health/rss"},
+                {"name": "Mayo Clinic", "url": "https://www.mayoclinic.org/rss"},
+                {"name": "Medical News Today", "url": "https://www.medicalnewstoday.com/rss"},
+                {"name": "Harvard Health", "url": "https://www.health.harvard.edu/rss"}
+            ]
+        },
+        {
+            "name": "lifestyle",
+            "display_name": "Lifestyle",
+            "description": "Travel, food, fashion, and personal interests",
+            "icon": "cafe-outline",
+            "color": "#F97316",
+            "rss_sources": [
+                {"name": "Conde Nast Traveler", "url": "https://www.cntraveler.com/feed/rss"},
+                {"name": "Food & Wine", "url": "https://www.foodandwine.com/syndication/rss"},
+                {"name": "Vogue", "url": "https://www.vogue.com/feed/rss"},
+                {"name": "Travel + Leisure", "url": "https://www.travelandleisure.com/syndication/rss"},
+                {"name": "Real Simple", "url": "https://www.realsimple.com/syndication/rss"}
             ]
         }
     ]
@@ -1365,10 +1648,16 @@ async def startup_event():
     await db.user_profiles.create_index("user_id", unique=True)
     await db.user_profiles.create_index([("user_id", 1), ("updated_at", -1)])
     await db.preset_categories.create_index("name", unique=True)
+    # Deleted audio indexes for efficient cleanup and retrieval
+    await db.deleted_audio.create_index([("user_id", 1), ("deleted_at", -1)])
+    await db.deleted_audio.create_index("permanent_delete_at")
     logging.info("Database indexes created.")
     
     # Initialize preset categories
     await initialize_preset_categories()
+    
+    # Cleanup expired deleted audio files
+    await cleanup_expired_deleted_audio()
     
     if not OPENAI_API_KEY: 
         logging.warning("OpenAI API key not found")
@@ -1649,9 +1938,20 @@ async def download_audio(audio_id: str, current_user: User = Depends(get_current
 @app.delete("/api/downloads/{audio_id}", tags=["Downloads"])
 async def remove_download(audio_id: str, current_user: User = Depends(get_current_user)):
     """Remove audio from downloads"""
+    logging.info(f"DELETE /api/downloads/{audio_id} called by user {current_user.id}")
+    
+    # Check if the download exists first
+    existing_download = await db.downloaded_audio.find_one({"user_id": current_user.id, "audio_id": audio_id})
+    logging.info(f"Existing download found: {existing_download is not None}")
+    
     result = await db.downloaded_audio.delete_one({"user_id": current_user.id, "audio_id": audio_id})
+    logging.info(f"Delete result: deleted_count={result.deleted_count}")
+    
     if result.deleted_count == 0:
+        logging.warning(f"No download found to delete for audio_id={audio_id}, user_id={current_user.id}")
         raise HTTPException(status_code=404, detail="Downloaded audio not found")
+    
+    logging.info(f"Successfully removed download for audio_id={audio_id}")
     return {"message": "Download removed"}
 
 @app.post("/api/feedback/misreading", tags=["Feedback"])
@@ -1799,6 +2099,413 @@ async def setup_user_onboard(request: OnboardRequest, current_user: User = Depen
     except Exception as e:
         logging.error(f"Onboarding setup error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/preset-sources/search", response_model=List[PresetSource], tags=["Preset Sources"])
+async def search_preset_sources(query: str = "", category: Optional[str] = None):
+    """Search for available preset RSS sources"""
+    try:
+        # Get all preset categories
+        filter_criteria = {}
+        if category:
+            filter_criteria["name"] = category
+            
+        categories = await db.preset_categories.find(filter_criteria).to_list(100)
+        
+        preset_sources = []
+        for cat in categories:
+            for rss_source in cat["rss_sources"]:
+                source = PresetSource(
+                    name=rss_source["name"],
+                    url=rss_source["url"],
+                    category=cat["name"],
+                    category_display_name=cat["display_name"],
+                    description=cat["description"],
+                    icon=cat["icon"],
+                    color=cat["color"]
+                )
+                
+                # Filter by query if provided
+                if query.lower() in rss_source["name"].lower() or query.lower() in cat["display_name"].lower():
+                    preset_sources.append(source)
+                elif not query:  # If no query, include all
+                    preset_sources.append(source)
+        
+        return preset_sources
+        
+    except Exception as e:
+        logging.error(f"Preset sources search error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/preset-sources/add", tags=["Preset Sources"])
+async def add_preset_source(source_name: str, current_user: User = Depends(get_current_user)):
+    """Add a preset RSS source to user's account"""
+    try:
+        # Find the preset source by name
+        categories = await db.preset_categories.find({}).to_list(100)
+        
+        target_source = None
+        for category in categories:
+            for rss_source in category["rss_sources"]:
+                if rss_source["name"].lower() == source_name.lower():
+                    target_source = rss_source
+                    break
+            if target_source:
+                break
+        
+        if not target_source:
+            raise HTTPException(status_code=404, detail="Preset source not found")
+        
+        # Check if user already has this source
+        existing = await db.rss_sources.find_one({
+            "user_id": current_user.id,
+            "url": target_source["url"]
+        })
+        
+        if existing:
+            return {"message": "Source already exists in your account", "source": existing}
+        
+        # Add the source to user's account
+        new_source = RSSSource(
+            user_id=current_user.id,
+            name=target_source["name"],
+            url=target_source["url"],
+            is_active=True
+        )
+        
+        await db.rss_sources.insert_one(new_source.dict())
+        
+        return {
+            "message": "Preset source added successfully",
+            "source": new_source.dict()
+        }
+        
+    except Exception as e:
+        logging.error(f"Add preset source error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/preset-sources/recommended", response_model=List[PresetSource], tags=["Preset Sources"])
+async def get_recommended_preset_sources(current_user: User = Depends(get_current_user)):
+    """Get recommended preset sources based on user's preferences"""
+    try:
+        # Get user's profile to understand preferences
+        profile = await db.user_profiles.find_one({"user_id": current_user.id})
+        
+        # Get user's existing sources to avoid recommending duplicates
+        existing_sources = await db.rss_sources.find({"user_id": current_user.id}).to_list(1000)
+        existing_urls = {source["url"] for source in existing_sources}
+        
+        # Get all preset categories
+        categories = await db.preset_categories.find({}).to_list(100)
+        
+        recommended_sources = []
+        
+        # If user has preferences, prioritize those categories
+        if profile and profile.get("genre_preferences"):
+            preferred_categories = sorted(
+                profile["genre_preferences"].items(), 
+                key=lambda x: x[1], 
+                reverse=True
+            )[:3]  # Top 3 preferred categories
+            
+            for cat_name, _ in preferred_categories:
+                category = next((cat for cat in categories if cat["name"] == cat_name), None)
+                if category:
+                    for rss_source in category["rss_sources"]:
+                        if rss_source["url"] not in existing_urls:
+                            recommended_sources.append(PresetSource(
+                                name=rss_source["name"],
+                                url=rss_source["url"],
+                                category=category["name"],
+                                category_display_name=category["display_name"],
+                                description=category["description"],
+                                icon=category["icon"],
+                                color=category["color"]
+                            ))
+        else:
+            # If no preferences, recommend popular sources from all categories
+            for category in categories:
+                for rss_source in category["rss_sources"][:2]:  # Top 2 from each category
+                    if rss_source["url"] not in existing_urls:
+                        recommended_sources.append(PresetSource(
+                            name=rss_source["name"],
+                            url=rss_source["url"],
+                            category=category["name"],
+                            category_display_name=category["display_name"],
+                            description=category["description"],
+                            icon=category["icon"],
+                            color=category["color"]
+                        ))
+        
+        return recommended_sources[:12]  # Limit to 12 recommendations
+        
+    except Exception as e:
+        logging.error(f"Get recommended sources error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/preset-sources/refresh-categories", tags=["Preset Sources"])
+async def refresh_preset_categories(current_user: User = Depends(get_current_user)):
+    """Force refresh preset categories (for existing users to get new categories)"""
+    try:
+        # Clear existing preset categories
+        await db.preset_categories.delete_many({})
+        
+        # Re-initialize with latest categories
+        await initialize_preset_categories()
+        
+        return {
+            "message": "Preset categories refreshed successfully",
+            "new_categories_count": await db.preset_categories.count_documents({})
+        }
+        
+    except Exception as e:
+        logging.error(f"Refresh preset categories error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/api/user/account", tags=["User Account"])
+async def delete_user_account(current_user: User = Depends(get_current_user)):
+    """Delete user account and all associated data"""
+    try:
+        user_id = current_user.id
+        user_email = current_user.email
+        
+        logging.info(f"Starting account deletion for user: {user_email} (ID: {user_id})")
+        
+        # Delete all user data in sequence with logging
+        rss_result = await db.rss_sources.delete_many({"user_id": user_id})
+        logging.info(f"Deleted {rss_result.deleted_count} RSS sources")
+        
+        audio_result = await db.audio_creations.delete_many({"user_id": user_id})
+        logging.info(f"Deleted {audio_result.deleted_count} audio creations")
+        
+        download_result = await db.downloaded_audio.delete_many({"user_id": user_id})
+        logging.info(f"Deleted {download_result.deleted_count} downloaded audio")
+        
+        deleted_result = await db.deleted_audio.delete_many({"user_id": user_id})
+        logging.info(f"Deleted {deleted_result.deleted_count} deleted audio records")
+        
+        profile_result = await db.user_profiles.delete_many({"user_id": user_id})
+        logging.info(f"Deleted {profile_result.deleted_count} user profiles")
+        
+        feedback_result = await db.misreading_feedback.delete_many({"user_id": user_id})
+        logging.info(f"Deleted {feedback_result.deleted_count} feedback records")
+        
+        # Try both possible user document structures
+        user_result1 = await db.users.delete_one({"id": user_id})
+        user_result2 = await db.users.delete_one({"_id": user_id})
+        
+        total_user_deleted = user_result1.deleted_count + user_result2.deleted_count
+        logging.info(f"Deleted {total_user_deleted} user documents (id field: {user_result1.deleted_count}, _id field: {user_result2.deleted_count})")
+        
+        if total_user_deleted == 0:
+            logging.warning(f"No user document found for deletion. User ID: {user_id}")
+            # Try finding by email as fallback
+            email_result = await db.users.delete_one({"email": user_email})
+            logging.info(f"Deleted by email: {email_result.deleted_count}")
+        
+        logging.info(f"Account deletion completed for user: {user_email}")
+        
+        return {"message": "Account deleted successfully"}
+        
+    except Exception as e:
+        logging.error(f"Delete user account error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ==================== USER PROFILE ENDPOINTS ====================
+@app.get("/api/user/profile", tags=["User Profile"])
+async def get_user_profile(current_user: User = Depends(get_current_user)):
+    """Get user profile information including profile image"""
+    try:
+        # Fetch user profile data
+        profile = await db.user_profiles.find_one({"user_id": current_user.id})
+        
+        user_data = {
+            "user_id": current_user.id,
+            "email": current_user.email,
+            "username": current_user.username if hasattr(current_user, 'username') else None,
+            "profile_image": None
+        }
+        
+        if profile:
+            user_data["profile_image"] = profile.get("profile_image")
+            user_data["genre_preferences"] = profile.get("genre_preferences", {})
+            user_data["created_at"] = profile.get("created_at")
+            user_data["updated_at"] = profile.get("updated_at")
+        
+        return user_data
+        
+    except Exception as e:
+        logging.error(f"Error fetching user profile: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch user profile")
+
+class ProfileImageUpload(BaseModel):
+    image_data: str  # Base64 encoded image
+    filename: str
+
+@app.post("/api/user/profile-image", tags=["User Profile"])
+async def upload_profile_image(
+    upload_data: ProfileImageUpload, 
+    current_user: User = Depends(get_current_user)
+):
+    """Upload user profile image"""
+    try:
+        import base64
+        from io import BytesIO
+        from PIL import Image
+        
+        # Decode base64 image
+        try:
+            # Remove data:image/jpeg;base64, prefix if present
+            if upload_data.image_data.startswith('data:image'):
+                image_data = upload_data.image_data.split(',')[1]
+            else:
+                image_data = upload_data.image_data
+                
+            image_bytes = base64.b64decode(image_data)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail="Invalid image data")
+        
+        # Validate and process image
+        try:
+            image = Image.open(BytesIO(image_bytes))
+            
+            # Convert to RGB if necessary
+            if image.mode != 'RGB':
+                image = image.convert('RGB')
+            
+            # Resize image to reasonable size (max 512x512)
+            if image.size[0] > 512 or image.size[1] > 512:
+                image.thumbnail((512, 512), Image.Resampling.LANCZOS)
+            
+            # Save processed image back to bytes
+            processed_image_bytes = BytesIO()
+            image.save(processed_image_bytes, format='JPEG', quality=85)
+            processed_image_bytes.seek(0)
+            
+        except Exception as e:
+            raise HTTPException(status_code=400, detail="Invalid image format")
+        
+        # Upload to S3 if configured, otherwise save locally
+        try:
+            if AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY:
+                # Upload to S3
+                s3_client = boto3.client(
+                    's3',
+                    aws_access_key_id=AWS_ACCESS_KEY_ID,
+                    aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
+                    region_name=AWS_REGION
+                )
+                
+                # Generate unique filename
+                file_extension = 'jpg'
+                s3_key = f"profile-images/{current_user.id}/{uuid.uuid4()}.{file_extension}"
+                
+                # Upload to S3
+                s3_client.upload_fileobj(
+                    processed_image_bytes,
+                    S3_BUCKET_NAME,
+                    s3_key,
+                    ExtraArgs={'ContentType': 'image/jpeg'}
+                )
+                
+                # Generate public URL
+                profile_image_url = f"https://{S3_BUCKET_NAME}.s3.{AWS_REGION}.amazonaws.com/{s3_key}"
+                
+            else:
+                # Save locally (fallback)
+                local_dir = ROOT_DIR / "profile_images"
+                local_dir.mkdir(exist_ok=True)
+                
+                file_extension = 'jpg'
+                filename = f"{current_user.id}_{uuid.uuid4()}.{file_extension}"
+                file_path = local_dir / filename
+                
+                with open(file_path, 'wb') as f:
+                    f.write(processed_image_bytes.getvalue())
+                
+                profile_image_url = f"/profile-images/{filename}"
+                
+        except Exception as e:
+            logging.error(f"Failed to save profile image: {e}")
+            raise HTTPException(status_code=500, detail="Failed to save profile image")
+        
+        # Update user profile in database
+        try:
+            # Check if profile exists
+            existing_profile = await db.user_profiles.find_one({"user_id": current_user.id})
+            
+            if existing_profile:
+                # Update existing profile
+                await db.user_profiles.update_one(
+                    {"user_id": current_user.id},
+                    {"$set": {
+                        "profile_image": profile_image_url,
+                        "updated_at": datetime.utcnow()
+                    }}
+                )
+            else:
+                # Create new profile
+                user_profile = {
+                    "user_id": current_user.id,
+                    "profile_image": profile_image_url,
+                    "genre_preferences": {},
+                    "interaction_history": [],
+                    "created_at": datetime.utcnow(),
+                    "updated_at": datetime.utcnow()
+                }
+                await db.user_profiles.insert_one(user_profile)
+                
+        except Exception as e:
+            logging.error(f"Failed to update user profile: {e}")
+            raise HTTPException(status_code=500, detail="Failed to update user profile")
+        
+        return {
+            "message": "Profile image uploaded successfully",
+            "profile_image_url": profile_image_url
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Unexpected error uploading profile image: {e}")
+        raise HTTPException(status_code=500, detail="Failed to upload profile image")
+
+@app.delete("/api/user/profile-image", tags=["User Profile"])
+async def remove_profile_image(current_user: User = Depends(get_current_user)):
+    """Remove user profile image"""
+    try:
+        # Get current profile to find image URL for cleanup
+        profile = await db.user_profiles.find_one({"user_id": current_user.id})
+        
+        if profile and profile.get("profile_image"):
+            # TODO: Add cleanup of S3/local files if needed
+            pass
+        
+        # Update profile to remove image
+        await db.user_profiles.update_one(
+            {"user_id": current_user.id},
+            {"$unset": {"profile_image": ""},
+             "$set": {"updated_at": datetime.utcnow()}}
+        )
+        
+        return {"message": "Profile image removed successfully"}
+        
+    except Exception as e:
+        logging.error(f"Error removing profile image: {e}")
+        raise HTTPException(status_code=500, detail="Failed to remove profile image")
+
+@app.get("/profile-images/{filename}", tags=["User Profile"])
+async def serve_profile_image(filename: str):
+    """Serve local profile image files"""
+    try:
+        profile_image_path = ROOT_DIR / "profile_images" / filename
+        if not profile_image_path.exists():
+            raise HTTPException(status_code=404, detail="Profile image not found")
+        return FileResponse(profile_image_path, media_type="image/jpeg")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error serving profile image: {e}")
+        raise HTTPException(status_code=500, detail="Failed to serve profile image")
 
 # Lifespan events now handled above
 

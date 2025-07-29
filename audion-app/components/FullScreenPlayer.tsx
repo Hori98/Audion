@@ -13,8 +13,10 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useAudio } from '../context/AudioContext';
 import { useAuth } from '../context/AuthContext';
+import { useTheme } from '../context/ThemeContext';
 import { format } from 'date-fns';
 import axios from 'axios';
+import * as WebBrowser from 'expo-web-browser';
 
 const { width } = Dimensions.get('window');
 
@@ -33,16 +35,39 @@ export default function FullScreenPlayer() {
     setPlaybackRate,
     showFullScreenPlayer,
     setShowFullScreenPlayer,
+    openDirectToScript,
     recordInteraction,
   } = useAudio();
   
   const { token } = useAuth();
+  const { theme } = useTheme();
   const [isSaved, setIsSaved] = React.useState(false);
   const [showMenu, setShowMenu] = React.useState(false);
+  const [showFullScript, setShowFullScript] = React.useState(false);
   const [currentWordIndex, setCurrentWordIndex] = React.useState(0);
+  const [showHeaderMiniPlayer, setShowHeaderMiniPlayer] = React.useState(false);
   const scriptScrollRef = React.useRef<ScrollView>(null);
+  const scrollViewRef = React.useRef<ScrollView>(null);
+
+  // Auto-open script when requested from mini player
+  React.useEffect(() => {
+    if (openDirectToScript && showFullScreenPlayer) {
+      setShowFullScript(true);
+      // Reset the flag after opening
+      setShowFullScreenPlayer(true, false);
+    }
+  }, [openDirectToScript, showFullScreenPlayer]);
   
   const API = process.env.EXPO_PUBLIC_BACKEND_URL ? `${process.env.EXPO_PUBLIC_BACKEND_URL}/api` : 'http://localhost:8000/api';
+
+  // スクロール検知: 再生ボタンが画面外に出たらヘッダーにミニプレイヤー表示
+  const handleScroll = (event: any) => {
+    const scrollY = event.nativeEvent.contentOffset.y;
+    // 再生ボタン位置の推定（アルバムアート + 音声情報 + プログレス + コントロールの高さ）
+    const controlsPosition = 320 + 80 + 100 + 80; // 約580px
+    const shouldShowMiniPlayer = scrollY > controlsPosition;
+    setShowHeaderMiniPlayer(shouldShowMiniPlayer);
+  };
   
   const playbackRates = [0.7, 1.0, 1.3, 1.5];
 
@@ -54,27 +79,71 @@ export default function FullScreenPlayer() {
     return totalWords / durationSeconds;
   };
 
-  // Calculate current word index based on playback position and auto-scroll
+  // Enhanced high-precision word synchronization
   React.useEffect(() => {
     if (currentAudio?.script && duration > 0) {
-      const wordsPerSecond = estimateWordsPerSecond(currentAudio.script, duration);
+      const words = currentAudio.script.split(/\s+/).filter(word => word.length > 0);
+      const totalWords = words.length;
+      
+      if (totalWords === 0) return;
+      
+      // More accurate timing calculation
+      const effectiveDuration = duration; // Use actual duration without playback rate division
       const currentSeconds = position / 1000;
-      const estimatedWordIndex = Math.floor(currentSeconds * wordsPerSecond);
-      setCurrentWordIndex(estimatedWordIndex);
+      
+      // Calculate words per second based on real audio duration
+      const wordsPerSecond = totalWords / (effectiveDuration / 1000);
+      
+      // Apply playback rate to current position instead of duration
+      const adjustedCurrentSeconds = currentSeconds * (playbackRate || 1.0);
+      
+      // Calculate precise word index with minimal buffering
+      const rawWordIndex = adjustedCurrentSeconds * wordsPerSecond;
+      
+      // Fine-tuning: slight advancement to compensate for audio processing delay
+      const audioProcessingDelay = 0.1; // 100ms processing compensation
+      const adjustedWordIndex = rawWordIndex + (audioProcessingDelay * wordsPerSecond);
+      
+      const clampedWordIndex = Math.max(0, Math.min(Math.floor(adjustedWordIndex), totalWords - 1));
+      
+      // Only update if there's a significant change to reduce jitter
+      if (Math.abs(clampedWordIndex - currentWordIndex) >= 1) {
+        setCurrentWordIndex(clampedWordIndex);
+      }
 
-      // Auto-scroll to current word
-      if (scriptScrollRef.current && estimatedWordIndex > 0) {
+      // Enhanced auto-scroll with smoother tracking
+      if (scriptScrollRef.current && clampedWordIndex > 0 && isPlaying) {
         const wordsPerLine = 8;
-        const currentLine = Math.floor(estimatedWordIndex / wordsPerLine);
-        const scrollY = currentLine * 32; // Approximate line height
+        const lineHeight = 32;
+        const currentLine = Math.floor(clampedWordIndex / wordsPerLine);
+        const scrollY = currentLine * lineHeight;
         
         scriptScrollRef.current.scrollTo({
-          y: Math.max(0, scrollY - 100), // Keep some words visible above current
-          animated: true
+          y: Math.max(0, scrollY - 100),
+          animated: false // Disable animation for real-time sync
         });
       }
     }
-  }, [position, currentAudio?.script, duration]);
+  }, [position, currentAudio?.script, duration, isPlaying, playbackRate, currentWordIndex]);
+
+  // Handle seeking operations for immediate sync
+  React.useEffect(() => {
+    if (currentAudio?.script && duration > 0) {
+      const words = currentAudio.script.split(/\s+/).filter(word => word.length > 0);
+      const totalWords = words.length;
+      
+      // Use consistent calculation with main sync logic
+      const wordsPerSecond = totalWords / (duration / 1000);
+      const currentSeconds = position / 1000;
+      const adjustedCurrentSeconds = currentSeconds * (playbackRate || 1.0);
+      const rawWordIndex = adjustedCurrentSeconds * wordsPerSecond;
+      
+      const estimatedWordIndex = Math.max(0, Math.min(Math.floor(rawWordIndex), totalWords - 1));
+      
+      // Immediate update for seeking operations
+      setCurrentWordIndex(estimatedWordIndex);
+    }
+  }, [position]); // Only position dependency for seeking
 
   if (!showFullScreenPlayer || !currentAudio) {
     return null;
@@ -85,6 +154,47 @@ export default function FullScreenPlayer() {
     const minutes = Math.floor(totalSeconds / 60);
     const seconds = totalSeconds % 60;
     return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+  };
+
+  // ヘッダーミニプレイヤーコンポーネント（スクリプトアイコンなし）
+  const renderHeaderMiniPlayer = () => {
+    if (!showHeaderMiniPlayer || !currentAudio) return null;
+
+    return (
+      <View style={[styles.headerMiniPlayer, { backgroundColor: theme.accent }]}>
+        {/* アルバムアート */}
+        <View style={[styles.headerMiniAlbumArt, { backgroundColor: theme.surface }]}>
+          <Ionicons name="musical-notes" size={16} color={theme.textMuted} />
+        </View>
+
+        {/* タイトル・進行状況 */}
+        <View style={styles.headerMiniInfo}>
+          <Text style={[styles.headerMiniTitle, { color: theme.text }]} numberOfLines={1}>
+            {currentAudio.title}
+          </Text>
+          <Text style={[styles.headerMiniSubtitle, { color: theme.textSecondary }]}>
+            {formatTime(position)} / {formatTime(duration)}
+          </Text>
+        </View>
+
+        {/* 再生/一時停止ボタンのみ */}
+        <TouchableOpacity
+          onPress={isPlaying ? pauseAudio : resumeAudio}
+          style={[styles.headerMiniPlayButton, { backgroundColor: theme.primary }]}
+          disabled={isLoading}
+        >
+          {isLoading ? (
+            <Ionicons name="hourglass" size={18} color="#ffffff" />
+          ) : (
+            <Ionicons
+              name={isPlaying ? "pause" : "play"}
+              size={18}
+              color="#ffffff"
+            />
+          )}
+        </TouchableOpacity>
+      </View>
+    );
   };
 
   const progressPercentage = duration > 0 ? (position / duration) * 100 : 0;
@@ -146,33 +256,35 @@ export default function FullScreenPlayer() {
     );
   };
 
-  // Render news script with highlight
+  // Render news script with enhanced theme-aware highlighting
   const renderNewsScript = () => {
     if (!currentAudio?.script) return null;
 
     const words = currentAudio.script.split(/\s+/).filter(word => word.length > 0);
-    const wordsPerLine = 8; // Average words per line for readability
 
     return (
       <View style={styles.scriptContainer}>
         {words.map((word, index) => {
-          const isCurrentWord = index === currentWordIndex;
-          const isNearCurrentWord = Math.abs(index - currentWordIndex) <= 2;
+          const isCurrent = index === currentWordIndex;
+          const hasBeenRead = index < currentWordIndex;
+          const isNext = index === currentWordIndex + 1;
           
           return (
             <TouchableOpacity
               key={index}
-              style={[
-                styles.wordContainer,
-                index % wordsPerLine === 0 && styles.lineStart,
-              ]}
+              style={styles.wordContainer}
               onPress={() => handleWordPress(index, words.length)}
             >
               <Text
                 style={[
                   styles.scriptWord,
-                  isCurrentWord && styles.currentWord,
-                  isNearCurrentWord && !isCurrentWord && styles.nearCurrentWord,
+                  { color: theme.lyricsDefault },
+                  isCurrent && [styles.currentWord, { 
+                    color: theme.lyricsCurrent, 
+                    backgroundColor: theme.lyricsCurrentBg 
+                  }],
+                  hasBeenRead && [styles.readWord, { color: theme.lyricsRead }],
+                  isNext && [styles.nextWord, { color: theme.lyricsNext }],
                 ]}
               >
                 {word}{' '}
@@ -194,53 +306,163 @@ export default function FullScreenPlayer() {
     }
   };
 
+  // Render synced preview script with current word highlighting
+  const renderSyncedPreviewScript = () => {
+    if (!currentAudio?.script) return null;
+
+    const words = currentAudio.script.split(/\s+/).filter(word => word.length > 0);
+    const totalWords = words.length;
+    
+    // Calculate which words to show in preview (around current position)
+    const previewWordCount = 25; // Show about 25 words in preview
+    const startIndex = Math.max(0, currentWordIndex - 8);
+    const endIndex = Math.min(totalWords, startIndex + previewWordCount);
+    const previewWords = words.slice(startIndex, endIndex);
+    
+    return (
+      <View style={styles.syncedPreviewContainer}>
+        {previewWords.map((word, index) => {
+          const actualIndex = startIndex + index;
+          const isCurrent = actualIndex === currentWordIndex;
+          const isRead = actualIndex < currentWordIndex;
+          const isNext = actualIndex === currentWordIndex + 1;
+          
+          return (
+            <Text
+              key={actualIndex}
+              style={[
+                styles.previewWord,
+                { color: theme.lyricsDefault },
+                isCurrent && [styles.currentPreviewWord, { 
+                  color: theme.lyricsCurrent, 
+                  backgroundColor: theme.lyricsCurrentBg 
+                }],
+                isRead && [styles.readPreviewWord, { color: theme.lyricsRead }],
+                isNext && [styles.nextPreviewWord, { color: theme.lyricsNext }],
+              ]}
+              onPress={() => handleWordPress(actualIndex, totalWords)}
+            >
+              {word}{' '}
+            </Text>
+          );
+        })}
+        {endIndex < totalWords && (
+          <Text style={styles.previewEllipsis}>...</Text>
+        )}
+      </View>
+    );
+  };
+
+  const handleViewOriginalArticle = async (originalUrl: string) => {
+    if (originalUrl) {
+      try {
+        await WebBrowser.openBrowserAsync(originalUrl);
+      } catch (error) {
+        console.error('Error opening article:', error);
+        Alert.alert('Error', 'Failed to open the original article.');
+      }
+    } else {
+      Alert.alert('Error', 'Original article URL not available.');
+    }
+  };
+
+  const handleJumpToChapter = async (startTime: number) => {
+    try {
+      // Record the jump interaction
+      await recordInteraction('jumped_to_chapter');
+      
+      // Use seekTo for proper audio jumping without restarting
+      if (duration > 0 && startTime >= 0 && startTime < duration) {
+        seekTo(startTime);
+        
+        // Ensure audio continues playing after seek
+        if (!isPlaying) {
+          setTimeout(() => {
+            resumeAudio();
+          }, 100);
+        }
+      } else {
+        console.warn('Invalid jump time:', startTime, 'Duration:', duration);
+        Alert.alert('Error', 'Cannot jump to this position in the audio.');
+      }
+    } catch (error) {
+      console.error('Error jumping to chapter:', error);
+      Alert.alert('Error', 'Failed to jump to the selected story.');
+    }
+  };
+
   return (
     <Modal
       visible={showFullScreenPlayer}
       animationType="slide"
       presentationStyle="fullScreen"
     >
-      <SafeAreaView style={styles.container}>
-        {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity
-            onPress={() => setShowFullScreenPlayer(false)}
-            style={styles.headerButton}
-          >
-            <Ionicons name="chevron-down" size={28} color="#1f2937" />
-          </TouchableOpacity>
-          
-          <Text style={styles.headerTitle}>Now Playing</Text>
-          
-          <TouchableOpacity
-            onPress={() => setShowMenu(true)}
-            style={styles.headerButton}
-          >
-            <Ionicons name="ellipsis-horizontal" size={24} color="#1f2937" />
-          </TouchableOpacity>
-        </View>
+      <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
+        {/* Header - 条件的表示 */}
+        {showHeaderMiniPlayer ? (
+          // ヘッダーミニプレイヤー
+          <View style={[styles.header, { backgroundColor: theme.surface }]}>
+            <TouchableOpacity
+              onPress={() => setShowFullScreenPlayer(false)}
+              style={styles.headerButton}
+            >
+              <Ionicons name="chevron-down" size={28} color={theme.text} />
+            </TouchableOpacity>
+            
+            {renderHeaderMiniPlayer()}
+            
+            <TouchableOpacity
+              onPress={() => setShowMenu(true)}
+              style={styles.headerButton}
+            >
+              <Ionicons name="ellipsis-horizontal" size={24} color={theme.text} />
+            </TouchableOpacity>
+          </View>
+        ) : (
+          // 通常ヘッダー
+          <View style={[styles.header, { backgroundColor: theme.surface }]}>
+            <TouchableOpacity
+              onPress={() => setShowFullScreenPlayer(false)}
+              style={styles.headerButton}
+            >
+              <Ionicons name="chevron-down" size={28} color={theme.text} />
+            </TouchableOpacity>
+            
+            <Text style={[styles.headerTitle, { color: theme.text }]}>Now Playing</Text>
+            
+            <TouchableOpacity
+              onPress={() => setShowMenu(true)}
+              style={styles.headerButton}
+            >
+              <Ionicons name="ellipsis-horizontal" size={24} color={theme.text} />
+            </TouchableOpacity>
+          </View>
+        )}
 
         {/* Scrollable Content */}
         <ScrollView 
+          ref={scrollViewRef}
           style={styles.scrollContainer}
           showsVerticalScrollIndicator={false}
           bounces={true}
+          onScroll={handleScroll}
+          scrollEventThrottle={16}
         >
           {/* Main Player Section */}
           <View style={styles.mainPlayerSection}>
           {/* Album Art */}
           <View style={styles.albumArtContainer}>
-            <View style={styles.albumArt}>
-              <Ionicons name="musical-notes" size={80} color="#9ca3af" />
+            <View style={[styles.albumArt, { backgroundColor: theme.accent }]}>
+              <Ionicons name="musical-notes" size={80} color={theme.textMuted} />
             </View>
           </View>
 
           {/* Audio Info */}
           <View style={styles.audioInfo}>
-            <Text style={styles.title} numberOfLines={2}>
+            <Text style={[styles.title, { color: theme.text }]} numberOfLines={2}>
               {currentAudio.title}
             </Text>
-            <Text style={styles.subtitle}>
+            <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
               {format(new Date(currentAudio.created_at), 'MMMM dd, yyyy')}
             </Text>
           </View>
@@ -274,8 +496,8 @@ export default function FullScreenPlayer() {
             </TouchableOpacity>
             
             <View style={styles.timeContainer}>
-              <Text style={styles.timeText}>{formatTime(position)}</Text>
-              <Text style={styles.timeText}>{formatTime(duration)}</Text>
+              <Text style={[styles.timeText, { color: theme.textSecondary }]}>{formatTime(position)}</Text>
+              <Text style={[styles.timeText, { color: theme.textSecondary }]}>{formatTime(duration)}</Text>
             </View>
           </View>
 
@@ -285,13 +507,13 @@ export default function FullScreenPlayer() {
               onPress={skipBackward}
               style={styles.skipButton}
             >
-              <Ionicons name="play-back" size={32} color="#1f2937" />
-              <Text style={styles.skipText}>30</Text>
+              <Ionicons name="play-back" size={32} color={theme.text} />
+              <Text style={[styles.skipText, { color: theme.textSecondary }]}>30</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
               onPress={isPlaying ? pauseAudio : resumeAudio}
-              style={styles.playButton}
+              style={[styles.playButton, { backgroundColor: theme.primary }]}
               disabled={isLoading}
             >
               {isLoading ? (
@@ -309,66 +531,104 @@ export default function FullScreenPlayer() {
               onPress={skipForward}
               style={styles.skipButton}
             >
-              <Ionicons name="play-forward" size={32} color="#1f2937" />
-              <Text style={styles.skipText}>10</Text>
+              <Ionicons name="play-forward" size={32} color={theme.text} />
+              <Text style={[styles.skipText, { color: theme.textSecondary }]}>10</Text>
             </TouchableOpacity>
           </View>
 
           {/* Scroll Indicator */}
           <View style={styles.scrollIndicator}>
-            <Ionicons name="chevron-up" size={20} color="#9ca3af" />
-            <Text style={styles.scrollHint}>Swipe up for news script</Text>
+            <Ionicons name="chevron-up" size={20} color={theme.textMuted} />
+            <Text style={[styles.scrollHint, { color: theme.textMuted }]}>Swipe up for news script</Text>
           </View>
         </View>
 
-        {/* Chapters Section */}
+          {/* News Script Preview Section with Real-time Sync */}
+          {currentAudio.script && (
+            <View style={[styles.scriptPreviewSection, { backgroundColor: theme.background }]}>
+              <Text style={[styles.scriptSectionTitle, { color: theme.text }]}>📝 News Script</Text>
+              <TouchableOpacity 
+                style={[styles.scriptPreviewContainer, { backgroundColor: theme.surface, borderColor: theme.border }]}
+                onPress={() => setShowFullScript(true)}
+              >
+                {renderSyncedPreviewScript()}
+                <View style={styles.scriptExpandHint}>
+                  <Ionicons name="expand" size={16} color={theme.textMuted} />
+                  <Text style={[styles.scriptExpandText, { color: theme.textMuted }]}>Tap to expand full script</Text>
+                </View>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* Sources Section - Minimal Design */}
           {currentAudio.chapters && currentAudio.chapters.length > 0 && (
-            <View style={styles.chaptersSection}>
-              <Text style={styles.sectionTitle}>Chapters</Text>
-              <ScrollView style={styles.chaptersScrollView} showsVerticalScrollIndicator={false}>
+            <View style={[styles.sourcesSection, { backgroundColor: theme.background }]}>
+              <Text style={[styles.sourcesSectionTitle, { color: theme.text }]}>📰 News Sources</Text>
+              <View style={styles.sourcesContainer}>
                 {currentAudio.chapters.map((chapter: any, index: number) => {
+                  console.log(`Rendering chapter ${index}:`, {
+                    title: chapter.title,
+                    original_url: chapter.original_url,
+                    hasUrl: !!chapter.original_url
+                  });
                   const isCurrentChapter = position >= chapter.start_time && position < chapter.end_time;
                   return (
                     <TouchableOpacity
                       key={index}
-                      style={[styles.chapterItem, isCurrentChapter && styles.currentChapterItem]}
-                      onPress={() => seekTo(chapter.start_time)}
+                      style={[
+                        styles.minimalSourceCard, 
+                        { backgroundColor: theme.surface, borderColor: theme.border },
+                        isCurrentChapter && [styles.currentSourceCard, { backgroundColor: theme.accent, borderColor: theme.primary }]
+                      ]}
+                      onPress={() => handleJumpToChapter(chapter.start_time)}
+                      activeOpacity={0.7}
                     >
-                      <View style={styles.chapterNumber}>
-                        <Text style={[styles.chapterNumberText, isCurrentChapter && styles.currentChapterText]}>
-                          {index + 1}
-                        </Text>
-                      </View>
-                      <View style={styles.chapterInfo}>
-                        <Text style={[styles.chapterTitle, isCurrentChapter && styles.currentChapterText]} numberOfLines={2}>
+                      <View style={styles.sourceCardContent}>
+                        <Text style={[
+                          styles.minimalSourceTitle, 
+                          { color: isCurrentChapter ? theme.primary : theme.text },
+                          isCurrentChapter && styles.currentSourceTitle
+                        ]} numberOfLines={2}>
                           {chapter.title}
                         </Text>
-                        <Text style={styles.chapterTime}>
+                        <Text style={[styles.minimalSourceTime, { color: theme.textSecondary }]}>
                           {formatTime(chapter.start_time)} - {formatTime(chapter.end_time)}
                         </Text>
                       </View>
+                      <TouchableOpacity 
+                        style={[styles.minimalViewButton, { backgroundColor: theme.accent, borderColor: theme.border }]}
+                        onPress={(e) => {
+                          e.stopPropagation();
+                          console.log('=== NEWS SOURCE BUTTON PRESSED ===');
+                          console.log('Chapter data:', chapter);
+                          console.log('Chapter original_url:', chapter.original_url);
+                          console.log('Chapter title:', chapter.title);
+                          
+                          if (chapter.original_url && chapter.original_url.trim() !== '') {
+                            console.log('Opening URL:', chapter.original_url);
+                            handleViewOriginalArticle(chapter.original_url);
+                          } else {
+                            console.log('No URL available for chapter:', chapter.title);
+                            Alert.alert('Info', 'Original article URL not available for this news source.');
+                          }
+                        }}
+                      >
+                        <Ionicons name="open-outline" size={18} color={theme.primary} />
+                      </TouchableOpacity>
                       {isCurrentChapter && (
-                        <Ionicons name="play" size={16} color="#4f46e5" />
+                        <View style={styles.minimalCurrentIndicator}>
+                          <View style={[styles.currentDot, { backgroundColor: theme.primary }]} />
+                        </View>
                       )}
                     </TouchableOpacity>
                   );
                 })}
-              </ScrollView>
-            </View>
-          )}
-
-          {/* News Script Section */}
-          {currentAudio.script && (
-            <View style={styles.fullNewsScriptSection}>
-              <Text style={styles.scriptSectionTitle}>News Script</Text>
-              <ScrollView 
-                ref={scriptScrollRef}
-                style={styles.fullNewsScriptScrollView} 
-                showsVerticalScrollIndicator={false}
-                nestedScrollEnabled={true}
-              >
-                {renderNewsScript()}
-              </ScrollView>
+              </View>
+              
+              {/* Minimal Legal Notice */}
+              <Text style={styles.minimalLegalText}>
+                AI-generated summaries • Original articles remain property of their publishers
+              </Text>
             </View>
           )}
         </ScrollView>
@@ -424,6 +684,35 @@ export default function FullScreenPlayer() {
             ))}
           </View>
         </TouchableOpacity>
+      </Modal>
+
+      {/* Full Script Modal */}
+      <Modal
+        visible={showFullScript}
+        animationType="slide"
+        presentationStyle="fullScreen"
+      >
+        <SafeAreaView style={[styles.fullScriptModalContainer, { backgroundColor: theme.background }]}>
+          <View style={[styles.fullScriptHeader, { backgroundColor: theme.surface, borderBottomColor: theme.border }]}>
+            <TouchableOpacity
+              onPress={() => setShowFullScript(false)}
+              style={styles.fullScriptCloseButton}
+            >
+              <Ionicons name="chevron-down" size={28} color={theme.text} />
+            </TouchableOpacity>
+            <Text style={[styles.fullScriptTitle, { color: theme.text }]}>Full Script</Text>
+            <View style={styles.fullScriptCloseButton} />
+          </View>
+          <ScrollView 
+            ref={scriptScrollRef}
+            style={styles.fullScriptScrollView}
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={[styles.fullScriptContent, { backgroundColor: theme.background }]}>
+              {renderNewsScript()}
+            </View>
+          </ScrollView>
+        </SafeAreaView>
       </Modal>
     </Modal>
   );
@@ -661,31 +950,32 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     alignItems: 'flex-start',
-    lineHeight: 32,
+    justifyContent: 'flex-start',
+    paddingVertical: 8,
   },
   wordContainer: {
-    marginRight: 2,
-    marginVertical: 1,
+    marginRight: 4,
+    marginVertical: 2,
   },
   lineStart: {
     marginLeft: 0,
   },
   scriptWord: {
     fontSize: 16,
-    color: '#6b7280',
     fontWeight: '400',
-    lineHeight: 28,
+    lineHeight: 32,
+    letterSpacing: 0.3,
   },
   currentWord: {
-    color: '#4f46e5',
-    fontWeight: '700',
-    backgroundColor: '#f0f0ff',
+    fontWeight: '600',
     paddingHorizontal: 4,
-    paddingVertical: 2,
+    paddingVertical: 1,
     borderRadius: 4,
   },
-  nearCurrentWord: {
-    color: '#1f2937',
+  readWord: {
+    fontWeight: '500',
+  },
+  nextWord: {
     fontWeight: '500',
   },
   scrollIndicator: {
@@ -820,5 +1110,331 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
+  },
+  attributionNote: {
+    fontSize: 13,
+    color: '#6b7280',
+    marginBottom: 12,
+    paddingHorizontal: 16,
+    fontStyle: 'italic',
+  },
+  sourceItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f3f4f6',
+  },
+  currentSourceItem: {
+    backgroundColor: '#f0f0ff',
+  },
+  sourceNumber: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#e5e7eb',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  sourceNumberText: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#6b7280',
+  },
+  currentSourceText: {
+    color: '#4f46e5',
+  },
+  sourceInfo: {
+    flex: 1,
+  },
+  sourceTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1f2937',
+    marginBottom: 4,
+  },
+  sourceAttribution: {
+    fontSize: 12,
+    color: '#6b7280',
+    marginBottom: 2,
+  },
+  sourceTime: {
+    fontSize: 12,
+    color: '#6b7280',
+    marginBottom: 6,
+  },
+  actionButtonsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    flexWrap: 'wrap',
+  },
+  jumpButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    backgroundColor: '#f8fafc',
+    borderRadius: 6,
+    flex: 1,
+    minWidth: 120,
+  },
+  jumpButtonText: {
+    fontSize: 12,
+    color: '#4f46e5',
+    fontWeight: '500',
+    marginLeft: 4,
+  },
+  viewArticleButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    backgroundColor: '#f0fdf4',
+    borderRadius: 6,
+    flex: 1,
+    minWidth: 120,
+  },
+  viewArticleButtonText: {
+    fontSize: 12,
+    color: '#10b981',
+    fontWeight: '500',
+    marginLeft: 4,
+  },
+  currentIndicator: {
+    marginLeft: 8,
+  },
+  legalNotice: {
+    backgroundColor: '#f8fafc',
+    borderRadius: 8,
+    padding: 12,
+    marginTop: 12,
+    marginHorizontal: 16,
+  },
+  legalText: {
+    fontSize: 11,
+    color: '#6b7280',
+    lineHeight: 16,
+    textAlign: 'center',
+  },
+  // Script Preview Styles
+  scriptPreviewSection: {
+    marginTop: 20,
+    marginBottom: 20,
+    paddingHorizontal: 20,
+  },
+  scriptPreviewContainer: {
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  scriptPreviewText: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: '#4b5563',
+    marginBottom: 12,
+  },
+  scriptExpandHint: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#f3f4f6',
+  },
+  scriptExpandText: {
+    fontSize: 12,
+    color: '#6b7280',
+    marginLeft: 6,
+    fontWeight: '500',
+  },
+  // Full Script Modal Styles
+  fullScriptModalContainer: {
+    flex: 1,
+    backgroundColor: '#f9fafb',
+  },
+  fullScriptHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e7eb',
+    backgroundColor: '#ffffff',
+  },
+  fullScriptCloseButton: {
+    padding: 8,
+    width: 44,
+    height: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  fullScriptTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#1f2937',
+  },
+  fullScriptScrollView: {
+    flex: 1,
+  },
+  fullScriptContent: {
+    padding: 20,
+  },
+  // Minimal Sources Styles
+  sourcesSection: {
+    marginTop: 20,
+    marginBottom: 40,
+    paddingHorizontal: 20,
+  },
+  sourcesSectionTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#1f2937',
+    marginBottom: 16,
+  },
+  sourcesContainer: {
+    gap: 12,
+  },
+  minimalSourceCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 8,
+    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+    borderWidth: 1,
+    borderColor: '#f3f4f6',
+  },
+  currentSourceCard: {
+    borderColor: '#4f46e5',
+    backgroundColor: '#fafaff',
+  },
+  sourceCardContent: {
+    flex: 1,
+    marginRight: 12,
+  },
+  minimalSourceTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1f2937',
+    marginBottom: 4,
+    lineHeight: 18,
+  },
+  currentSourceTitle: {
+    color: '#4f46e5',
+  },
+  minimalSourceTime: {
+    fontSize: 12,
+    color: '#6b7280',
+    fontWeight: '500',
+  },
+  minimalViewButton: {
+    padding: 8,
+    borderRadius: 6,
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    marginLeft: 8,
+  },
+  minimalCurrentIndicator: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+  },
+  currentDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#4f46e5',
+  },
+  minimalLegalText: {
+    fontSize: 11,
+    color: '#9ca3af',
+    textAlign: 'center',
+    marginTop: 16,
+    fontStyle: 'italic',
+  },
+  // Synced Preview Styles
+  syncedPreviewContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'flex-start',
+    justifyContent: 'flex-start',
+    paddingVertical: 4,
+  },
+  previewWord: {
+    fontSize: 14,
+    fontWeight: '400',
+    lineHeight: 20,
+    marginRight: 4,
+    marginVertical: 1,
+  },
+  currentPreviewWord: {
+    fontWeight: '600',
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+    borderRadius: 4,
+  },
+  readPreviewWord: {
+    fontWeight: '500',
+  },
+  nextPreviewWord: {
+    fontWeight: '500',
+  },
+  previewEllipsis: {
+    fontSize: 14,
+    color: '#9ca3af',
+    fontWeight: '400',
+  },
+  
+  // ヘッダーミニプレイヤー用スタイル
+  headerMiniPlayer: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginHorizontal: 8,
+    borderRadius: 8,
+    borderBottomWidth: 1,
+  },
+  headerMiniAlbumArt: {
+    width: 32,
+    height: 32,
+    borderRadius: 6,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  headerMiniInfo: {
+    flex: 1,
+    marginRight: 12,
+  },
+  headerMiniTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  headerMiniSubtitle: {
+    fontSize: 12,
+    fontWeight: '400',
+  },
+  headerMiniPlayButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });
