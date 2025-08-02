@@ -83,3 +83,4 @@ backend/.env
 
 # Ignore Google Cloud credentials file
 backend/google-credentials.json
+.env
