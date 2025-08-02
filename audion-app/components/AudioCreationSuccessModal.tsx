@@ -7,6 +7,7 @@ import {
   Modal,
   Animated,
   Dimensions,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
@@ -35,6 +36,7 @@ export default function AudioCreationSuccessModal({
 
   useEffect(() => {
     if (visible) {
+      
       // Play notification sound and strong haptic feedback
       playNotificationSound();
       
@@ -49,13 +51,13 @@ export default function AudioCreationSuccessModal({
           toValue: 1.1,
           tension: 100,
           friction: 8,
-          useNativeDriver: true,
+          useNativeDriver: Platform.OS !== 'web',
         }),
         Animated.spring(scaleValue, {
           toValue: 1,
           tension: 150,
           friction: 8,
-          useNativeDriver: true,
+          useNativeDriver: Platform.OS !== 'web',
         }),
       ]).start();
     } else {
@@ -76,7 +78,6 @@ export default function AudioCreationSuccessModal({
 
       // For now, we rely primarily on haptic feedback
       // A simple notification sound file could be added to assets later
-      console.log('Audio creation success notification triggered');
       
     } catch (error) {
       console.log('Could not play notification sound:', error);
@@ -103,7 +104,7 @@ export default function AudioCreationSuccessModal({
       toValue: 0,
       tension: 100,
       friction: 8,
-      useNativeDriver: true,
+      useNativeDriver: Platform.OS !== 'web',
     }).start(() => {
       onClose();
     });

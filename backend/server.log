@@ -1,0 +1,12 @@
+INFO:     Will watch for changes in these directories: ['/Users/hori/Desktop/audion_project_final/Audion_Emergent.AI_Demo/backend']
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:     Started reloader process [20360] using StatReload
+INFO:     Started server process [20370]
+INFO:     Waiting for application startup.
+2025-08-01 22:07:16,325 - ERROR - Failed to connect to MongoDB: 
+2025-08-01 22:07:16,325 - INFO - Server will run in limited mode without database
+2025-08-01 22:07:16,325 - INFO - Skipping database initialization - running in limited mode
+INFO:     Application startup complete.
+INFO:     127.0.0.1:53675 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53785 - "POST /api/auth/login HTTP/1.1" 503 Service Unavailable
+INFO:     127.0.0.1:53851 - "POST /api/auth/register HTTP/1.1" 503 Service Unavailable

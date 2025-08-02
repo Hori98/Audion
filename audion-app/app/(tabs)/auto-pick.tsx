@@ -8,7 +8,8 @@ import {
   Alert, 
   ActivityIndicator,
   Modal,
-  RefreshControl 
+  RefreshControl,
+  Platform 
 } from 'react-native';
 import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
@@ -120,13 +121,16 @@ export default function AutoPickScreen() {
       // Try cache first
       const cachedArticles = await CacheService.getAutoPickedArticles();
       if (cachedArticles) {
-        console.log('Using cached auto-picked articles');
         setAutoPickedArticles(cachedArticles);
-        setLoading(false);
+        // Platform-specific loading delay to prevent Web freeze
+        if (Platform.OS === 'web') {
+          setTimeout(() => setLoading(false), 100);
+        } else {
+          setLoading(false);
+        }
         return;
       }
 
-      console.log('Fetching auto-picked articles from API');
       const response = await axios.post(
         `${API}/auto-pick`,
         { max_articles: 10 },
@@ -135,21 +139,40 @@ export default function AutoPickScreen() {
       
       // Cache the results
       await CacheService.setAutoPickedArticles(response.data);
-      setAutoPickedArticles(response.data);
+      
+      // Platform-specific state update to prevent Web freeze
+      if (Platform.OS === 'web') {
+        setTimeout(() => {
+          setAutoPickedArticles(response.data);
+          setLoading(false);
+        }, 50);
+      } else {
+        setAutoPickedArticles(response.data);
+        setLoading(false);
+      }
     } catch (error: any) {
       console.error('Error fetching auto-picked articles:', error);
       Alert.alert('Error', error.response?.data?.detail || 'Failed to fetch auto-picked articles.');
-    } finally {
       setLoading(false);
     }
   };
 
   const onRefresh = async () => {
     setRefreshing(true);
-    // Clear cache to force fresh data on refresh
-    await CacheService.remove('auto_picked_articles');
-    await Promise.all([fetchUserProfile(), fetchUserInsights(), fetchAutoPickedArticles()]);
-    setRefreshing(false);
+    try {
+      // Clear cache to force fresh data on refresh
+      await CacheService.remove('auto_picked_articles');
+      await Promise.all([fetchUserProfile(), fetchUserInsights(), fetchAutoPickedArticles()]);
+    } catch (error) {
+      console.error('Error refreshing data:', error);
+    } finally {
+      // Platform-specific refresh completion to prevent Web freeze
+      if (Platform.OS === 'web') {
+        setTimeout(() => setRefreshing(false), 100);
+      } else {
+        setRefreshing(false);
+      }
+    }
   };
 
   const handleArticlePress = async (url: string) => {
@@ -209,12 +232,22 @@ export default function AutoPickScreen() {
       
       // Cache the new results
       await CacheService.setAutoPickedArticles(response.data);
-      setAutoPickedArticles(response.data);
-      setExcludedArticles(new Set()); // Clear excluded articles on shuffle
+      
+      // Platform-specific state updates to prevent Web freeze
+      if (Platform.OS === 'web') {
+        setTimeout(() => {
+          setAutoPickedArticles(response.data);
+          setExcludedArticles(new Set());
+          setShuffling(false);
+        }, 50);
+      } else {
+        setAutoPickedArticles(response.data);
+        setExcludedArticles(new Set());
+        setShuffling(false);
+      }
     } catch (error: any) {
       console.error('Error shuffling articles:', error);
       Alert.alert('Error', error.response?.data?.detail || 'Failed to shuffle articles.');
-    } finally {
       setShuffling(false);
     }
   };
@@ -232,78 +265,63 @@ export default function AutoPickScreen() {
   };
 
   const handleCreateAudio = async () => {
-    console.log('=== AUTO-PICK AUDIO CREATION STARTED ===');
-    
+
     setCreatingAudio(true);
     try {
       // Filter out excluded articles for audio creation
       const availableArticles = autoPickedArticles.filter(article => !excludedArticles.has(article.id));
       const articleIds = availableArticles.slice(0, 3).map(article => article.id);
-      
-      console.log('Available articles:', availableArticles.slice(0, 3).map(a => ({ id: a.id, title: a.title, link: a.link })));
-      console.log('Article IDs:', articleIds);
+      const articleTitles = availableArticles.slice(0, 3).map(article => article.title);
+      const articleUrls = availableArticles.slice(0, 3).map(article => article.link);
       
       if (articleIds.length === 0) {
         Alert.alert('No Articles', 'Please ensure at least one article is not excluded.');
+        setCreatingAudio(false);
         return;
       }
+
 
       const response = await axios.post(
         `${API}/audio/create`,
         { 
           article_ids: articleIds,
-          article_titles: availableArticles.slice(0, 3).map(article => article.title),
-          article_urls: availableArticles.slice(0, 3).map(article => article.link)
+          article_titles: articleTitles,
+          article_urls: articleUrls
         },
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
-      console.log('Auto-pick audio creation response:', response.data);
-      
-      // Record user interactions for personalization
-      for (const article of availableArticles.slice(0, 3)) {
-        try {
-          await axios.post(
-            `${API}/user-interaction`,
-            {
-              article_id: article.id,
-              interaction_type: 'created_audio',
-              genre: article.genre
-            },
-            { headers: { Authorization: `Bearer ${token}` } }
-          );
-        } catch (interactionError) {
-          console.error('Error recording interaction:', interactionError);
+
+      // Record user interactions for personalization (async to avoid blocking)
+      const recordInteractions = async () => {
+        for (const article of availableArticles.slice(0, 3)) {
+          try {
+            await axios.post(
+              `${API}/user-interaction`,
+              {
+                article_id: article.id,
+                interaction_type: 'created_audio',
+                genre: article.genre
+              },
+              { headers: { Authorization: `Bearer ${token}` } }
+            );
+          } catch (interactionError) {
+            console.error('Error recording interaction:', interactionError);
+          }
         }
-      }
+      };
+
       
-      console.log('=== SHOWING SUCCESS MODAL ===');
-      console.log('Created audio data:', response.data);
-      
-      // Show success modal instead of alert
+      // Show success modal instead of alert (exactly like Feed auto-pick)
       setCreatedAudio(response.data);
       setShowSuccessModal(true);
       
-      console.log('Success modal state set, refreshing profile...');
-      
-      // Refresh profile in background to avoid blocking UI
-      fetchUserProfile().then(() => {
-        console.log('Profile refreshed successfully');
-      }).catch((profileError) => {
-        console.error('Error refreshing profile:', profileError);
-      });
-      
-      console.log('=== AUTO-PICK AUDIO CREATION COMPLETED ===');
-      
-      // Donate shortcut to Siri for auto-pick functionality
+      // Background tasks immediately (exactly like Feed auto-pick) - SKIP fetchUserProfile to prevent modal interference
+      recordInteractions();
       donateShortcut('auto-pick');
     } catch (error: any) {
-      console.error('=== AUTO-PICK ERROR ===');
       console.error('Error creating auto-picked audio:', error);
-      console.error('Error response:', error.response?.data);
       Alert.alert('Error', error.response?.data?.detail || 'Failed to create audio.');
-    } finally {
-      console.log('=== SETTING CREATING AUDIO TO FALSE ===');
       setCreatingAudio(false);
     }
   };
@@ -534,6 +552,8 @@ export default function AutoPickScreen() {
         onClose={() => {
           setShowSuccessModal(false);
           setCreatedAudio(null);
+          // Update user profile after modal closes to prevent interference
+          setTimeout(() => fetchUserProfile().catch(console.error), 100);
         }}
       />
     </View>

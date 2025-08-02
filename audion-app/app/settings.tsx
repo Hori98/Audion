@@ -46,7 +46,7 @@ interface DeletedAudio {
 
 export default function SettingsScreen() {
   const router = useRouter();
-  const { logout, user, token } = useAuth();
+  const { logout, user, token, handleAuthError } = useAuth();
   const { theme, themeMode, setThemeMode } = useTheme();
   
   const [autoPlay, setAutoPlay] = useState(true);
@@ -67,31 +67,6 @@ export default function SettingsScreen() {
     }
   }, [token]);
 
-  // Helper function to handle 401 errors and force logout
-  const handleAuthError = async () => {
-    console.log('=== HANDLING AUTH ERROR - FORCE LOGOUT ===');
-    try {
-      // Clear all auth-related data
-      await AsyncStorage.multiRemove([
-        'token',
-        'user',
-        'isNewUser',
-        'feed_selected_articles'
-      ]);
-      
-      // Clear axios auth header
-      delete axios.defaults.headers.common['Authorization'];
-      
-      // Force reload/navigation
-      if (typeof window !== 'undefined') {
-        window.location.reload();
-      } else {
-        router.replace('/');
-      }
-    } catch (error) {
-      console.error('Error during auth error handling:', error);
-    }
-  };
 
   const fetchUserProfile = async () => {
     try {
@@ -669,7 +644,6 @@ export default function SettingsScreen() {
                   style: 'destructive',
                   onPress: async () => {
                     try {
-                      console.log('=== FORCE LOGOUT TRIGGERED ===');
                       
                       // Clear all auth-related data directly
                       await AsyncStorage.multiRemove([
@@ -682,7 +656,6 @@ export default function SettingsScreen() {
                       // Clear axios auth header
                       delete axios.defaults.headers.common['Authorization'];
                       
-                      console.log('Force logout completed - navigating to login');
                       
                       // For web, force reload the entire page
                       if (typeof window !== 'undefined') {

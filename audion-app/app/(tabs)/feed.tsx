@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert, RefreshControl, Modal } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert, RefreshControl, Modal, Platform } from 'react-native';
 import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
 import { useAudio } from '../../context/AudioContext';
@@ -67,7 +67,6 @@ export default function FeedScreen() {
     React.useCallback(() => {
       const initializeData = async () => {
         if (token && token !== '') {
-          console.log('=== FOCUS EFFECT TRIGGERED ===');
           await loadGlobalSelection();
           await fetchSources();
           await fetchArticles();
@@ -79,15 +78,11 @@ export default function FeedScreen() {
 
   // Separate effect for filter changes - ensure selection state is loaded first
   useEffect(() => {
-    console.log('=== FILTER CHANGED ===');
-    console.log('Genre:', selectedGenre, 'Source:', selectedSource);
-    console.log('Current selections before fetch:', selectedArticleIds);
     
     const handleFilterChange = async () => {
       if (token && token !== '') {
         // Ensure we have the latest selection state before fetching articles
-        const currentSelections = await loadGlobalSelection();
-        console.log('Loaded selections before article fetch:', currentSelections);
+        await loadGlobalSelection();
         await fetchArticles();
       }
     };
@@ -97,36 +92,20 @@ export default function FeedScreen() {
 
   // Effect to force UI update when selection changes
   useEffect(() => {
-    console.log('=== SELECTION CHANGED ===');
-    console.log('Updated selections:', selectedArticleIds);
-    console.log('Current articles count:', articles.length);
-    
-    // Force component re-render by updating a dummy state if needed
-    if (articles.length > 0) {
-      console.log('Articles with selection status:');
-      articles.forEach((article, index) => {
-        if (index < 3) { // Log first 3 for debugging
-          const isSelected = article.normalizedId ? selectedArticleIds.includes(article.normalizedId) : false;
-          console.log(`  ${article.normalizedId}: ${isSelected} (${article.title.substring(0, 30)}...)`);
-        }
-      });
-    }
+    // Force component re-render when selection changes
   }, [selectedArticleIds, articles, uiUpdateTrigger]);
 
   // Load global selection state from AsyncStorage
   const loadGlobalSelection = async () => {
     try {
-      console.log('=== LOADING GLOBAL SELECTION ===');
-      const savedSelection = await AsyncStorage.getItem('feed_selected_articles');
+        const savedSelection = await AsyncStorage.getItem('feed_selected_articles');
       if (savedSelection) {
         const parsed = JSON.parse(savedSelection);
-        console.log('Loaded selections from storage:', parsed);
         setSelectedArticleIds(parsed);
         // Force UI update after loading selection
         setUiUpdateTrigger(prev => prev + 1);
         return parsed;
       } else {
-        console.log('No saved selections found');
         setSelectedArticleIds([]);
         setUiUpdateTrigger(prev => prev + 1);
         return [];
@@ -171,8 +150,6 @@ export default function FeedScreen() {
   // Save global selection state to AsyncStorage
   const saveGlobalSelection = async (newSelection: string[]) => {
     try {
-      console.log('=== SAVING GLOBAL SELECTION ===');
-      console.log('Saving selections:', newSelection);
       await AsyncStorage.setItem('feed_selected_articles', JSON.stringify(newSelection));
     } catch (error) {
       console.error('Error saving global selection:', error);
@@ -184,12 +161,10 @@ export default function FeedScreen() {
       // Try cache first
       const cachedSources = await CacheService.getSources();
       if (cachedSources) {
-        console.log('Using cached RSS sources');
         setSources(cachedSources);
         return;
       }
 
-      console.log('Fetching RSS sources from API');
       const response = await axios.get(`${API}/rss-sources`, {
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -199,7 +174,6 @@ export default function FeedScreen() {
         is_active: source.is_active !== undefined ? source.is_active : true
       }));
       const activeSources = sourcesWithStatus.filter((source: RSSSource) => source.is_active);
-      console.log('Active RSS sources for filtering:', activeSources);
       
       // Cache the results
       await CacheService.setSources(activeSources);
@@ -222,7 +196,6 @@ export default function FeedScreen() {
       // Try cache first
       const cachedArticles = await CacheService.getArticles(filters);
       if (cachedArticles) {
-        console.log('Using cached articles');
         
         // Normalize articles to prevent duplicates
         const normalizedCachedArticles = normalizeArticles(cachedArticles);
@@ -230,9 +203,7 @@ export default function FeedScreen() {
         
         // Force UI update after cached articles are set
         setTimeout(() => {
-          console.log('=== FORCE UI UPDATE (CACHED) ===');
-          console.log('Cached articles after timeout:', normalizedCachedArticles.length);
-          console.log('Selections after timeout:', selectedArticleIds);
+          setUiUpdateTrigger(prev => prev + 1);
         }, 100);
         
         // Update global articles maps
@@ -251,16 +222,9 @@ export default function FeedScreen() {
               newMap.set(article.normalizedId, article);
             }
           });
-          console.log('=== UPDATED NORMALIZED MAP FROM CACHE ===');
-          console.log('Normalized map size:', newMap.size);
-          console.log('Cached articles:', normalizedCachedArticles.map(a => ({ id: a.id, normalizedId: a.normalizedId, title: a.title.substring(0, 30) })));
-          console.log('Current selections:', selectedArticleIds);
-          console.log('Selected articles in cached data:', normalizedCachedArticles.filter(a => a.normalizedId && selectedArticleIds.includes(a.normalizedId)).map(a => ({ id: a.id, normalizedId: a.normalizedId })));
-          
           // Force UI update after articles are loaded
           setTimeout(() => {
             setUiUpdateTrigger(prev => prev + 1);
-            console.log('UI update triggered after cached articles loaded');
           }, 100);
           
           return newMap;
@@ -270,7 +234,6 @@ export default function FeedScreen() {
         return;
       }
 
-      console.log('Fetching articles from API');
       const headers = { Authorization: `Bearer ${token}` };
       const params: { genre?: string; source?: string } = {};
       if (selectedGenre !== 'All') {
@@ -290,9 +253,7 @@ export default function FeedScreen() {
       
       // Force UI update after articles are set
       setTimeout(() => {
-        console.log('=== FORCE UI UPDATE ===');
-        console.log('Articles after timeout:', normalizedArticles.length);
-        console.log('Selections after timeout:', selectedArticleIds);
+        setUiUpdateTrigger(prev => prev + 1);
       }, 100);
       
       // Update global articles maps
@@ -311,16 +272,9 @@ export default function FeedScreen() {
             newMap.set(article.normalizedId, article);
           }
         });
-        console.log('=== UPDATED NORMALIZED MAP FROM API ===');
-        console.log('Normalized map size:', newMap.size);
-        console.log('New articles:', normalizedArticles.map(a => ({ id: a.id, normalizedId: a.normalizedId, title: a.title.substring(0, 30) })));
-        console.log('Current selections:', selectedArticleIds);
-        console.log('Selected articles in new data:', normalizedArticles.filter(a => a.normalizedId && selectedArticleIds.includes(a.normalizedId)).map(a => ({ id: a.id, normalizedId: a.normalizedId })));
-        
         // Force UI update after articles are loaded
         setTimeout(() => {
           setUiUpdateTrigger(prev => prev + 1);
-          console.log('UI update triggered after API articles loaded');
         }, 100);
         
         return newMap;
@@ -357,7 +311,6 @@ export default function FeedScreen() {
   };
 
   const toggleArticleSelection = (articleId: string) => {
-    console.log('=== TOGGLE ARTICLE SELECTION ===');
     
     // Find the article and get its normalized ID
     const article = articles.find(a => a.id === articleId);
@@ -367,42 +320,45 @@ export default function FeedScreen() {
     }
     
     const normalizedId = article.normalizedId;
-    console.log('Article ID:', articleId);
-    console.log('Normalized ID:', normalizedId);
-    console.log('Article title:', article.title.substring(0, 50));
-    console.log('Current selections:', selectedArticleIds);
-    console.log('Is currently selected:', selectedArticleIds.includes(normalizedId));
     
     setSelectedArticleIds((prevSelected) => {
       const newSelection = prevSelected.includes(normalizedId)
         ? prevSelected.filter((id) => id !== normalizedId)
         : [...prevSelected, normalizedId];
       
-      console.log('New selections:', newSelection);
       
       // Save to AsyncStorage for persistence across filter changes
       saveGlobalSelection(newSelection);
       
-      // Force UI update
-      setTimeout(() => {
+      // Force UI update for Web environment
+      if (Platform.OS === 'web') {
+        setTimeout(() => setUiUpdateTrigger(prev => prev + 1), 100);
+      } else {
         setUiUpdateTrigger(prev => prev + 1);
-        console.log('UI update triggered after selection change');
-      }, 50);
+      }
       
       return newSelection;
     });
   };
 
-  // Clear all selections
+  // Clear all selections (optimized for Web)
   const clearAllSelections = () => {
-    setSelectedArticleIds([]);
-    saveGlobalSelection([]);
-    
-    // Force UI update
-    setTimeout(() => {
-      setUiUpdateTrigger(prev => prev + 1);
-      console.log('UI update triggered after clear all');
-    }, 50);
+    if (Platform.OS === 'web') {
+      // For Web: Clear selections gradually to prevent freeze
+      setSelectedArticleIds([]);
+      saveGlobalSelection([]);
+      // Delay UI update to allow React to process the state changes
+      setTimeout(() => {
+        setUiUpdateTrigger(prev => prev + 1);
+      }, 200);
+    } else {
+      // For native: Immediate clearing
+      setSelectedArticleIds([]);
+      saveGlobalSelection([]);
+      setTimeout(() => {
+        setUiUpdateTrigger(prev => prev + 1);
+      }, 50);
+    }
   };
 
   // Remove specific article from selection (using normalized ID)
@@ -420,15 +376,19 @@ export default function FeedScreen() {
   // Select all articles in current filter
   const selectAllInCurrentFilter = () => {
     const currentNormalizedIds = articles.map(article => article.normalizedId).filter(id => id !== undefined) as string[];
+    
     const newSelection = [...new Set([...selectedArticleIds, ...currentNormalizedIds])];
+    
     setSelectedArticleIds(newSelection);
     saveGlobalSelection(newSelection);
     
-    // Force UI update
-    setTimeout(() => {
+    // Force UI update for Web environment
+    if (Platform.OS === 'web') {
+      setTimeout(() => setUiUpdateTrigger(prev => prev + 1), 100);
+    } else {
       setUiUpdateTrigger(prev => prev + 1);
-      console.log('UI update triggered after select all');
-    }, 50);
+    }
+    
   };
 
   // Deselect all articles in current filter
@@ -438,11 +398,12 @@ export default function FeedScreen() {
     setSelectedArticleIds(newSelection);
     saveGlobalSelection(newSelection);
     
-    // Force UI update
-    setTimeout(() => {
+    // Force UI update for Web environment
+    if (Platform.OS === 'web') {
+      setTimeout(() => setUiUpdateTrigger(prev => prev + 1), 100);
+    } else {
       setUiUpdateTrigger(prev => prev + 1);
-      console.log('UI update triggered after deselect all');
-    }, 50);
+    }
   };
 
   // Check if all current articles are selected
@@ -459,16 +420,12 @@ export default function FeedScreen() {
 
   // Get selected articles with full data
   const getSelectedArticles = () => {
-    console.log('Getting selected articles. Normalized map size:', normalizedArticlesMap.size);
-    console.log('Selected normalized IDs:', selectedArticleIds);
     const selectedArticles = selectedArticleIds
       .map(normalizedId => {
         const article = normalizedArticlesMap.get(normalizedId);
-        console.log(`Normalized article ${normalizedId}: ${article ? 'found' : 'not found'}`);
         return article;
       })
       .filter((article): article is Article => article !== undefined);
-    console.log('Final selected articles count:', selectedArticles.length);
     return selectedArticles;
   };
 
@@ -478,54 +435,54 @@ export default function FeedScreen() {
       return;
     }
 
-    console.log('=== FEED AUDIO CREATION STARTED ===');
-    console.log('Selected normalized IDs:', selectedArticleIds);
-    
+
     setCreatingAudio(true);
     try {
       // Get selected articles using normalized IDs
       const selectedArticles = getSelectedArticles();
       const articleIds = selectedArticles.map((article) => article.id);
       const articleTitles = selectedArticles.map((article) => article.title);
+      const articleUrls = selectedArticles.map((article) => article.link);
 
-      console.log('Selected articles:', selectedArticles.map(a => ({ id: a.id, title: a.title, link: a.link })));
-      console.log('Article titles:', articleTitles);
 
       const response = await axios.post(
         `${API}/audio/create`,
         {
           article_ids: articleIds,
           article_titles: articleTitles,
+          article_urls: articleUrls
         },
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
-      console.log('Audio creation response:', response.data);
 
-      // Record user interactions for personalization
-      for (const article of selectedArticles) {
-        try {
-          await axios.post(
-            `${API}/user-interaction`,
-            {
-              article_id: article.id,
-              interaction_type: 'created_audio',
-              genre: article.genre
-            },
-            { headers: { Authorization: `Bearer ${token}` } }
-          );
-        } catch (interactionError) {
-          console.error('Error recording interaction:', interactionError);
-          // Don't fail the whole operation if interaction recording fails
+      // Record user interactions for personalization (async to avoid blocking UI)
+      const recordInteractions = async () => {
+        for (const article of selectedArticles) {
+          try {
+            await axios.post(
+              `${API}/user-interaction`,
+              {
+                article_id: article.id,
+                interaction_type: 'created_audio',
+                genre: article.genre
+              },
+              { headers: { Authorization: `Bearer ${token}` } }
+            );
+          } catch (interactionError) {
+            console.error('Error recording interaction:', interactionError);
+            // Don't fail the whole operation if interaction recording fails
+          }
         }
-      }
+      };
 
-      // Show success modal instead of alert
+
+      // Show success modal instead of alert (exactly like Feed auto-pick)
       setCreatedAudio(response.data);
       setShowSuccessModal(true);
-      clearAllSelections(); // Clear selection after creation
       
-      // Donate shortcut to Siri for manual audio creation
+      // Background tasks immediately (like Feed auto-pick) - SKIP clearAllSelections to prevent modal interference
+      recordInteractions();
       donateShortcut('create-audio');
     } catch (error: any) {
       console.error('Error creating audio:', error);
@@ -541,18 +498,22 @@ export default function FeedScreen() {
       return;
     }
 
+
     setCreatingAudio(true);
     try {
       // Get up to 3 articles from currently filtered results
       const availableArticles = articles.slice(0, 3);
       const articleIds = availableArticles.map(article => article.id);
       const articleTitles = availableArticles.map(article => article.title);
+      const articleUrls = availableArticles.map(article => article.link);
+
 
       const response = await axios.post(
         `${API}/audio/create`,
         {
           article_ids: articleIds,
           article_titles: articleTitles,
+          article_urls: articleUrls
         },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -766,16 +727,6 @@ export default function FeedScreen() {
           articles.map((article) => {
             const isSelected = article.normalizedId ? selectedArticleIds.includes(article.normalizedId) : false;
             
-            // Debug log for each article (enhanced for UI sync debugging)
-            if (__DEV__ && Math.random() < 0.05) { // Log only 5% to avoid spam
-              console.log(`UI Render - Article ${article.id}:`);
-              console.log(`  - Title: ${article.title.substring(0, 30)}...`);
-              console.log(`  - Original ID: ${article.id}`);
-              console.log(`  - Normalized ID: ${article.normalizedId}`);
-              console.log(`  - Is Selected: ${isSelected}`);
-              console.log(`  - Selection includes normalized: ${article.normalizedId ? selectedArticleIds.includes(article.normalizedId) : 'N/A'}`);
-            }
-            
             return (
             <TouchableOpacity
               key={article.id}
@@ -930,6 +881,8 @@ export default function FeedScreen() {
         onClose={() => {
           setShowSuccessModal(false);
           setCreatedAudio(null);
+          // Clear selections after modal closes to prevent interference
+          setTimeout(() => clearAllSelections(), 100);
         }}
       />
     </View>

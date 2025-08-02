@@ -2,6 +2,7 @@
 import React, { createContext, useState, useEffect, useContext } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
+import { apiService } from '../services/ApiService';
 
 // Define the shape of the context data
 interface AuthContextData {
@@ -13,6 +14,7 @@ interface AuthContextData {
   register: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
   forceLogout: () => void; // Force logout for debugging
+  handleAuthError: () => Promise<void>; // Common 401 error handler
   setIsNewUser: (value: boolean) => void;
 }
 
@@ -32,6 +34,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:8000';
   const API = `${BACKEND_URL}/api`;
+
+  useEffect(() => {
+    // Initialize API service with auth error handler
+    apiService.setAuthErrorHandler(handleAuthError);
+  }, []);
 
   // Check if user has RSS sources to determine if they're new
   const checkUserOnboardStatus = async (userToken: string) => {
@@ -58,6 +65,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         if (storedToken) {
           setToken(storedToken);
           axios.defaults.headers.common['Authorization'] = `Bearer ${storedToken}`;
+          apiService.setAuthToken(storedToken);
           // TODO: Fetch user profile from backend to verify token and get user data
           // For now, we'll set a placeholder user
           setUser({ placeholder: true });
@@ -82,6 +90,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       setToken(access_token);
       setUser(user);
       axios.defaults.headers.common['Authorization'] = `Bearer ${access_token}`;
+      apiService.setAuthToken(access_token);
       await AsyncStorage.setItem('token', access_token);
       
       // Check if existing user needs onboarding
@@ -89,6 +98,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       
       return { success: true };
     } catch (error: any) {
+      console.error('Login failed:', error.response?.data?.detail || error.message);
       return { success: false, error: error.response?.data?.detail || 'Login failed' };
     }
   };
@@ -101,6 +111,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       setUser(user);
       setIsNewUser(true); // Mark as new user for onboarding
       axios.defaults.headers.common['Authorization'] = `Bearer ${access_token}`;
+      apiService.setAuthToken(access_token);
       await AsyncStorage.setItem('token', access_token);
       return { success: true };
     } catch (error: any) {
@@ -113,6 +124,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     setUser(null);
     setIsNewUser(false);
     delete axios.defaults.headers.common['Authorization'];
+    apiService.setAuthToken(null);
     await AsyncStorage.removeItem('token');
   };
 
@@ -122,6 +134,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     setUser(null);
     setIsNewUser(false);
     delete axios.defaults.headers.common['Authorization'];
+    apiService.setAuthToken(null);
     
     // Clear all AsyncStorage auth-related items
     try {
@@ -144,6 +157,41 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }, 100);
   };
 
+  const handleAuthError = async () => {
+    console.log('=== HANDLING AUTH ERROR - FORCE LOGOUT ===');
+    try {
+      // Clear all auth-related data
+      await AsyncStorage.multiRemove([
+        'token',
+        'user',
+        'isNewUser',
+        'feed_selected_articles'
+      ]);
+      
+      // Clear axios auth header
+      delete axios.defaults.headers.common['Authorization'];
+      apiService.setAuthToken(null);
+      
+      // Reset state
+      setToken(null);
+      setUser(null);
+      setIsNewUser(false);
+      
+      // Force reload/navigation
+      if (typeof window !== 'undefined') {
+        window.location.reload();
+      } else {
+        // For native, trigger re-render by updating loading state
+        setLoading(true);
+        setTimeout(() => {
+          setLoading(false);
+        }, 100);
+      }
+    } catch (error) {
+      console.error('Error during auth error handling:', error);
+    }
+  };
+
   const value = {
     user,
     token,
@@ -153,6 +201,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     register,
     logout,
     forceLogout,
+    handleAuthError,
     setIsNewUser,
   };
 

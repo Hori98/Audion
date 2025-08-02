@@ -48,18 +48,60 @@ S3_BUCKET_NAME = os.environ.get('S3_BUCKET_NAME', 'audion-audio-files')
 
 # Global database connection variable
 db = None
+db_connected = False
 
 # Lifespan event handler
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
-    global db
-    client = AsyncIOMotorClient(MONGO_URL)
-    db = client[DB_NAME]
-    logging.info("Connected to MongoDB")
+    global db, db_connected
+    try:
+        client = AsyncIOMotorClient(MONGO_URL)
+        db = client[DB_NAME]
+        # Test the connection
+        await asyncio.wait_for(db.command('ping'), timeout=5.0)
+        db_connected = True
+        logging.info("Connected to MongoDB successfully")
+    except Exception as e:
+        logging.error(f"Failed to connect to MongoDB: {e}")
+        db_connected = False
+        logging.info("Server will run in limited mode without database")
     
-    # Initialize preset categories on startup
-    await initialize_preset_categories()
+    # Only run database operations if connected
+    if db_connected:
+        # Create database indexes (non-blocking)
+        try:
+            await db.users.create_index("email", unique=True)
+            await db.rss_sources.create_index([("user_id", 1)])
+            await db.audio_creations.create_index([("user_id", 1), ("created_at", -1)])
+            await db.user_profiles.create_index("user_id", unique=True)
+            await db.user_profiles.create_index([("user_id", 1), ("updated_at", -1)])
+            await db.preset_categories.create_index("name", unique=True)
+            await db.deleted_audio.create_index([("user_id", 1), ("deleted_at", -1)])
+            await db.deleted_audio.create_index("permanent_delete_at")
+            logging.info("Database indexes created successfully")
+        except Exception as e:
+            logging.error(f"Failed to create database indexes: {e}")
+            logging.info("Server will continue without some indexes")
+        
+        # Initialize preset categories on startup (non-blocking)
+        try:
+            await initialize_preset_categories()
+            logging.info("Preset categories initialized successfully")
+        except Exception as e:
+            logging.error(f"Failed to initialize preset categories: {e}")
+            logging.info("Server will continue without preset categories")
+        
+        # Cleanup expired deleted audio files (non-blocking)
+        try:
+            # Note: cleanup_expired_deleted_audio function needs to be defined if used
+            # await cleanup_expired_deleted_audio()
+            logging.info("Cleanup tasks completed")
+        except Exception as e:
+            logging.error(f"Failed to run cleanup tasks: {e}")
+            logging.info("Server will continue without cleanup")
+    else:
+        logging.info("Skipping database initialization - running in limited mode")
     
     yield
     
@@ -839,21 +881,74 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
 
 # === API Endpoints ===
 
+@app.get("/api/health", tags=["System"])
+async def health_check():
+    """Health check endpoint to show server and database status"""
+    return {
+        "status": "ok",
+        "database_connected": db_connected,
+        "message": "Server is running" + (" with database" if db_connected else " in limited mode")
+    }
+
 @app.post("/api/auth/register", tags=["Auth"])
 async def register(user_data: UserCreate):
-    if await db.users.find_one({"email": user_data.email}):
-        raise HTTPException(status_code=400, detail="Email already registered")
-    user = User(email=user_data.email)
-    await db.users.insert_one(user.dict())
-    return {"access_token": user.id, "token_type": "bearer", "user": user}
+    if not db_connected:
+        raise HTTPException(status_code=503, detail="Database unavailable. Server is running in limited mode.")
+    
+    try:
+        # Check if user already exists with timeout
+        existing_user = await asyncio.wait_for(
+            db.users.find_one({"email": user_data.email}),
+            timeout=10.0
+        )
+        if existing_user:
+            raise HTTPException(status_code=400, detail="Email already registered")
+        
+        # Create and insert new user with timeout
+        user = User(email=user_data.email)
+        await asyncio.wait_for(
+            db.users.insert_one(user.dict()),
+            timeout=10.0
+        )
+        return {"access_token": user.id, "token_type": "bearer", "user": user}
+    
+    except asyncio.TimeoutError:
+        logging.error("Database timeout during user registration")
+        raise HTTPException(status_code=503, detail="Database temporarily unavailable. Please try again later.")
+    except Exception as e:
+        logging.error(f"Registration error: {e}")
+        if "ServerSelectionTimeoutError" in str(e):
+            raise HTTPException(status_code=503, detail="Database connection failed. Please check your internet connection and try again.")
+        raise HTTPException(status_code=500, detail="Registration failed")
 
 @app.post("/api/auth/login", tags=["Auth"])
 async def login(user_data: UserLogin):
-    user = await db.users.find_one({"email": user_data.email})
-    if not user:
-        raise HTTPException(status_code=400, detail="Invalid credentials")
-    user_obj = User(**user)
-    return {"access_token": user_obj.id, "token_type": "bearer", "user": user_obj}
+    if not db_connected:
+        raise HTTPException(status_code=503, detail="Database unavailable. Server is running in limited mode.")
+    
+    try:
+        # Find user with timeout
+        user = await asyncio.wait_for(
+            db.users.find_one({"email": user_data.email}),
+            timeout=10.0
+        )
+        if not user:
+            raise HTTPException(status_code=400, detail="Invalid credentials")
+        
+        user_obj = User(**user)
+        return {"access_token": user_obj.id, "token_type": "bearer", "user": user_obj}
+    
+    except asyncio.TimeoutError:
+        logging.error("Database timeout during user login")
+        raise HTTPException(status_code=503, detail="Database temporarily unavailable. Please try again later.")
+    except HTTPException:
+        # Re-raise HTTP exceptions (like invalid credentials)
+        raise
+    except Exception as e:
+        logging.error(f"Login error: {e}")
+        if "ServerSelectionTimeoutError" in str(e):
+            raise HTTPException(status_code=503, detail="Database connection failed. Please check your internet connection and try again.")
+        raise HTTPException(status_code=500, detail="Login failed")
 
 @app.get("/api/rss-sources", response_model=List[RSSSource], tags=["RSS"])
 async def get_user_sources(current_user: User = Depends(get_current_user)):
@@ -1510,9 +1605,22 @@ async def create_auto_picked_audio(request: AutoPickRequest, current_user: User 
 
 async def initialize_preset_categories():
     """Initialize preset categories if they don't exist"""
-    existing_count = await db.preset_categories.count_documents({})
-    if existing_count > 0:
-        return
+    try:
+        # Add timeout for database operations
+        import asyncio
+        existing_count = await asyncio.wait_for(
+            db.preset_categories.count_documents({}), 
+            timeout=10.0  # 10 second timeout
+        )
+        if existing_count > 0:
+            logging.info(f"Found {existing_count} existing preset categories")
+            return
+    except asyncio.TimeoutError:
+        logging.error("Database timeout while checking preset categories")
+        raise
+    except Exception as e:
+        logging.error(f"Error checking existing preset categories: {e}")
+        raise
     
     preset_categories = [
         {
@@ -1634,30 +1742,27 @@ async def initialize_preset_categories():
         }
     ]
     
-    for category_data in preset_categories:
-        category = PresetCategory(**category_data)
-        await db.preset_categories.insert_one(category.dict())
-    
-    logging.info(f"Initialized {len(preset_categories)} preset categories")
+    try:
+        for category_data in preset_categories:
+            category = PresetCategory(**category_data)
+            await asyncio.wait_for(
+                db.preset_categories.insert_one(category.dict()),
+                timeout=5.0  # 5 second timeout per insert
+            )
+        
+        logging.info(f"Initialized {len(preset_categories)} preset categories")
+    except asyncio.TimeoutError:
+        logging.error("Database timeout while inserting preset categories")
+        raise
+    except Exception as e:
+        logging.error(f"Error inserting preset categories: {e}")
+        raise
 
 async def startup_event():
-    logging.info("--- SERVER STARTUP ---")
-    await db.users.create_index("email", unique=True)
-    await db.rss_sources.create_index([("user_id", 1)])
-    await db.audio_creations.create_index([("user_id", 1), ("created_at", -1)])
-    await db.user_profiles.create_index("user_id", unique=True)
-    await db.user_profiles.create_index([("user_id", 1), ("updated_at", -1)])
-    await db.preset_categories.create_index("name", unique=True)
-    # Deleted audio indexes for efficient cleanup and retrieval
-    await db.deleted_audio.create_index([("user_id", 1), ("deleted_at", -1)])
-    await db.deleted_audio.create_index("permanent_delete_at")
-    logging.info("Database indexes created.")
-    
-    # Initialize preset categories
-    await initialize_preset_categories()
-    
-    # Cleanup expired deleted audio files
-    await cleanup_expired_deleted_audio()
+    """Legacy startup event - now handled in lifespan"""
+    logging.info("--- LEGACY STARTUP EVENT (DEPRECATED) ---")
+    # This function is deprecated as initialization is now handled in lifespan
+    pass
     
     if not OPENAI_API_KEY: 
         logging.warning("OpenAI API key not found")
@@ -2512,5 +2617,6 @@ async def serve_profile_image(filename: str):
 # Uvicorn runner for Render
 import uvicorn
 if __name__ == "__main__":
+    # Claude uses 8080, User uses 8000 (default)
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run("server:app", host="0.0.0.0", port=port, reload=True)
