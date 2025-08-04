@@ -235,6 +235,7 @@ class UserProfile(BaseModel):
 class AutoPickRequest(BaseModel):
     max_articles: Optional[int] = 5
     preferred_genres: Optional[List[str]] = None
+    active_source_ids: Optional[List[str]] = None  # Explicitly specify which sources to use
 
 class UserInteraction(BaseModel):
     article_id: str
@@ -963,24 +964,38 @@ async def add_rss_source(source_data: RSSSourceCreate, current_user: User = Depe
 
 @app.patch("/api/rss-sources/{source_id}", response_model=RSSSource, tags=["RSS"])
 async def update_rss_source(source_id: str, update_data: RSSSourceUpdate, current_user: User = Depends(get_current_user)):
-    # Check if source exists and belongs to user
-    existing_source = await db.rss_sources.find_one({"id": source_id, "user_id": current_user.id})
-    if not existing_source:
-        raise HTTPException(status_code=404, detail="RSS source not found")
-    
-    # Update the source
-    update_dict = update_data.dict(exclude_unset=True)
-    result = await db.rss_sources.update_one(
-        {"id": source_id, "user_id": current_user.id},
-        {"$set": update_dict}
-    )
-    
-    if result.modified_count == 0:
-        raise HTTPException(status_code=400, detail="Failed to update RSS source")
-    
-    # Return updated source
-    updated_source = await db.rss_sources.find_one({"id": source_id, "user_id": current_user.id})
-    return RSSSource(**updated_source)
+    try:
+        # Check if source exists and belongs to user
+        existing_source = await db.rss_sources.find_one({"id": source_id, "user_id": current_user.id})
+        if not existing_source:
+            logging.warning(f"RSS source not found: {source_id} for user {current_user.id}")
+            raise HTTPException(status_code=404, detail="RSS source not found")
+        
+        # Update the source
+        update_dict = update_data.dict(exclude_unset=True)
+        logging.info(f"Updating RSS source {source_id} with data: {update_dict}")
+        
+        result = await db.rss_sources.update_one(
+            {"id": source_id, "user_id": current_user.id},
+            {"$set": update_dict}
+        )
+        
+        logging.info(f"Update result - matched: {result.matched_count}, modified: {result.modified_count}")
+        
+        # Note: modified_count can be 0 if the values are the same, which is valid
+        # Only raise error if the operation failed completely (matched_count == 0)
+        if result.matched_count == 0:
+            logging.warning(f"RSS source update failed - no documents matched: {source_id}")
+            raise HTTPException(status_code=404, detail="RSS source not found")
+        
+        # Return updated source
+        updated_source = await db.rss_sources.find_one({"id": source_id, "user_id": current_user.id})
+        return RSSSource(**updated_source)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error updating RSS source {source_id}: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 @app.delete("/api/rss-sources/{source_id}", tags=["RSS"])
 async def delete_rss_source(source_id: str, current_user: User = Depends(get_current_user)):
@@ -991,8 +1006,25 @@ async def delete_rss_source(source_id: str, current_user: User = Depends(get_cur
 
 @app.get("/api/articles", response_model=List[Article], tags=["Articles"])
 async def get_articles(current_user: User = Depends(get_current_user), genre: Optional[str] = None, source: Optional[str] = None):
-    # Get only active sources
-    source_filter = {"user_id": current_user.id, "is_active": {"$ne": False}}
+    """Get articles with query parameters (backward compatibility)"""
+    return await get_articles_internal(current_user, genre, source)
+
+@app.post("/api/articles", response_model=List[Article], tags=["Articles"])
+async def post_articles(request: dict, current_user: User = Depends(get_current_user)):
+    """Get articles with POST body (supports more complex filters)"""
+    genre = request.get("genre")
+    source = request.get("source")
+    return await get_articles_internal(current_user, genre, source)
+
+async def get_articles_internal(current_user: User, genre: Optional[str] = None, source: Optional[str] = None):
+    # Get only active sources (is_active is not explicitly False or doesn't exist)
+    source_filter = {
+        "user_id": current_user.id,
+        "$or": [
+            {"is_active": {"$ne": False}},  # is_active is not explicitly False
+            {"is_active": {"$exists": False}}  # is_active field doesn't exist (default to active)
+        ]
+    }
     
     # Add source name filter if specified
     if source and source != "All":
@@ -1292,12 +1324,34 @@ async def get_auto_picked_articles(request: AutoPickRequest, current_user: User 
     try:
         logging.info(f"Auto-pick request from user: {current_user.id}")
         
-        # Get user's RSS sources first
-        sources = await db.rss_sources.find({"user_id": current_user.id}).to_list(100)
-        logging.info(f"Found {len(sources)} RSS sources for user {current_user.id}")
+        # Check database connection
+        if not db_connected:
+            raise HTTPException(status_code=503, detail="Database service unavailable. Auto-pick requires database connectivity to access RSS sources and user preferences.")
+        
+        # Get user's RSS sources based on request parameters
+        if request.active_source_ids:
+            # Use explicitly specified active sources (using UUID-format id field, not ObjectId)
+            sources = await db.rss_sources.find({
+                "user_id": current_user.id,
+                "id": {"$in": request.active_source_ids}
+            }).to_list(100)
+            logging.info(f"Using {len(sources)} explicitly specified sources for user {current_user.id}")
+        else:
+            # Use all active sources (default behavior for backward compatibility)
+            sources = await db.rss_sources.find({
+                "user_id": current_user.id,
+                "$or": [
+                    {"is_active": {"$ne": False}},  # is_active is not explicitly False
+                    {"is_active": {"$exists": False}}  # is_active field doesn't exist (default to active)
+                ]
+            }).to_list(100)
+            logging.info(f"Found {len(sources)} active RSS sources for user {current_user.id}")
         
         if not sources:
-            raise HTTPException(status_code=404, detail="No RSS sources found. Please add some sources first.")
+            if request.active_source_ids:
+                raise HTTPException(status_code=404, detail="No specified RSS sources found or they are inactive.")
+            else:
+                raise HTTPException(status_code=404, detail="No active RSS sources found. Please add some sources or activate existing ones.")
         
         # Fetch all articles from user's sources
         all_articles = []
@@ -1352,6 +1406,8 @@ async def get_auto_picked_articles(request: AutoPickRequest, current_user: User 
 @app.get("/api/user-profile", response_model=UserProfile, tags=["Auto-Pick"])
 async def get_user_profile(current_user: User = Depends(get_current_user)):
     """Get user's personalization profile"""
+    if not db_connected:
+        raise HTTPException(status_code=503, detail="Database service unavailable. User profile requires database connectivity.")
     profile = await get_or_create_user_profile(current_user.id)
     return profile
 
@@ -1359,6 +1415,8 @@ async def get_user_profile(current_user: User = Depends(get_current_user)):
 async def record_user_interaction(interaction: UserInteraction, current_user: User = Depends(get_current_user)):
     """Record user interaction to improve recommendations"""
     try:
+        if not db_connected:
+            raise HTTPException(status_code=503, detail="Database service unavailable. User interactions require database connectivity.")
         await update_user_preferences(current_user.id, interaction)
         return {"message": "Interaction recorded successfully"}
     except Exception as e:
@@ -1419,6 +1477,8 @@ async def record_audio_interaction(
 async def get_user_insights(current_user: User = Depends(get_current_user)):
     """Get user personalization insights and recommendation explanations"""
     try:
+        if not db_connected:
+            raise HTTPException(status_code=503, detail="Database service unavailable. User insights require database connectivity.")
         profile = await get_or_create_user_profile(current_user.id)
         
         # Calculate insights
@@ -2617,6 +2677,6 @@ async def serve_profile_image(filename: str):
 # Uvicorn runner for Render
 import uvicorn
 if __name__ == "__main__":
-    # Claude uses 8080, User uses 8000 (default)
-    port = int(os.environ.get("PORT", 8000))
+    # Claude uses 8002, User uses 8000 (default)
+    port = int(os.environ.get("PORT", 8002))
     uvicorn.run("server:app", host="0.0.0.0", port=port, reload=True)

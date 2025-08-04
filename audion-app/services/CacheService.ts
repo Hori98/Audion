@@ -1,7 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Article, RSSSource } from '../types';
 
-interface CacheData {
-  data: any;
+interface CacheData<T = unknown> {
+  data: T;
   timestamp: number;
   expiry: number;
 }
@@ -20,9 +21,9 @@ export class CacheService {
     return `cache_${key}`;
   }
 
-  async set(key: string, data: any, ttlMinutes: number = 10): Promise<void> {
+  async set<T>(key: string, data: T, ttlMinutes: number = 10): Promise<void> {
     try {
-      const cacheData: CacheData = {
+      const cacheData: CacheData<T> = {
         data,
         timestamp: Date.now(),
         expiry: Date.now() + (ttlMinutes * 60 * 1000)
@@ -34,12 +35,12 @@ export class CacheService {
     }
   }
 
-  async get(key: string): Promise<any | null> {
+  async get<T>(key: string): Promise<T | null> {
     try {
       const cached = await AsyncStorage.getItem(this.getKey(key));
       if (!cached) return null;
 
-      const cacheData: CacheData = JSON.parse(cached);
+      const cacheData: CacheData<T> = JSON.parse(cached);
       
       // Check if expired
       if (Date.now() > cacheData.expiry) {
@@ -86,29 +87,29 @@ export class CacheService {
   }
 
   // Specialized methods for RSS content
-  async setArticles(articles: any[], filters: { genre?: string; source?: string } = {}): Promise<void> {
+  async setArticles(articles: Article[], filters: { genre?: string; source?: string } = {}): Promise<void> {
     const key = this.getArticlesCacheKey(filters);
-    await this.set(key, articles, 5); // 5 minutes cache for articles
+    await this.set<Article[]>(key, articles, 5); // 5 minutes cache for articles
   }
 
-  async getArticles(filters: { genre?: string; source?: string } = {}): Promise<any[] | null> {
+  async getArticles(filters: { genre?: string; source?: string } = {}): Promise<Article[] | null> {
     const key = this.getArticlesCacheKey(filters);
-    return await this.get(key);
+    return await this.get<Article[]>(key);
   }
 
-  async setSources(sources: any[]): Promise<void> {
-    await this.set('rss_sources', sources, 30); // 30 minutes cache for sources
+  async setSources(sources: RSSSource[]): Promise<void> {
+    await this.set<RSSSource[]>('rss_sources', sources, 30); // 30 minutes cache for sources
   }
 
-  async getSources(): Promise<any[] | null> {
-    return await this.get('rss_sources');
+  async getSources(): Promise<RSSSource[] | null> {
+    return await this.get<RSSSource[]>('rss_sources');
   }
 
-  async setAutoPickedArticles(articles: any[]): Promise<void> {
+  async setAutoPickedArticles(articles: Article[] | { articles: Article[]; timestamp: number; active_sources: string[] }): Promise<void> {
     await this.set('auto_picked_articles', articles, 10); // 10 minutes cache for auto-picked
   }
 
-  async getAutoPickedArticles(): Promise<any[] | null> {
+  async getAutoPickedArticles(): Promise<Article[] | { articles: Article[]; timestamp: number; active_sources: string[] } | null> {
     return await this.get('auto_picked_articles');
   }
 

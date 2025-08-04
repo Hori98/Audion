@@ -67,7 +67,7 @@ export default function SiriShortcutsSettings() {
             </View>
             
             <Text style={[styles.shortcutPhrase, { color: theme.textSecondary }]}>
-              Say: "{shortcut.suggestedInvocationPhrase}"
+              Say: &ldquo;{shortcut.suggestedInvocationPhrase}&rdquo;
             </Text>
             
             <View style={styles.shortcutActions}>
@@ -108,7 +108,7 @@ export default function SiriShortcutsSettings() {
               <Text style={styles.stepNumberText}>2</Text>
             </View>
             <Text style={[styles.stepText, { color: theme.text }]}>
-              Tap "Donate to Siri" for shortcuts you want to use
+              Tap &ldquo;Donate to Siri&rdquo; for shortcuts you want to use
             </Text>
           </View>
           
@@ -117,7 +117,7 @@ export default function SiriShortcutsSettings() {
               <Text style={styles.stepNumberText}>3</Text>
             </View>
             <Text style={[styles.stepText, { color: theme.text }]}>
-              Say "Hey Siri" followed by the suggested phrase to activate shortcuts
+              Say &ldquo;Hey Siri&rdquo; followed by the suggested phrase to activate shortcuts
             </Text>
           </View>
         </View>

@@ -11,23 +11,15 @@ import { Ionicons } from '@expo/vector-icons'; // Added import
 import { useRouter } from 'expo-router';
 import { useSiriShortcuts } from '../../hooks/useSiriShortcuts';
 import AudioCreationSuccessModal from '../../components/AudioCreationSuccessModal';
+import LoadingIndicator from '../../components/LoadingIndicator';
+import LoadingButton from '../../components/LoadingButton';
 import CacheService from '../../services/CacheService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { ErrorHandlingService } from '../../services/ErrorHandlingService';
+import { Article } from '../../types';
 
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:8000';
 const API = `${BACKEND_URL}/api`;
-
-interface Article {
-  id: string;
-  title: string;
-  summary: string;
-  link: string;
-  published: string;
-  source_name: string;
-  content?: string;
-  genre?: string;
-  normalizedId?: string; // Add normalized ID for deduplication
-}
 
 interface RSSSource {
   id: string;
@@ -68,7 +60,8 @@ export default function FeedScreen() {
       const initializeData = async () => {
         if (token && token !== '') {
           await loadGlobalSelection();
-          await fetchSources();
+          // Force refresh sources to get latest changes from sources screen
+          await fetchSources(true);
           await fetchArticles();
         }
       };
@@ -83,6 +76,8 @@ export default function FeedScreen() {
       if (token && token !== '') {
         // Ensure we have the latest selection state before fetching articles
         await loadGlobalSelection();
+        // Also refresh sources to ensure latest source list is available
+        await fetchSources(true);
         await fetchArticles();
       }
     };
@@ -156,13 +151,15 @@ export default function FeedScreen() {
     }
   };
 
-  const fetchSources = async () => {
+  const fetchSources = async (forceRefresh = false) => {
     try {
-      // Try cache first
-      const cachedSources = await CacheService.getSources();
-      if (cachedSources) {
-        setSources(cachedSources);
-        return;
+      // Try cache first unless force refresh is requested
+      if (!forceRefresh) {
+        const cachedSources = await CacheService.getSources();
+        if (cachedSources) {
+          setSources(cachedSources);
+          return;
+        }
       }
 
       const response = await axios.get(`${API}/rss-sources`, {
@@ -180,6 +177,10 @@ export default function FeedScreen() {
       setSources(activeSources);
     } catch (error: any) {
       console.error('Error fetching RSS sources:', error);
+      ErrorHandlingService.showError(error, { 
+        action: 'fetch_sources',
+        source: 'Feed Screen' 
+      });
       // Set empty array on error to show only "All Sources" option
       setSources([]);
     }
@@ -281,7 +282,11 @@ export default function FeedScreen() {
       });
     } catch (error: any) {
       console.error('Error fetching articles:', error);
-      Alert.alert('Error', error.response?.data?.detail || 'Failed to fetch articles.');
+      ErrorHandlingService.showError(error, { 
+        action: 'fetch_articles',
+        source: 'Feed Screen',
+        details: { genre: selectedGenre, source: selectedSource }
+      });
     } finally {
       setLoading(false);
     }
@@ -298,13 +303,22 @@ export default function FeedScreen() {
     const cacheKey = CacheService.getArticlesCacheKey(filters);
     await CacheService.remove(cacheKey);
     
-    await Promise.all([fetchSources(), fetchArticles()]);
+    // Force refresh sources to get latest source changes
+    await Promise.all([fetchSources(true), fetchArticles()]);
     setRefreshing(false);
   };
 
   const handleArticlePress = async (url: string) => {
     if (url) {
-      await WebBrowser.openBrowserAsync(url);
+      try {
+        await WebBrowser.openBrowserAsync(url);
+      } catch (error: any) {
+        console.error('Error opening article:', error);
+        ErrorHandlingService.showError(error, { 
+          action: 'open_article',
+          source: 'Feed Screen' 
+        });
+      }
     } else {
       Alert.alert('Error', 'Article link not available.');
     }
@@ -486,7 +500,11 @@ export default function FeedScreen() {
       donateShortcut('create-audio');
     } catch (error: any) {
       console.error('Error creating audio:', error);
-      Alert.alert('Error', error.response?.data?.detail || 'Failed to create audio.');
+      ErrorHandlingService.showError(error, { 
+        action: 'create_audio',
+        source: 'Feed Screen',
+        details: { selectedCount: selectedArticleIds.length }
+      });
     } finally {
       setCreatingAudio(false);
     }
@@ -548,7 +566,11 @@ export default function FeedScreen() {
       donateShortcut('auto-pick');
     } catch (error: any) {
       console.error('Error creating auto-picked audio:', error);
-      Alert.alert('Error', error.response?.data?.detail || 'Failed to create audio.');
+      ErrorHandlingService.showError(error, { 
+        action: 'create_audio',
+        source: 'Feed Auto-pick',
+        details: { genre: selectedGenre, source: selectedSource }
+      });
     } finally {
       setCreatingAudio(false);
     }
@@ -556,9 +578,11 @@ export default function FeedScreen() {
 
   if (loading) {
     return (
-      <View style={[styles.loadingContainer, { backgroundColor: theme.background }]}>
-        <ActivityIndicator size="large" color={theme.primary} />
-      </View>
+      <LoadingIndicator 
+        variant="fullscreen"
+        text="Loading articles and sources..."
+        testID="feed-loading"
+      />
     );
   }
 
@@ -570,6 +594,8 @@ export default function FeedScreen() {
         showsHorizontalScrollIndicator={false} 
         style={styles.sourceButtonsContainer}
         contentContainerStyle={styles.sourceButtonsContent}
+        accessibilityLabel="Filter articles by news source"
+        accessibilityRole="tablist"
       >
         <TouchableOpacity
           key="all-sources"
@@ -578,6 +604,10 @@ export default function FeedScreen() {
             styles.filterButton,
             { backgroundColor: selectedSource === 'All' ? theme.primary : theme.surface },
           ]}
+          accessibilityRole="tab"
+          accessibilityLabel="Show all sources"
+          accessibilityHint="Tap to view articles from all news sources"
+          accessibilityState={{ selected: selectedSource === 'All' }}
         >
           <Text style={[
             styles.filterButtonText,
@@ -595,6 +625,10 @@ export default function FeedScreen() {
                 styles.filterButton,
                 { backgroundColor: selectedSource === source.name ? theme.primary : theme.surface },
               ]}
+              accessibilityRole="tab"
+              accessibilityLabel={`Filter by ${source.name}`}
+              accessibilityHint={`Tap to view articles from ${source.name} only`}
+              accessibilityState={{ selected: selectedSource === source.name }}
             >
               <Text style={[
                 styles.filterButtonText,
@@ -622,6 +656,8 @@ export default function FeedScreen() {
         showsHorizontalScrollIndicator={false} 
         style={styles.genreButtonsContainer}
         contentContainerStyle={styles.genreButtonsContent}
+        accessibilityLabel="Filter articles by topic or genre"
+        accessibilityRole="tablist"
       >
         {genres.map((genre) => (
           <TouchableOpacity
@@ -631,6 +667,10 @@ export default function FeedScreen() {
               styles.genreButton,
               { backgroundColor: selectedGenre === genre ? theme.primary : theme.surface },
             ]}
+            accessibilityRole="tab"
+            accessibilityLabel={`Filter by ${genre} articles`}
+            accessibilityHint={`Tap to view ${genre === 'All' ? 'all articles' : genre + ' articles only'}`}
+            accessibilityState={{ selected: selectedGenre === genre }}
           >
             <Text style={[
               styles.genreButtonText,
@@ -736,6 +776,10 @@ export default function FeedScreen() {
                 isSelected && { borderColor: theme.primary, borderWidth: 2 }
               ]}
               onPress={() => handleArticlePress(article.link)} // Open link on tap
+              accessibilityRole="button"
+              accessibilityLabel={`Article: ${article.title} from ${article.source_name}`}
+              accessibilityHint="Tap to read the full article in browser"
+              accessibilityState={{ selected: isSelected }}
             >
               <View style={styles.articleContent}>
                 <Text style={[styles.articleSource, { color: theme.textMuted }]}>{article.source_name}</Text>
@@ -754,6 +798,10 @@ export default function FeedScreen() {
                   isSelected && styles.plusButtonSelected,
                 ]}
                 onPress={() => toggleArticleSelection(article.id)}
+                accessibilityRole="checkbox"
+                accessibilityLabel={`${isSelected ? 'Remove' : 'Add'} ${article.title} to audio selection`}
+                accessibilityHint={`${isSelected ? 'Tap to remove this article from your audio creation selection' : 'Tap to add this article to your audio creation selection'}`}
+                accessibilityState={{ checked: isSelected }}
               >
                 <Ionicons
                   name={isSelected ? 'checkmark-circle' : 'add-circle-outline'}
@@ -768,17 +816,17 @@ export default function FeedScreen() {
       </ScrollView>
 
       {selectedArticleIds.length > 0 && !showMiniPlayer && (
-        <TouchableOpacity
-          style={[styles.createAudioButton, { backgroundColor: theme.primary }]}
+        <LoadingButton
+          title={`Create Audio (${selectedArticleIds.length})`}
           onPress={handleCreateAudio}
-          disabled={creatingAudio}
-        >
-          {creatingAudio ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.createAudioButtonText}>Create Audio ({selectedArticleIds.length})</Text>
-          )}
-        </TouchableOpacity>
+          loading={creatingAudio}
+          variant="primary"
+          icon="musical-notes"
+          style={styles.createAudioButton}
+          testID="create-audio-button"
+          accessibilityLabel={`Create audio from ${selectedArticleIds.length} selected articles`}
+          accessibilityHint="Creates an audio podcast from your selected articles that you can listen to"
+        />
       )}
 
       {/* Floating Action Button - Show when mini player is active and articles are selected */}
@@ -787,6 +835,10 @@ export default function FeedScreen() {
           style={[styles.floatingActionButton, { backgroundColor: theme.primary }]}
           onPress={handleCreateAudio}
           disabled={creatingAudio}
+          accessibilityRole="button"
+          accessibilityLabel={`Create audio from ${selectedArticleIds.length} selected articles`}
+          accessibilityHint="Creates an audio podcast from your selected articles that you can listen to"
+          accessibilityState={{ disabled: creatingAudio }}
         >
           {creatingAudio ? (
             <ActivityIndicator color="#fff" size={20} />

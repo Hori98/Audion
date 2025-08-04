@@ -3,10 +3,12 @@ import React, { createContext, useState, useEffect, useContext } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import { apiService } from '../services/ApiService';
+import { ErrorHandlingService } from '../services/ErrorHandlingService';
+import { User } from '../types';
 
 // Define the shape of the context data
 interface AuthContextData {
-  user: any; // Replace 'any' with a proper user type later
+  user: User | null;
   token: string | null;
   loading: boolean;
   isNewUser: boolean;
@@ -27,7 +29,7 @@ export const useAuth = () => {
 
 // Provider component that wraps the app
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [isNewUser, setIsNewUser] = useState(false);
@@ -68,7 +70,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           apiService.setAuthToken(storedToken);
           // TODO: Fetch user profile from backend to verify token and get user data
           // For now, we'll set a placeholder user
-          setUser({ placeholder: true });
+          setUser({ 
+            id: 'placeholder', 
+            email: 'placeholder@email.com', 
+            created_at: new Date().toISOString() 
+          });
           
           // Check if user needs onboarding
           await checkUserOnboardStatus(storedToken);
@@ -97,9 +103,16 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       await checkUserOnboardStatus(access_token);
       
       return { success: true };
-    } catch (error: any) {
-      console.error('Login failed:', error.response?.data?.detail || error.message);
-      return { success: false, error: error.response?.data?.detail || 'Login failed' };
+    } catch (error: unknown) {
+      console.error('Login failed:', error);
+      ErrorHandlingService.showError(error, { 
+        action: 'login',
+        source: 'AuthContext'
+      });
+      const errorMessage = error && typeof error === 'object' && 'response' in error 
+        ? (error.response as any)?.data?.detail || 'Login failed'
+        : 'Login failed';
+      return { success: false, error: errorMessage };
     }
   };
 
@@ -114,8 +127,16 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       apiService.setAuthToken(access_token);
       await AsyncStorage.setItem('token', access_token);
       return { success: true };
-    } catch (error: any) {
-      return { success: false, error: error.response?.data?.detail || 'Registration failed' };
+    } catch (error: unknown) {
+      console.error('Registration failed:', error);
+      ErrorHandlingService.showError(error, { 
+        action: 'register',
+        source: 'AuthContext'
+      });
+      const errorMessage = error && typeof error === 'object' && 'response' in error 
+        ? (error.response as any)?.data?.detail || 'Registration failed'
+        : 'Registration failed';
+      return { success: false, error: errorMessage };
     }
   };
 

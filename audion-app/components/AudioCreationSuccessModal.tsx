@@ -137,7 +137,7 @@ export default function AudioCreationSuccessModal({
 
           {/* Subtitle */}
           <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
-            "{audioTitle}" is ready to play
+            &ldquo;{audioTitle}&rdquo; is ready to play
           </Text>
 
           {/* Buttons */}

@@ -866,7 +866,7 @@ export default function SettingsScreen() {
               </View>
               <View style={styles.accountInfo}>
                 <Text style={[styles.accountLabel, { color: theme.textSecondary }]}>Username</Text>
-                <Text style={[styles.accountValue, { color: theme.text }]}>{user?.username || user?.email?.split('@')[0] || 'User'}</Text>
+                <Text style={[styles.accountValue, { color: theme.text }]}>{user?.email?.split('@')[0] || 'User'}</Text>
               </View>
             </View>
           </ScrollView>

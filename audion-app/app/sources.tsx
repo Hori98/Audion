@@ -1,13 +1,17 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, TextInput, Modal, ActivityIndicator, SafeAreaView, Switch, Platform } from 'react-native';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
+import LoadingIndicator from '../components/LoadingIndicator';
+import LoadingButton from '../components/LoadingButton';
 import { useRouter } from 'expo-router';
+import { ErrorHandlingService } from '../services/ErrorHandlingService';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import CacheService from '../services/CacheService';
 
 interface RSSSource {
   id: string;
@@ -57,44 +61,57 @@ export default function SourcesScreen() {
           Authorization: `Bearer ${token}`,
         },
       });
+      console.log('=== SOURCES DEBUG ===');
+      console.log('Raw API response:', response.data);
+      
       // Process sources with proper is_active handling
       const sourcesWithStatus = response.data.map((source: RSSSource) => ({
         ...source,
         is_active: source.is_active ?? true
       }));
+      console.log('Processed sources:', sourcesWithStatus);
       
       // Load saved states from storage
       const savedStates = await loadSourceStatesFromStorage();
+      console.log('Saved states from storage:', savedStates);
       
       // Initialize switch states (prioritize saved states over API data)
       const initialSwitchStates: {[key: string]: boolean} = {};
-      sourcesWithStatus.forEach(source => {
+      sourcesWithStatus.forEach((source: any) => {
         if (savedStates[source.id] !== undefined) {
           // Use saved state if exists
           initialSwitchStates[source.id] = savedStates[source.id];
+          console.log(`Using saved state for ${source.name}: ${savedStates[source.id]}`);
         } else {
           // Fall back to API data or default true
           initialSwitchStates[source.id] = source.is_active ?? true;
+          console.log(`Using API/default state for ${source.name}: ${source.is_active ?? true}`);
         }
       });
+      console.log('Final switch states:', initialSwitchStates);
       
       setSources(sourcesWithStatus);
       setSwitchStates(initialSwitchStates);
     } catch (error: any) {
       console.error('Error fetching RSS sources:', error);
-      Alert.alert('Error', error.response?.data?.detail || 'Failed to fetch RSS sources.');
+      ErrorHandlingService.showError(error, { 
+        action: 'fetch_sources',
+        source: 'Sources Screen' 
+      });
     } finally {
       setLoading(false);
     }
   };
 
-  // Filter sources based on search query
-  const filteredSources = sources.filter(source => 
-    source.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    source.url.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  // Memoize filtered sources to prevent unnecessary recalculations
+  const filteredSources = useMemo(() => {
+    return sources.filter(source => 
+      source.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      source.url.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+  }, [sources, searchQuery]);
 
-  const handleAddSource = async () => {
+  const handleAddSource = useCallback(async () => {
     if (!newSourceName.trim() || !newSourceUrl.trim()) {
       Alert.alert('Validation Error', 'Please provide both name and URL.');
       return;
@@ -114,14 +131,21 @@ export default function SourcesScreen() {
       setNewSourceName('');
       setNewSourceUrl('');
       setModalVisible(false);
+      
+      // Clear Feed and Auto-pick caches to reflect new source
+      await clearRelatedCaches();
       fetchSources(); // Refresh the list
     } catch (error: any) {
       console.error('Error adding RSS source:', error);
-      Alert.alert('Error', error.response?.data?.detail || 'Failed to add RSS source.');
+      ErrorHandlingService.showError(error, { 
+        action: 'add_rss_source',
+        source: 'Sources Screen',
+        details: { name: newSourceName, url: newSourceUrl }
+      });
     } finally {
       setSubmitting(false);
     }
-  };
+  }, [newSourceName, newSourceUrl, token]);
 
   const handleToggleSource = async (sourceId: string) => {
     const currentStatus = switchStates[sourceId] ?? true;
@@ -162,6 +186,37 @@ export default function SourcesScreen() {
     return {};
   };
 
+  // Clear all related caches when sources change
+  const clearRelatedCaches = async () => {
+    try {
+      // Clear RSS sources cache
+      await CacheService.remove('rss_sources');
+      
+      // Clear all possible article cache combinations
+      const genres = ['All', 'Technology', 'Finance', 'Sports', 'Politics', 'Health', 'Entertainment', 'Science', 'Environment', 'Education', 'Travel', 'General'];
+      const allSources = ['All', ...sources.map(s => s.name)];
+      
+      // Clear article caches for all filter combinations
+      for (const genre of genres) {
+        for (const source of allSources) {
+          const filters = {
+            ...(genre !== 'All' && { genre }),
+            ...(source !== 'All' && { source })
+          };
+          const cacheKey = CacheService.getArticlesCacheKey(filters);
+          await CacheService.remove(cacheKey);
+        }
+      }
+      
+      // Clear auto-picked articles cache
+      await CacheService.remove('auto_picked_articles');
+      
+      console.log('Related caches cleared successfully');
+    } catch (error) {
+      console.error('Error clearing related caches:', error);
+    }
+  };
+
   const updateSourceStatus = async (sourceId: string, newStatus: boolean, sourceName: string) => {
     // Update sources data 
     setSources(prevSources => 
@@ -184,8 +239,13 @@ export default function SourcesScreen() {
       }, {
         headers: { Authorization: `Bearer ${token}` }
       });
+      
+      // Clear Feed and Auto-pick caches to reflect source status change
+      await clearRelatedCaches();
     } catch (error: any) {
-      // Silent failure - continue with local storage
+      console.log(`Source ${sourceName} toggle sync failed:`, error.response?.status, error.response?.data);
+      // Silent failure - continue with local storage for UX consistency
+      // The local state and storage are already updated for immediate feedback
     }
   };
 
@@ -279,6 +339,9 @@ export default function SourcesScreen() {
       await saveSourceStatesToStorage(newSwitchStates);
       console.log('Switch states cleaned up');
       
+      // Clear Feed and Auto-pick caches to reflect source deletion
+      await clearRelatedCaches();
+      
       // Reset UI state
       setSelectedSources([]);
       setIsEditMode(false);
@@ -306,10 +369,11 @@ export default function SourcesScreen() {
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#4f46e5" />
-        <Text style={styles.loadingText}>Loading sources...</Text>
-      </SafeAreaView>
+      <LoadingIndicator 
+        variant="fullscreen"
+        text="Loading RSS sources..."
+        testID="sources-loading"
+      />
     );
   }
 
@@ -320,6 +384,9 @@ export default function SourcesScreen() {
         <TouchableOpacity 
           onPress={() => router.push('/(tabs)/feed')}
           style={styles.backButton}
+          accessibilityRole="button"
+          accessibilityLabel="Go back to feed"
+          accessibilityHint="Tap to return to the main feed screen"
         >
           <Ionicons name="arrow-back" size={24} color={theme.text} />
         </TouchableOpacity>
@@ -329,6 +396,9 @@ export default function SourcesScreen() {
             <TouchableOpacity 
               onPress={handleEditMode}
               style={[styles.minusButton, { backgroundColor: isEditMode ? theme.primary : 'transparent' }]}
+              accessibilityRole="button"
+              accessibilityLabel={isEditMode ? "Finish editing sources" : "Edit sources"}
+              accessibilityHint={isEditMode ? "Tap to finish editing and save changes" : "Tap to select and delete sources"}
             >
               <Ionicons 
                 name={isEditMode ? "checkmark" : "remove"} 
@@ -340,6 +410,9 @@ export default function SourcesScreen() {
           <TouchableOpacity 
             onPress={() => setModalVisible(true)}
             style={styles.addButton}
+            accessibilityRole="button"
+            accessibilityLabel="Add new RSS source"
+            accessibilityHint="Tap to open the add RSS source dialog"
           >
             <Ionicons name="add" size={24} color={theme.primary} />
           </TouchableOpacity>
@@ -358,9 +431,17 @@ export default function SourcesScreen() {
             onChangeText={setSearchQuery}
             autoCapitalize="none"
             autoCorrect={false}
+            accessibilityLabel="Search RSS sources"
+            accessibilityHint="Type to search through your RSS sources by name or URL"
           />
           {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={() => setSearchQuery('')} style={styles.clearButton}>
+            <TouchableOpacity 
+              onPress={() => setSearchQuery('')} 
+              style={styles.clearButton}
+              accessibilityRole="button"
+              accessibilityLabel="Clear search"
+              accessibilityHint="Tap to clear the search text"
+            >
               <Ionicons name="close-circle" size={20} color={theme.textSecondary} />
             </TouchableOpacity>
           )}
@@ -368,7 +449,11 @@ export default function SourcesScreen() {
       </View>
 
       {/* Sources List */}
-      <ScrollView style={styles.scrollContainer}>
+      <ScrollView 
+        style={styles.scrollContainer}
+        accessibilityRole="list"
+        accessibilityLabel="RSS sources list"
+      >
         {sources.length === 0 ? (
           <View style={styles.emptyContainer}>
             <Ionicons name="radio-outline" size={64} color="#d1d5db" />
@@ -379,6 +464,9 @@ export default function SourcesScreen() {
             <TouchableOpacity 
               style={styles.emptyButton}
               onPress={() => setModalVisible(true)}
+              accessibilityRole="button"
+              accessibilityLabel="Add your first RSS source"
+              accessibilityHint="Tap to open the add RSS source dialog"
             >
               <Text style={styles.emptyButtonText}>Add RSS Source</Text>
             </TouchableOpacity>
@@ -388,11 +476,14 @@ export default function SourcesScreen() {
             <Ionicons name="search-outline" size={64} color="#d1d5db" />
             <Text style={styles.emptyTitle}>No Sources Found</Text>
             <Text style={styles.emptySubtitle}>
-              No sources match your search query "{searchQuery}"
+              No sources match your search query &ldquo;{searchQuery}&rdquo;
             </Text>
             <TouchableOpacity 
               style={styles.emptyButton}
               onPress={() => setSearchQuery('')}
+              accessibilityRole="button"
+              accessibilityLabel="Clear search filter"
+              accessibilityHint="Tap to clear the search filter and show all sources"
             >
               <Text style={styles.emptyButtonText}>Clear Search</Text>
             </TouchableOpacity>
@@ -409,12 +500,28 @@ export default function SourcesScreen() {
                 ]}
                 onPress={isEditMode ? () => handleSourceSelection(source.id) : undefined}
                 activeOpacity={isEditMode ? 0.7 : 1}
+                accessibilityRole={isEditMode ? "checkbox" : "button"}
+                accessibilityLabel={isEditMode ? 
+                  `${selectedSources.includes(source.id) ? 'Unselect' : 'Select'} ${source.name} for deletion` :
+                  `RSS source: ${source.name}`
+                }
+                accessibilityHint={isEditMode ?
+                  "Tap to toggle selection for deletion" :
+                  `Active: ${switchStates[source.id] ?? true ? 'Yes' : 'No'}. Use switch to toggle.`
+                }
+                accessibilityState={isEditMode ? 
+                  { checked: selectedSources.includes(source.id) } :
+                  { disabled: false }
+                }
               >
                 {/* Selection Checkbox - Only show in edit mode */}
                 {isEditMode && (
                   <TouchableOpacity 
                     style={styles.checkboxContainer}
                     onPress={() => handleSourceSelection(source.id)}
+                    accessibilityRole="checkbox"
+                    accessibilityLabel={`${selectedSources.includes(source.id) ? 'Unselect' : 'Select'} ${source.name}`}
+                    accessibilityState={{ checked: selectedSources.includes(source.id) }}
                   >
                     <View style={[
                       styles.checkbox, 
@@ -458,6 +565,9 @@ export default function SourcesScreen() {
                       onValueChange={() => handleToggleSource(source.id)}
                       value={switchStates[source.id] ?? true}
                       style={styles.switch}
+                      accessibilityLabel={`Toggle ${source.name} ${switchStates[source.id] ?? true ? 'off' : 'on'}`}
+                      accessibilityHint={`Currently ${switchStates[source.id] ?? true ? 'active' : 'inactive'}. Tap to ${switchStates[source.id] ?? true ? 'deactivate' : 'activate'} this RSS source.`}
+                      accessibilityRole="switch"
                     />
                   </View>
                 )}
@@ -478,6 +588,10 @@ export default function SourcesScreen() {
             }}
             disabled={deleting}
             activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel={`Delete ${selectedSources.length} selected sources`}
+            accessibilityHint="Tap to permanently delete the selected RSS sources"
+            accessibilityState={{ disabled: deleting, busy: deleting }}
           >
             {deleting ? (
               <ActivityIndicator color="#ffffff" size={20} />
@@ -507,6 +621,9 @@ export default function SourcesScreen() {
               <TouchableOpacity
                 onPress={() => setModalVisible(false)}
                 style={styles.modalCloseButton}
+                accessibilityRole="button"
+                accessibilityLabel="Close add RSS source dialog"
+                accessibilityHint="Tap to close the add RSS source dialog"
               >
                 <Ionicons name="close" size={24} color="#6b7280" />
               </TouchableOpacity>
@@ -521,6 +638,8 @@ export default function SourcesScreen() {
                   value={newSourceName}
                   onChangeText={setNewSourceName}
                   maxLength={100}
+                  accessibilityLabel="RSS source name"
+                  accessibilityHint="Enter a descriptive name for this RSS source"
                 />
               </View>
 
@@ -534,6 +653,8 @@ export default function SourcesScreen() {
                   keyboardType="url"
                   autoCapitalize="none"
                   autoCorrect={false}
+                  accessibilityLabel="RSS feed URL"
+                  accessibilityHint="Enter the RSS feed URL for this source"
                 />
               </View>
 
@@ -544,6 +665,10 @@ export default function SourcesScreen() {
                 ]}
                 onPress={handleAddSource}
                 disabled={!newSourceName.trim() || !newSourceUrl.trim() || submitting}
+                accessibilityRole="button"
+                accessibilityLabel="Add RSS source"
+                accessibilityHint="Tap to add this RSS source to your library"
+                accessibilityState={{ disabled: !newSourceName.trim() || !newSourceUrl.trim() || submitting, busy: submitting }}
               >
                 {submitting ? (
                   <ActivityIndicator color="#fff" />

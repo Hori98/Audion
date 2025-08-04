@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { 
   View, 
   Text, 
@@ -6,10 +6,9 @@ import {
   ScrollView, 
   TouchableOpacity, 
   Alert, 
-  ActivityIndicator,
   Modal,
   RefreshControl,
-  Platform 
+  
 } from 'react-native';
 import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
@@ -22,20 +21,15 @@ import { Ionicons } from '@expo/vector-icons';
 import * as WebBrowser from 'expo-web-browser';
 import { useSiriShortcuts } from '../../hooks/useSiriShortcuts';
 import AudioCreationSuccessModal from '../../components/AudioCreationSuccessModal';
+import LoadingIndicator from '../../components/LoadingIndicator';
+import LoadingButton from '../../components/LoadingButton';
 import CacheService from '../../services/CacheService';
+import { ErrorHandlingService } from '../../services/ErrorHandlingService';
 
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:8000';
 const API = `${BACKEND_URL}/api`;
 
-interface Article {
-  id: string;
-  title: string;
-  summary: string;
-  link: string;
-  published: string;
-  source_name: string;
-  genre: string;
-}
+import { Article } from '../../types';
 
 interface UserProfile {
   id: string;
@@ -47,11 +41,11 @@ interface UserProfile {
 }
 
 interface UserInsights {
-  top_genres: Array<{
+  top_genres: {
     genre: string;
     preference_score: number;
     rank: number;
-  }>;
+  }[];
   recent_activity: { [key: string]: number };
   total_interactions: number;
   time_context: string;
@@ -63,14 +57,14 @@ export default function AutoPickScreen() {
   const { token } = useAuth();
   const { showMiniPlayer } = useAudio();
   const { theme } = useTheme();
-  const router = useRouter();
+  // const router = useRouter(); // Unused
   const { donateShortcut } = useSiriShortcuts();
   const [loading, setLoading] = useState(false);
   const [autoPickedArticles, setAutoPickedArticles] = useState<Article[]>([]);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
-  const [userInsights, setUserInsights] = useState<UserInsights | null>(null);
+  // const [userInsights, setUserInsights] = useState<UserInsights | null>(null); // Unused
   const [profileModalVisible, setProfileModalVisible] = useState(false);
-  const [insightsModalVisible, setInsightsModalVisible] = useState(false);
+  // const [insightsModalVisible, setInsightsModalVisible] = useState(false); // Unused
   const [creatingAudio, setCreatingAudio] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [createdAudio, setCreatedAudio] = useState<any>(null);
@@ -87,7 +81,8 @@ export default function AutoPickScreen() {
     React.useCallback(() => {
       if (token) {
         fetchUserProfile();
-        fetchUserInsights();
+        // fetchUserInsights(); // Commented out as unused
+        // Use smart caching that validates against current active sources
         fetchAutoPickedArticles();
       }
     }, [token])
@@ -101,6 +96,10 @@ export default function AutoPickScreen() {
       setUserProfile(response.data);
     } catch (error: any) {
       console.error('Error fetching user profile:', error);
+      ErrorHandlingService.showError(error, { 
+        action: 'fetch_user_profile',
+        source: 'Auto-pick Screen' 
+      });
     }
   };
 
@@ -109,51 +108,99 @@ export default function AutoPickScreen() {
       const response = await axios.get(`${API}/user-insights`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      setUserInsights(response.data);
+      // setUserInsights(response.data); // Unused
     } catch (error: any) {
       console.error('Error fetching user insights:', error);
+      ErrorHandlingService.showError(error, { 
+        action: 'fetch_user_insights',
+        source: 'Auto-pick Screen' 
+      });
     }
   };
 
-  const fetchAutoPickedArticles = async () => {
+  const fetchAutoPickedArticles = async (forceRefresh = false) => {
     setLoading(true);
     try {
-      // Try cache first
-      const cachedArticles = await CacheService.getAutoPickedArticles();
-      if (cachedArticles) {
-        setAutoPickedArticles(cachedArticles);
-        // Platform-specific loading delay to prevent Web freeze
-        if (Platform.OS === 'web') {
-          setTimeout(() => setLoading(false), 100);
-        } else {
+      // Skip cache if force refresh or if we need fresh data reflecting source changes
+      if (!forceRefresh) {
+        // Check if cached articles are still valid by comparing against current active sources
+        const cachedArticles = await CacheService.getAutoPickedArticles();
+        if (cachedArticles && await areArticlesStillValid(cachedArticles)) {
+          setAutoPickedArticles(Array.isArray(cachedArticles) ? cachedArticles : cachedArticles.articles);
           setLoading(false);
+          return;
         }
-        return;
       }
 
+      // Get current active sources to ensure we only get articles from active sources
+      const activeSourcesResponse = await axios.get(`${API}/rss-sources`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      
+      const activeSources = activeSourcesResponse.data
+        .filter((source: any) => source.is_active !== false)
+        .map((source: any) => source.id);
+
+      // Request auto-pick with explicit active sources
       const response = await axios.post(
         `${API}/auto-pick`,
-        { max_articles: 10 },
+        { 
+          max_articles: 10,
+          active_source_ids: activeSources // Pass active sources explicitly
+        },
         { headers: { Authorization: `Bearer ${token}` } }
       );
       
-      // Cache the results
-      await CacheService.setAutoPickedArticles(response.data);
+      // Cache the results with timestamp for validation
+      const articlesWithTimestamp = {
+        articles: response.data,
+        timestamp: Date.now(),
+        active_sources: activeSources
+      };
+      await CacheService.setAutoPickedArticles(articlesWithTimestamp);
       
-      // Platform-specific state update to prevent Web freeze
-      if (Platform.OS === 'web') {
-        setTimeout(() => {
-          setAutoPickedArticles(response.data);
-          setLoading(false);
-        }, 50);
-      } else {
-        setAutoPickedArticles(response.data);
-        setLoading(false);
-      }
+      setAutoPickedArticles(response.data);
+      setLoading(false);
     } catch (error: any) {
       console.error('Error fetching auto-picked articles:', error);
-      Alert.alert('Error', error.response?.data?.detail || 'Failed to fetch auto-picked articles.');
+      ErrorHandlingService.showError(error, { 
+        action: 'fetch_articles',
+        source: 'Auto-pick Screen' 
+      });
       setLoading(false);
+    }
+  };
+
+  // Check if cached articles are still valid (from currently active sources)
+  const areArticlesStillValid = async (cachedData: any) => {
+    try {
+      if (!cachedData || !cachedData.articles || !cachedData.active_sources) {
+        return false;
+      }
+
+      // Check if cache is older than 5 minutes
+      const cacheAge = Date.now() - (cachedData.timestamp || 0);
+      if (cacheAge > 5 * 60 * 1000) {
+        return false;
+      }
+
+      // Get current active sources
+      const activeSourcesResponse = await axios.get(`${API}/rss-sources`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      
+      const currentActiveSources = activeSourcesResponse.data
+        .filter((source: any) => source.is_active !== false)
+        .map((source: any) => source.id)
+        .sort();
+
+      const cachedActiveSources = cachedData.active_sources.sort();
+
+      // Check if active sources have changed
+      return JSON.stringify(currentActiveSources) === JSON.stringify(cachedActiveSources);
+    } catch (error) {
+      console.error('Error validating cached articles:', error);
+      return false;
     }
   };
 
@@ -162,16 +209,15 @@ export default function AutoPickScreen() {
     try {
       // Clear cache to force fresh data on refresh
       await CacheService.remove('auto_picked_articles');
-      await Promise.all([fetchUserProfile(), fetchUserInsights(), fetchAutoPickedArticles()]);
+      await Promise.all([
+        fetchUserProfile(), 
+        fetchUserInsights(), 
+        fetchAutoPickedArticles(true) // Force refresh
+      ]);
     } catch (error) {
       console.error('Error refreshing data:', error);
     } finally {
-      // Platform-specific refresh completion to prevent Web freeze
-      if (Platform.OS === 'web') {
-        setTimeout(() => setRefreshing(false), 100);
-      } else {
-        setRefreshing(false);
-      }
+      setRefreshing(false);
     }
   };
 
@@ -224,27 +270,10 @@ export default function AutoPickScreen() {
       // Clear cache to force fresh data
       await CacheService.remove('auto_picked_articles');
       
-      const response = await axios.post(
-        `${API}/auto-pick`,
-        { max_articles: 10 },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      
-      // Cache the new results
-      await CacheService.setAutoPickedArticles(response.data);
-      
-      // Platform-specific state updates to prevent Web freeze
-      if (Platform.OS === 'web') {
-        setTimeout(() => {
-          setAutoPickedArticles(response.data);
-          setExcludedArticles(new Set());
-          setShuffling(false);
-        }, 50);
-      } else {
-        setAutoPickedArticles(response.data);
-        setExcludedArticles(new Set());
-        setShuffling(false);
-      }
+      // Force refresh with current active sources
+      await fetchAutoPickedArticles(true);
+      setExcludedArticles(new Set());
+      setShuffling(false);
     } catch (error: any) {
       console.error('Error shuffling articles:', error);
       Alert.alert('Error', error.response?.data?.detail || 'Failed to shuffle articles.');
@@ -265,7 +294,6 @@ export default function AutoPickScreen() {
   };
 
   const handleCreateAudio = async () => {
-
     setCreatingAudio(true);
     try {
       // Filter out excluded articles for audio creation
@@ -276,10 +304,8 @@ export default function AutoPickScreen() {
       
       if (articleIds.length === 0) {
         Alert.alert('No Articles', 'Please ensure at least one article is not excluded.');
-        setCreatingAudio(false);
         return;
       }
-
 
       const response = await axios.post(
         `${API}/audio/create`,
@@ -290,7 +316,6 @@ export default function AutoPickScreen() {
         },
         { headers: { Authorization: `Bearer ${token}` } }
       );
-
 
       // Record user interactions for personalization (async to avoid blocking)
       const recordInteractions = async () => {
@@ -310,7 +335,6 @@ export default function AutoPickScreen() {
           }
         }
       };
-
       
       // Show success modal instead of alert (exactly like Feed auto-pick)
       setCreatedAudio(response.data);
@@ -321,7 +345,12 @@ export default function AutoPickScreen() {
       donateShortcut('auto-pick');
     } catch (error: any) {
       console.error('Error creating auto-picked audio:', error);
-      Alert.alert('Error', error.response?.data?.detail || 'Failed to create audio.');
+      ErrorHandlingService.showError(error, { 
+        action: 'create_audio',
+        source: 'Auto-pick Screen',
+        details: { excludedCount: excludedArticles.size, availableCount: autoPickedArticles.length }
+      });
+    } finally {
       setCreatingAudio(false);
     }
   };
@@ -340,10 +369,11 @@ export default function AutoPickScreen() {
 
   if (loading && autoPickedArticles.length === 0) {
     return (
-      <View style={[styles.loadingContainer, { backgroundColor: theme.background }]}>
-        <ActivityIndicator size="large" color={theme.primary} />
-        <Text style={[styles.loadingText, { color: theme.textSecondary }]}>Finding articles you'll love...</Text>
-      </View>
+      <LoadingIndicator 
+        variant="fullscreen"
+        text="Finding articles you'll love..."
+        testID="auto-pick-loading"
+      />
     );
   }
 
@@ -357,9 +387,13 @@ export default function AutoPickScreen() {
             style={[styles.shuffleButton, { backgroundColor: theme.surface, borderColor: theme.primary }]}
             onPress={handleShuffle}
             disabled={shuffling || loading}
+            accessibilityRole="button"
+            accessibilityLabel="Shuffle articles"
+            accessibilityHint="Tap to get a new set of personalized articles"
+            accessibilityState={{ disabled: shuffling || loading, busy: shuffling }}
           >
             {shuffling ? (
-              <ActivityIndicator color={theme.primary} size={16} />
+              <LoadingIndicator size="small" variant="button" color={theme.primary} />
             ) : (
               <>
                 <Ionicons name="shuffle" size={18} color={theme.primary} style={{ marginRight: 6 }} />
@@ -368,20 +402,17 @@ export default function AutoPickScreen() {
             )}
           </TouchableOpacity>
           
-          <TouchableOpacity
-            style={[styles.createAudioButton, { backgroundColor: theme.primary }]}
+          <LoadingButton
+            title="Audio it!"
             onPress={handleCreateAudio}
-            disabled={creatingAudio}
-          >
-            {creatingAudio ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <>
-                <Ionicons name="musical-notes" size={20} color="#fff" style={{ marginRight: 8 }} />
-                <Text style={styles.createAudioButtonText}>Audio it!</Text>
-              </>
-            )}
-          </TouchableOpacity>
+            loading={creatingAudio}
+            variant="primary"
+            icon="musical-notes"
+            style={styles.createAudioButton}
+            testID="auto-pick-create-audio"
+            accessibilityLabel="Create audio from articles"
+            accessibilityHint="Tap to convert selected articles into an audio podcast"
+          />
         </View>
       )}
 
@@ -391,6 +422,8 @@ export default function AutoPickScreen() {
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
+        accessibilityLabel="Auto-picked articles list"
+        accessibilityRole="list"
       >
         {autoPickedArticles.length === 0 && !loading ? (
           <Text style={[styles.noArticlesText, { color: theme.textSecondary }]}>
@@ -418,6 +451,10 @@ export default function AutoPickScreen() {
                   onPress={() => handleArticlePress(article.link)}
                   style={[styles.articleContent, isExcluded && styles.excludedContent]}
                   disabled={isExcluded}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Article: ${article.title} from ${article.source_name}`}
+                  accessibilityHint={isExcluded ? "This article is excluded from audio creation" : "Tap to read the full article in browser"}
+                  accessibilityState={{ disabled: isExcluded }}
                 >
                   <View style={styles.articleHeader}>
                     <Text style={[styles.articleSource, { color: isExcluded ? theme.textMuted : theme.textMuted }]}>{article.source_name}</Text>
@@ -440,6 +477,10 @@ export default function AutoPickScreen() {
                     onPress={() => handleLikeArticle(article)}
                     style={[styles.likeButton, { backgroundColor: theme.accent }]}
                     disabled={isExcluded}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Like article: ${article.title}`}
+                    accessibilityHint="Tap to mark this article as liked to improve recommendations"
+                    accessibilityState={{ disabled: isExcluded }}
                   >
                     <Ionicons name="heart" size={20} color={isExcluded ? theme.textMuted : theme.success} />
                   </TouchableOpacity>
@@ -447,6 +488,10 @@ export default function AutoPickScreen() {
                     onPress={() => handleDislikeArticle(article)}
                     style={[styles.dislikeButton, { backgroundColor: theme.accent }]}
                     disabled={isExcluded}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Dislike article: ${article.title}`}
+                    accessibilityHint="Tap to mark this article as disliked to improve recommendations"
+                    accessibilityState={{ disabled: isExcluded }}
                   >
                     <Ionicons name="close-circle" size={20} color={isExcluded ? theme.textMuted : theme.error} />
                   </TouchableOpacity>
@@ -456,6 +501,10 @@ export default function AutoPickScreen() {
                       styles.excludeButton, 
                       { backgroundColor: isExcluded ? theme.primary : theme.accent }
                     ]}
+                    accessibilityRole="button"
+                    accessibilityLabel={isExcluded ? `Include article: ${article.title}` : `Exclude article: ${article.title}`}
+                    accessibilityHint={isExcluded ? "Tap to include this article in audio creation" : "Tap to exclude this article from audio creation"}
+                    accessibilityState={{ selected: isExcluded }}
                   >
                     <Ionicons 
                       name={isExcluded ? "eye" : "eye-off"} 
@@ -483,6 +532,9 @@ export default function AutoPickScreen() {
             <TouchableOpacity 
               onPress={() => setProfileModalVisible(false)}
               style={styles.modalCloseButton}
+              accessibilityRole="button"
+              accessibilityLabel="Close preferences modal"
+              accessibilityHint="Tap to close the preferences screen"
             >
               <Ionicons name="close" size={24} color={theme.text} />
             </TouchableOpacity>
@@ -491,7 +543,7 @@ export default function AutoPickScreen() {
           <ScrollView style={styles.modalContent}>
             <Text style={[styles.sectionTitle, { color: theme.text }]}>Genre Preferences</Text>
             <Text style={[styles.sectionDescription, { color: theme.textSecondary }]}>
-              Based on your interactions, here's what we've learned about your interests:
+              Based on your interactions, here&apos;s what we&apos;ve learned about your interests:
             </Text>
             
             {userProfile && (
@@ -535,9 +587,13 @@ export default function AutoPickScreen() {
           style={[styles.floatingActionButton, { backgroundColor: theme.primary }]}
           onPress={handleCreateAudio}
           disabled={creatingAudio}
+          accessibilityRole="button"
+          accessibilityLabel="Create audio from articles"
+          accessibilityHint="Tap to convert selected articles into an audio podcast"
+          accessibilityState={{ disabled: creatingAudio, busy: creatingAudio }}
         >
           {creatingAudio ? (
-            <ActivityIndicator color="#fff" size={20} />
+            <LoadingIndicator size="medium" variant="button" color="#fff" />
           ) : (
             <Ionicons name="add" size={24} color="#fff" />
           )}
@@ -564,17 +620,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f9fafb',
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#f9fafb',
-  },
-  loadingText: {
-    marginTop: 16,
-    fontSize: 16,
-    color: '#6b7280',
   },
   header: {
     flexDirection: 'row',

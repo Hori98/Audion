@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator, Modal, TextInput } from 'react-native';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Modal, TextInput } from 'react-native';
 import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
 import { useAudio } from '../../context/AudioContext';
@@ -7,6 +7,8 @@ import { useTheme } from '../../context/ThemeContext';
 import { useFocusEffect } from '@react-navigation/native';
 import { format } from 'date-fns';
 import { Ionicons } from '@expo/vector-icons';
+import LoadingIndicator from '../../components/LoadingIndicator';
+import { ErrorHandlingService } from '../../services/ErrorHandlingService';
 
 interface AudioItem {
   id: string;
@@ -127,13 +129,16 @@ export default function LibraryScreen() {
           setDownloads(downloadsResponse.data);
           
           // Create set of downloaded audio IDs for quick lookup
-          const downloadedIds = new Set(downloadsResponse.data.map((item: DownloadItem) => item.audio_data.id));
+          const downloadedIds = new Set<string>(downloadsResponse.data.map((item: DownloadItem) => item.audio_data.id));
           setDownloadedAudioIds(downloadedIds);
           break;
       }
     } catch (error: any) {
       console.error(`Error fetching ${currentView}:`, error);
-      Alert.alert('Error', error.response?.data?.detail || `Failed to fetch ${currentView}.`);
+      ErrorHandlingService.showError(error, { 
+        action: `fetch_${currentView}`,
+        source: 'Library Screen' 
+      });
     } finally {
       setLoading(false);
     }
@@ -148,13 +153,16 @@ export default function LibraryScreen() {
       setAudioItems(response.data);
     } catch (error: any) {
       console.error('Error fetching audio library:', error);
-      Alert.alert('Error', error.response?.data?.detail || 'Failed to fetch audio library.');
+      ErrorHandlingService.showError(error, { 
+        action: 'fetch_audio_library',
+        source: 'Library Screen' 
+      });
     } finally {
       setLoading(false);
     }
   };
 
-  const handlePlayAudio = (audioItem: AudioItem) => {
+  const handlePlayAudio = useCallback((audioItem: AudioItem) => {
     // Check if the same audio is currently loaded
     if (currentAudio && currentAudio.id === audioItem.id) {
       // Same audio: toggle play/pause
@@ -167,15 +175,15 @@ export default function LibraryScreen() {
       // Different audio or no audio loaded: play the new audio
       playAudio(audioItem);
     }
-  };
+  }, [currentAudio, isPlaying, pauseAudio, resumeAudio, playAudio]);
 
-  const toggleAudioSelection = (audioId: string) => {
+  const toggleAudioSelection = useCallback((audioId: string) => {
     setSelectedAudioIds((prevSelected) =>
       prevSelected.includes(audioId)
         ? prevSelected.filter((id) => id !== audioId)
         : [...prevSelected, audioId]
     );
-  };
+  }, []);
 
   const handleDeleteSelectedFromMyList = async () => {
     console.log('handleDeleteSelectedFromMyList called');
@@ -227,15 +235,26 @@ export default function LibraryScreen() {
       console.error('Error response data:', error.response?.data);
       console.error('Error status:', error.response?.status);
       console.error('Error headers:', error.response?.headers);
-      Alert.alert('Error', error.response?.data?.detail || 'Failed to remove items from My List.');
+      ErrorHandlingService.showError(error, { 
+        action: 'delete_audio',
+        source: 'Library Screen',
+        details: { itemCount: selectedAudioIds.length }
+      });
     }
   };
 
-  const formatDuration = (seconds: number) => {
+  const formatDuration = useCallback((seconds: number) => {
     const minutes = Math.floor(seconds / 60);
     const remainingSeconds = seconds % 60;
     return `${minutes}:${remainingSeconds < 10 ? '0' : ''}${remainingSeconds}`;
-  };
+  }, []);
+
+  // Memoize filtered audio to prevent unnecessary recalculations
+  const filteredMylistAudio = useMemo(() => {
+    return showDownloadedOnly 
+      ? mylistAudioItems.filter(audio => downloadedAudioIds.has(audio.id))
+      : mylistAudioItems;
+  }, [showDownloadedOnly, mylistAudioItems, downloadedAudioIds]);
 
   const handleViewScript = (scriptContent: string | undefined, audioUrl: string) => {
     setCurrentScript(scriptContent || 'No script available.');
@@ -342,9 +361,11 @@ export default function LibraryScreen() {
 
   if (loading) {
     return (
-      <View style={[styles.loadingContainer, { backgroundColor: theme.background }]}>
-        <ActivityIndicator size="large" color={theme.primary} />
-      </View>
+      <LoadingIndicator 
+        variant="fullscreen"
+        text="Loading your audio library..."
+        testID="library-loading"
+      />
     );
   }
 
@@ -354,14 +375,19 @@ export default function LibraryScreen() {
       <View style={[styles.header, { backgroundColor: theme.surface, borderBottomColor: theme.border }]}>
         <Text style={[styles.title, { color: theme.text }]}>Library</Text>
         {currentView === 'mylist' ? (
-          <TouchableOpacity onPress={() => {
-            if (isEditingMyList) {
-              setIsEditingMyList(false);
-              setSelectedAudioIds([]);
-            } else {
-              setIsEditingMyList(true);
-            }
-          }}>
+          <TouchableOpacity 
+            onPress={() => {
+              if (isEditingMyList) {
+                setIsEditingMyList(false);
+                setSelectedAudioIds([]);
+              } else {
+                setIsEditingMyList(true);
+              }
+            }}
+            accessibilityRole="button"
+            accessibilityLabel={isEditingMyList ? "Finish editing" : "Edit my list"}
+            accessibilityHint={isEditingMyList ? "Tap to finish editing and save changes" : "Tap to select and remove items from your library"}
+          >
             <Ionicons 
               name={isEditingMyList ? "checkmark" : "create-outline"} 
               size={24} 
@@ -369,13 +395,18 @@ export default function LibraryScreen() {
             />
           </TouchableOpacity>
         ) : (
-          <TouchableOpacity onPress={() => {
-            if (currentView === 'playlists') {
-              setCreatePlaylistModalVisible(true);
-            } else if (currentView === 'albums') {
-              setCreateAlbumModalVisible(true);
-            }
-          }}>
+          <TouchableOpacity 
+            onPress={() => {
+              if (currentView === 'playlists') {
+                setCreatePlaylistModalVisible(true);
+              } else if (currentView === 'albums') {
+                setCreateAlbumModalVisible(true);
+              }
+            }}
+            accessibilityRole="button"
+            accessibilityLabel={`Create new ${currentView.slice(0, -1)}`}
+            accessibilityHint={`Tap to create a new ${currentView.slice(0, -1)}`}
+          >
             <Ionicons name="add" size={24} color={theme.primary} />
           </TouchableOpacity>
         )}
@@ -387,10 +418,16 @@ export default function LibraryScreen() {
         showsHorizontalScrollIndicator={false} 
         style={[styles.categoryBar, { backgroundColor: theme.surface, borderBottomColor: theme.border }]}
         contentContainerStyle={styles.categoryBarContent}
+        accessibilityRole="tablist"
+        accessibilityLabel="Library category selection"
       >
         <TouchableOpacity
           style={[styles.categoryButton, { backgroundColor: currentView === 'playlists' ? theme.primary : theme.accent }]}
           onPress={() => setCurrentView('playlists')}
+          accessibilityRole="tab"
+          accessibilityLabel="View playlists"
+          accessibilityHint="Tap to view your music playlists"
+          accessibilityState={{ selected: currentView === 'playlists' }}
         >
           <Text style={[styles.categoryButtonText, { color: currentView === 'playlists' ? '#ffffff' : theme.textSecondary }]}>
             Playlists
@@ -400,6 +437,10 @@ export default function LibraryScreen() {
         <TouchableOpacity
           style={[styles.categoryButton, { backgroundColor: currentView === 'albums' ? theme.primary : theme.accent }]}
           onPress={() => setCurrentView('albums')}
+          accessibilityRole="tab"
+          accessibilityLabel="View albums"
+          accessibilityHint="Tap to view your music albums"
+          accessibilityState={{ selected: currentView === 'albums' }}
         >
           <Text style={[styles.categoryButtonText, { color: currentView === 'albums' ? '#ffffff' : theme.textSecondary }]}>
             Albums
@@ -409,6 +450,10 @@ export default function LibraryScreen() {
         <TouchableOpacity
           style={[styles.categoryButton, { backgroundColor: currentView === 'mylist' ? theme.primary : theme.accent }]}
           onPress={() => setCurrentView('mylist')}
+          accessibilityRole="tab"
+          accessibilityLabel="View my list"
+          accessibilityHint="Tap to view your personal audio library"
+          accessibilityState={{ selected: currentView === 'mylist' }}
         >
           <Text style={[styles.categoryButtonText, { color: currentView === 'mylist' ? '#ffffff' : theme.textSecondary }]}>
             My List
@@ -417,12 +462,12 @@ export default function LibraryScreen() {
       </ScrollView>
 
       {/* Main Content */}
-      <ScrollView style={styles.contentContainer}>
-        {loading ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color="#4f46e5" />
-          </View>
-        ) : (
+      <ScrollView 
+        style={styles.contentContainer}
+        accessibilityRole="list"
+        accessibilityLabel={`${currentView} content list`}
+      >
+        {!loading && (
           <>
             {/* Playlists View */}
             {currentView === 'playlists' && (
@@ -431,7 +476,13 @@ export default function LibraryScreen() {
                   <Text style={styles.emptyText}>No playlists yet. Create your first playlist!</Text>
                 ) : (
                   playlists.map((playlist) => (
-                    <TouchableOpacity key={playlist.id} style={[styles.listItem, { backgroundColor: theme.surface }]}>
+                    <TouchableOpacity 
+                      key={playlist.id} 
+                      style={[styles.listItem, { backgroundColor: theme.surface }]}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Playlist: ${playlist.name}`}
+                      accessibilityHint={`Tap to open playlist with ${playlist.audio_ids.length} songs`}
+                    >
                       <View style={[styles.itemIcon, { backgroundColor: theme.accent }]}>
                         <Ionicons name="musical-notes" size={24} color={theme.primary} />
                       </View>
@@ -441,7 +492,12 @@ export default function LibraryScreen() {
                           {playlist.audio_ids.length} songs · {format(new Date(playlist.updated_at), 'MMM dd, yyyy')}
                         </Text>
                       </View>
-                      <TouchableOpacity style={styles.itemAction}>
+                      <TouchableOpacity 
+                        style={styles.itemAction}
+                        accessibilityRole="button"
+                        accessibilityLabel="Open playlist"
+                        accessibilityHint="Tap to view playlist details"
+                      >
                         <Ionicons name="chevron-forward" size={20} color={theme.textMuted} />
                       </TouchableOpacity>
                     </TouchableOpacity>
@@ -457,7 +513,13 @@ export default function LibraryScreen() {
                   <Text style={styles.emptyText}>No albums yet. Create your first album!</Text>
                 ) : (
                   albums.map((album) => (
-                    <TouchableOpacity key={album.id} style={[styles.listItem, { backgroundColor: theme.surface }]}>
+                    <TouchableOpacity 
+                      key={album.id} 
+                      style={[styles.listItem, { backgroundColor: theme.surface }]}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Album: ${album.name}`}
+                      accessibilityHint={`Tap to open album with ${album.audio_ids.length} songs`}
+                    >
                       <View style={[styles.itemIcon, { backgroundColor: theme.accent }]}>
                         <Ionicons name="albums" size={24} color={theme.primary} />
                       </View>
@@ -467,7 +529,12 @@ export default function LibraryScreen() {
                           {album.audio_ids.length} songs · {format(new Date(album.updated_at), 'MMM dd, yyyy')}
                         </Text>
                       </View>
-                      <TouchableOpacity style={styles.itemAction}>
+                      <TouchableOpacity 
+                        style={styles.itemAction}
+                        accessibilityRole="button"
+                        accessibilityLabel="Open album"
+                        accessibilityHint="Tap to view album details"
+                      >
                         <Ionicons name="chevron-forward" size={20} color={theme.textMuted} />
                       </TouchableOpacity>
                     </TouchableOpacity>
@@ -488,6 +555,10 @@ export default function LibraryScreen() {
                       !showDownloadedOnly && styles.filterButtonActive
                     ]}
                     onPress={() => setShowDownloadedOnly(false)}
+                    accessibilityRole="tab"
+                    accessibilityLabel={`Show all audio files (${mylistAudioItems.length} items)`}
+                    accessibilityHint="Tap to view all audio files in your library"
+                    accessibilityState={{ selected: !showDownloadedOnly }}
                   >
                     <Text style={[
                       styles.filterButtonText, 
@@ -505,6 +576,10 @@ export default function LibraryScreen() {
                       showDownloadedOnly && styles.filterButtonActive
                     ]}
                     onPress={() => setShowDownloadedOnly(true)}
+                    accessibilityRole="tab"
+                    accessibilityLabel={`Show downloaded audio files (${downloadedAudioIds.size} items)`}
+                    accessibilityHint="Tap to view only downloaded audio files"
+                    accessibilityState={{ selected: showDownloadedOnly }}
                   >
                     <Text style={[
                       styles.filterButtonText, 
@@ -529,6 +604,9 @@ export default function LibraryScreen() {
                           console.log('Delete button pressed');
                           handleDeleteSelectedFromMyList();
                         }}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Remove ${selectedAudioIds.length} selected items`}
+                        accessibilityHint="Tap to permanently delete the selected audio files from your library"
                       >
                         <Ionicons name="trash-outline" size={16} color="#fff" />
                         <Text style={styles.deleteSelectedButtonText}>
@@ -540,17 +618,12 @@ export default function LibraryScreen() {
                 )}
 
                 {/* Audio List */}
-                {(() => {
-                  const filteredAudio = showDownloadedOnly 
-                    ? mylistAudioItems.filter(audio => downloadedAudioIds.has(audio.id))
-                    : mylistAudioItems;
-                  
-                  return filteredAudio.length === 0 ? (
-                    <Text style={styles.emptyText}>
-                      {showDownloadedOnly ? 'No downloaded audio yet.' : 'No audio created yet.'}
-                    </Text>
-                  ) : (
-                    filteredAudio.map((audio) => (
+                {filteredMylistAudio.length === 0 ? (
+                  <Text style={styles.emptyText}>
+                    {showDownloadedOnly ? 'No downloaded audio yet.' : 'No audio created yet.'}
+                  </Text>
+                ) : (
+                  filteredMylistAudio.map((audio) => (
                       <TouchableOpacity
                         key={audio.id}
                         style={[
@@ -567,12 +640,28 @@ export default function LibraryScreen() {
                             setShowFullScreenPlayer(true);
                           }
                         }}
+                        accessibilityRole={isEditingMyList ? "checkbox" : "button"}
+                        accessibilityLabel={isEditingMyList ? 
+                          `${selectedAudioIds.includes(audio.id) ? 'Remove' : 'Select'} ${audio.title} for deletion` :
+                          `Audio: ${audio.title}`
+                        }
+                        accessibilityHint={isEditingMyList ?
+                          "Tap to toggle selection for deletion" :
+                          "Tap to play this audio file"
+                        }
+                        accessibilityState={isEditingMyList ? 
+                          { checked: selectedAudioIds.includes(audio.id) } :
+                          { disabled: false }
+                        }
                       >
                         <View style={styles.audioCardLeft}>
                           {isEditingMyList && (
                             <TouchableOpacity 
                               style={styles.selectionCheckbox}
                               onPress={() => toggleAudioSelection(audio.id)}
+                              accessibilityRole="checkbox"
+                              accessibilityLabel={`${selectedAudioIds.includes(audio.id) ? 'Unselect' : 'Select'} ${audio.title}`}
+                              accessibilityState={{ checked: selectedAudioIds.includes(audio.id) }}
                             >
                               <Ionicons 
                                 name={selectedAudioIds.includes(audio.id) ? "checkmark-circle" : "ellipse-outline"} 
@@ -603,6 +692,9 @@ export default function LibraryScreen() {
                             <TouchableOpacity 
                               style={styles.playButton}
                               onPress={() => handlePlayAudio(audio)}
+                              accessibilityRole="button"
+                              accessibilityLabel={currentAudio && currentAudio.id === audio.id && isPlaying ? `Pause ${audio.title}` : `Play ${audio.title}`}
+                              accessibilityHint="Tap to play or pause this audio file"
                             >
                               <Ionicons 
                                 name={
@@ -620,6 +712,9 @@ export default function LibraryScreen() {
                               <TouchableOpacity 
                                 style={styles.downloadedButton}
                                 onPress={() => handleRemoveDownload(audio.id)}
+                                accessibilityRole="button"
+                                accessibilityLabel={`Remove download for ${audio.title}`}
+                                accessibilityHint="Tap to remove this audio file from downloads"
                               >
                                 <Ionicons name="checkmark-circle" size={20} color={theme.success} />
                               </TouchableOpacity>
@@ -627,6 +722,9 @@ export default function LibraryScreen() {
                               <TouchableOpacity 
                                 style={styles.downloadButton}
                                 onPress={() => handleDownloadAudio(audio.id)}
+                                accessibilityRole="button"
+                                accessibilityLabel={`Download ${audio.title}`}
+                                accessibilityHint="Tap to download this audio file for offline listening"
                               >
                                 <Ionicons name="download-outline" size={20} color={theme.textMuted} />
                               </TouchableOpacity>
@@ -635,8 +733,7 @@ export default function LibraryScreen() {
                         )}
                       </TouchableOpacity>
                     ))
-                  );
-                })()}
+                )}
               </>
             )}
           </>
@@ -682,6 +779,9 @@ export default function LibraryScreen() {
                   setNewPlaylistName('');
                   setNewPlaylistDescription('');
                 }}
+                accessibilityRole="button"
+                accessibilityLabel="Cancel playlist creation"
+                accessibilityHint="Tap to cancel and close the create playlist dialog"
               >
                 <Text style={[styles.cancelButtonText, { color: theme.textSecondary }]}>Cancel</Text>
               </TouchableOpacity>
@@ -689,6 +789,9 @@ export default function LibraryScreen() {
               <TouchableOpacity 
                 style={[styles.createButton, { backgroundColor: theme.primary }]}
                 onPress={createPlaylist}
+                accessibilityRole="button"
+                accessibilityLabel="Create playlist"
+                accessibilityHint="Tap to create the new playlist with the entered name and description"
               >
                 <Text style={styles.createButtonText}>Create</Text>
               </TouchableOpacity>
@@ -736,6 +839,9 @@ export default function LibraryScreen() {
                   setNewAlbumName('');
                   setNewAlbumDescription('');
                 }}
+                accessibilityRole="button"
+                accessibilityLabel="Cancel album creation"
+                accessibilityHint="Tap to cancel and close the create album dialog"
               >
                 <Text style={[styles.cancelButtonText, { color: theme.textSecondary }]}>Cancel</Text>
               </TouchableOpacity>
@@ -743,6 +849,9 @@ export default function LibraryScreen() {
               <TouchableOpacity 
                 style={[styles.createButton, { backgroundColor: theme.primary }]}
                 onPress={createAlbum}
+                accessibilityRole="button"
+                accessibilityLabel="Create album"
+                accessibilityHint="Tap to create the new album with the entered name and description"
               >
                 <Text style={styles.createButtonText}>Create</Text>
               </TouchableOpacity>
