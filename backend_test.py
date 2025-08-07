@@ -11,7 +11,7 @@ import sys
 # For testing purposes, use the local URL
 LOCAL_TESTING = True
 if LOCAL_TESTING:
-    BACKEND_URL = "http://localhost:8000"
+    BACKEND_URL = "http://localhost:8001"
     print(f"Using local backend URL for testing: {BACKEND_URL}")
 else:
     # Load environment variables from frontend/.env
@@ -95,7 +95,7 @@ def test_add_rss_source():
     global source_id
     print("Testing adding RSS source...")
     
-    url = f"{API_URL}/sources"
+    url = f"{API_URL}/rss-sources"
     headers = {"Authorization": f"Bearer {auth_token}"}
     payload = {
         "name": TEST_RSS_SOURCE_NAME,
@@ -119,7 +119,7 @@ def test_add_rss_source():
 def test_get_rss_sources():
     print("Testing getting RSS sources...")
     
-    url = f"{API_URL}/sources"
+    url = f"{API_URL}/rss-sources"
     headers = {"Authorization": f"Bearer {auth_token}"}
     
     response = requests.get(url, headers=headers)
@@ -327,7 +327,7 @@ def test_delete_rss_source():
 def test_missing_auth():
     print("Testing endpoint with missing auth token...")
     
-    url = f"{API_URL}/sources"
+    url = f"{API_URL}/rss-sources"
     
     response = requests.get(url)
     

@@ -115,38 +115,6 @@ app = FastAPI(lifespan=lifespan)
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# Health check endpoint (outside /api prefix for ConnectionService)
-@app.get("/health")
-async def health_check():
-    """Health check endpoint for connection monitoring"""
-    try:
-        # Test database connection
-        if db is not None:
-            # Simple ping to check database connectivity
-            await db.command("ping")
-            return {
-                "status": "healthy",
-                "timestamp": datetime.utcnow().isoformat(),
-                "database": "connected",
-                "version": "1.0.0"
-            }
-        else:
-            return {
-                "status": "degraded",
-                "timestamp": datetime.utcnow().isoformat(),
-                "database": "disconnected",
-                "version": "1.0.0"
-            }
-    except Exception as e:
-        logging.error(f"Health check failed: {e}")
-        return {
-            "status": "unhealthy",
-            "timestamp": datetime.utcnow().isoformat(),
-            "database": "error",
-            "error": str(e),
-            "version": "1.0.0"
-        }
-
 # Add CORS Middleware
 app.add_middleware(
     CORSMiddleware,
@@ -716,9 +684,7 @@ async def update_user_preferences(user_id: str, interaction: UserInteraction):
         "partial_play": 0.05,   # Weak positive signal
         "skipped": -0.08,       # Negative signal
         "quick_exit": -0.1,     # Strong negative signal
-        "disliked": -0.12,      # Strongest negative signal
-        "cancelled_like": -0.1, # Cancel previous like
-        "cancelled_dislike": 0.12  # Cancel previous dislike (reverse negative)
+        "disliked": -0.12       # Strongest negative signal
     }
     
     base_learning_rate = learning_rates.get(interaction.interaction_type, 0.05)
@@ -1111,21 +1077,6 @@ async def create_audio(request: AudioCreationRequest, current_user: User = Depen
     logging.info(f"Article titles: {request.article_titles}")
     logging.info(f"Article URLs: {request.article_urls}")
     logging.info(f"Custom title: {request.custom_title}")
-    
-    # ✅ CHECK AUDIO CREATION LIMITS FIRST
-    article_count = len(request.article_ids)
-    can_create, error_message, usage_info = await check_audio_creation_limits(current_user.id, article_count)
-    
-    if not can_create:
-        logging.warning(f"Audio creation blocked for user {current_user.email}: {error_message}")
-        raise HTTPException(status_code=429, detail={
-            "message": error_message,
-            "usage_info": usage_info,
-            "code": "LIMIT_EXCEEDED"
-        })
-    
-    logging.info(f"Audio creation approved: {usage_info['plan']} plan, {article_count} articles")
-    
     try:
         # Get actual article content from database
         articles_content = []
@@ -1219,10 +1170,6 @@ async def create_audio(request: AudioCreationRequest, current_user: User = Depen
         logging.info(f"Saving AudioCreation to DB with audio_url: {audio_creation.audio_url}")
         
         await db.audio_creations.insert_one(audio_creation.dict())
-        
-        # Record audio creation in usage tracking
-        await record_audio_creation(current_user.id, article_count)
-        logging.info(f"Recorded audio creation usage: user={current_user.id}, articles={article_count}")
         
         # Auto-download the created audio
         auto_download = DownloadedAudio(
@@ -2558,31 +2505,6 @@ class ProfileImageUpload(BaseModel):
     image_data: str  # Base64 encoded image
     filename: str
 
-# ===== Audio Limits & Subscription Models =====
-class UserSubscription(BaseModel):
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    user_id: str
-    plan: str = "free"  # "free", "premium", "pro", "test"
-    max_daily_audio_count: int = 3  # Articles per audio creation
-    max_audio_articles: int = 3  # Articles per single audio
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    expires_at: Optional[datetime] = None
-
-class AudioLimitConfig(BaseModel):
-    plan: str
-    max_daily_audio_count: int
-    max_audio_articles: int
-    description: str
-
-class DailyAudioUsage(BaseModel):
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    user_id: str
-    date: str  # YYYY-MM-DD format
-    audio_count: int = 0  # Number of audio creations today
-    total_articles_processed: int = 0  # Total articles used in audio today
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
-
 @app.post("/api/user/profile-image", tags=["User Profile"])
 async def upload_profile_image(
     upload_data: ProfileImageUpload, 
@@ -2748,166 +2670,6 @@ async def serve_profile_image(filename: str):
     except Exception as e:
         logging.error(f"Error serving profile image: {e}")
         raise HTTPException(status_code=500, detail="Failed to serve profile image")
-
-# ===== Audio Limit Management Functions =====
-
-AUDIO_LIMIT_CONFIGS = {
-    "free": AudioLimitConfig(plan="free", max_daily_audio_count=3, max_audio_articles=3, description="Free tier - 3 articles per audio, 3 audios per day"),
-    "premium": AudioLimitConfig(plan="premium", max_daily_audio_count=15, max_audio_articles=10, description="Premium tier - 10 articles per audio, 15 audios per day"),
-    "pro": AudioLimitConfig(plan="pro", max_daily_audio_count=50, max_audio_articles=30, description="Pro tier - 30 articles per audio, 50 audios per day"),
-    # Test configurations for validation
-    "test_3": AudioLimitConfig(plan="test_3", max_daily_audio_count=10, max_audio_articles=3, description="Test: 3 articles per audio"),
-    "test_5": AudioLimitConfig(plan="test_5", max_daily_audio_count=10, max_audio_articles=5, description="Test: 5 articles per audio"),
-    "test_10": AudioLimitConfig(plan="test_10", max_daily_audio_count=10, max_audio_articles=10, description="Test: 10 articles per audio"),
-    "test_15": AudioLimitConfig(plan="test_15", max_daily_audio_count=10, max_audio_articles=15, description="Test: 15 articles per audio"),
-    "test_30": AudioLimitConfig(plan="test_30", max_daily_audio_count=10, max_audio_articles=30, description="Test: 30 articles per audio"),
-    "test_60": AudioLimitConfig(plan="test_60", max_daily_audio_count=10, max_audio_articles=60, description="Test: 60 articles per audio"),
-}
-
-async def get_or_create_user_subscription(user_id: str) -> UserSubscription:
-    """Get or create user subscription with default free plan"""
-    if not db_connected:
-        # Default limits when database is unavailable
-        return UserSubscription(user_id=user_id, plan="free", max_daily_audio_count=3, max_audio_articles=3)
-    
-    subscription = await db.user_subscriptions.find_one({"user_id": user_id})
-    if not subscription:
-        # Create default free subscription
-        new_subscription = UserSubscription(user_id=user_id)
-        await db.user_subscriptions.insert_one(new_subscription.dict())
-        return new_subscription
-    
-    return UserSubscription(**subscription)
-
-async def get_or_create_daily_usage(user_id: str, date_str: str) -> DailyAudioUsage:
-    """Get or create daily usage record for user"""
-    if not db_connected:
-        return DailyAudioUsage(user_id=user_id, date=date_str)
-    
-    usage = await db.daily_audio_usage.find_one({"user_id": user_id, "date": date_str})
-    if not usage:
-        new_usage = DailyAudioUsage(user_id=user_id, date=date_str)
-        await db.daily_audio_usage.insert_one(new_usage.dict())
-        return new_usage
-    
-    return DailyAudioUsage(**usage)
-
-async def check_audio_creation_limits(user_id: str, article_count: int) -> Tuple[bool, str, dict]:
-    """Check if user can create audio with given article count
-    Returns: (can_create, error_message, usage_info)"""
-    
-    subscription = await get_or_create_user_subscription(user_id)
-    today_str = datetime.utcnow().strftime('%Y-%m-%d')
-    daily_usage = await get_or_create_daily_usage(user_id, today_str)
-    
-    # Get plan limits
-    plan_config = AUDIO_LIMIT_CONFIGS.get(subscription.plan, AUDIO_LIMIT_CONFIGS["free"])
-    
-    usage_info = {
-        "plan": subscription.plan,
-        "max_daily_audio_count": plan_config.max_daily_audio_count,
-        "max_audio_articles": plan_config.max_audio_articles,
-        "daily_audio_count": daily_usage.audio_count,
-        "remaining_daily_audio": max(0, plan_config.max_daily_audio_count - daily_usage.audio_count),
-        "can_create_audio": True,
-        "article_limit_exceeded": False,
-        "daily_limit_exceeded": False
-    }
-    
-    # Check daily audio creation limit
-    if daily_usage.audio_count >= plan_config.max_daily_audio_count:
-        usage_info["daily_limit_exceeded"] = True
-        usage_info["can_create_audio"] = False
-        return False, f"Daily audio limit reached ({plan_config.max_daily_audio_count} audios per day). Upgrade your plan for more.", usage_info
-    
-    # Check articles per audio limit
-    if article_count > plan_config.max_audio_articles:
-        usage_info["article_limit_exceeded"] = True
-        usage_info["can_create_audio"] = False
-        return False, f"Too many articles selected. Your {subscription.plan} plan allows up to {plan_config.max_audio_articles} articles per audio.", usage_info
-    
-    return True, "", usage_info
-
-async def record_audio_creation(user_id: str, article_count: int):
-    """Record audio creation in daily usage"""
-    if not db_connected:
-        return
-    
-    today_str = datetime.utcnow().strftime('%Y-%m-%d')
-    
-    await db.daily_audio_usage.update_one(
-        {"user_id": user_id, "date": today_str},
-        {
-            "$inc": {
-                "audio_count": 1,
-                "total_articles_processed": article_count
-            },
-            "$set": {"updated_at": datetime.utcnow()}
-        },
-        upsert=True
-    )
-
-# ===== Audio Limit API Endpoints =====
-
-@app.get("/api/user/subscription", tags=["Subscription"])
-async def get_user_subscription(current_user: User = Depends(get_current_user)):
-    """Get user's current subscription and usage limits"""
-    subscription = await get_or_create_user_subscription(current_user.id)
-    today_str = datetime.utcnow().strftime('%Y-%m-%d')
-    daily_usage = await get_or_create_daily_usage(current_user.id, today_str)
-    
-    plan_config = AUDIO_LIMIT_CONFIGS.get(subscription.plan, AUDIO_LIMIT_CONFIGS["free"])
-    
-    return {
-        "subscription": subscription,
-        "daily_usage": daily_usage,
-        "plan_config": plan_config,
-        "remaining_daily_audio": max(0, plan_config.max_daily_audio_count - daily_usage.audio_count)
-    }
-
-@app.post("/api/user/subscription/update-plan", tags=["Subscription"])
-async def update_user_plan(
-    request: dict,
-    current_user: User = Depends(get_current_user)
-):
-    """Update user's subscription plan (for testing/admin)"""
-    plan = request.get("plan")
-    if not plan or plan not in AUDIO_LIMIT_CONFIGS:
-        raise HTTPException(status_code=400, detail=f"Invalid plan. Available: {list(AUDIO_LIMIT_CONFIGS.keys())}")
-    
-    if not db_connected:
-        raise HTTPException(status_code=503, detail="Database unavailable")
-    
-    config = AUDIO_LIMIT_CONFIGS[plan]
-    
-    await db.user_subscriptions.update_one(
-        {"user_id": current_user.id},
-        {
-            "$set": {
-                "plan": plan,
-                "max_daily_audio_count": config.max_daily_audio_count,
-                "max_audio_articles": config.max_audio_articles,
-                "updated_at": datetime.utcnow()
-            }
-        },
-        upsert=True
-    )
-    
-    return {"message": f"Plan updated to {plan}", "config": config}
-
-@app.get("/api/user/audio-limits/check", tags=["Subscription"])
-async def check_audio_limits(
-    article_count: int,
-    current_user: User = Depends(get_current_user)
-):
-    """Check if user can create audio with specified article count"""
-    can_create, error_message, usage_info = await check_audio_creation_limits(current_user.id, article_count)
-    
-    return {
-        "can_create": can_create,
-        "error_message": error_message,
-        "usage_info": usage_info
-    }
 
 # Lifespan events now handled above
 

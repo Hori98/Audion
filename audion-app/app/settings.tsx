@@ -591,7 +591,7 @@ export default function SettingsScreen() {
           icon: 'document-outline',
           type: 'navigation',
           onPress: () => {
-            Alert.alert('Coming Soon', 'Terms of service will be available soon');
+            router.push('/terms-of-service');
           }
         },
         {
@@ -601,7 +601,7 @@ export default function SettingsScreen() {
           icon: 'lock-closed-outline',
           type: 'navigation',
           onPress: () => {
-            Alert.alert('Coming Soon', 'Privacy policy will be available soon');
+            router.push('/privacy-policy');
           }
         },
         {

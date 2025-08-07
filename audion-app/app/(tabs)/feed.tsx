@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert, RefreshControl, Modal, Platform } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert, RefreshControl, Modal, Platform, Animated, Easing } from 'react-native';
 import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
 import { useAudio } from '../../context/AudioContext';
@@ -16,6 +16,7 @@ import LoadingButton from '../../components/LoadingButton';
 import CacheService from '../../services/CacheService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ErrorHandlingService } from '../../services/ErrorHandlingService';
+import AudioLimitService from '../../services/AudioLimitService';
 import { Article } from '../../types';
 
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:8000';
@@ -47,8 +48,12 @@ export default function FeedScreen() {
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [createdAudio, setCreatedAudio] = useState<any>(null);
   const [refreshing, setRefreshing] = useState(false);
-  const [showSelectedModal, setShowSelectedModal] = useState(false);
+  // Removed: showSelectedModal state
   const [uiUpdateTrigger, setUiUpdateTrigger] = useState(0); // Force UI updates
+  const [selectionMode, setSelectionMode] = useState(false); // Pattern B selection mode
+  const [fabRotation] = useState(new Animated.Value(0)); // FAB animation
+  const [feedLikedArticles, setFeedLikedArticles] = useState<Set<string>>(new Set());
+  const [feedDislikedArticles, setFeedDislikedArticles] = useState<Set<string>>(new Set());
 
   const genres = [
     'All', 'Technology', 'Finance', 'Sports', 'Politics', 'Health',
@@ -325,7 +330,6 @@ export default function FeedScreen() {
   };
 
   const toggleArticleSelection = (articleId: string) => {
-    
     // Find the article and get its normalized ID
     const article = articles.find(a => a.id === articleId);
     if (!article || !article.normalizedId) {
@@ -340,9 +344,13 @@ export default function FeedScreen() {
         ? prevSelected.filter((id) => id !== normalizedId)
         : [...prevSelected, normalizedId];
       
-      
       // Save to AsyncStorage for persistence across filter changes
       saveGlobalSelection(newSelection);
+      
+      // Exit selection mode if no articles selected
+      if (newSelection.length === 0) {
+        setSelectionMode(false);
+      }
       
       // Force UI update for Web environment
       if (Platform.OS === 'web') {
@@ -373,6 +381,8 @@ export default function FeedScreen() {
         setUiUpdateTrigger(prev => prev + 1);
       }, 50);
     }
+    // Exit selection mode when clearing all
+    setSelectionMode(false);
   };
 
   // Remove specific article from selection (using normalized ID)
@@ -443,12 +453,30 @@ export default function FeedScreen() {
     return selectedArticles;
   };
 
+  // Toggle Selection Mode (Pattern B)
+  const toggleSelectionMode = () => {
+    const newMode = !selectionMode;
+    setSelectionMode(newMode);
+    
+    // Animate FAB rotation
+    Animated.timing(fabRotation, {
+      toValue: newMode ? 1 : 0,
+      duration: 300,
+      easing: Easing.inOut(Easing.ease),
+      useNativeDriver: true,
+    }).start();
+    
+    // If exiting selection mode, clear selections
+    if (!newMode) {
+      clearAllSelections();
+    }
+  };
+
   const handleCreateAudio = async () => {
     if (selectedArticleIds.length === 0) {
       Alert.alert('Error', 'Please select at least one article to create audio.');
       return;
     }
-
 
     setCreatingAudio(true);
     try {
@@ -500,11 +528,28 @@ export default function FeedScreen() {
       donateShortcut('create-audio');
     } catch (error: any) {
       console.error('Error creating audio:', error);
-      ErrorHandlingService.showError(error, { 
-        action: 'create_audio',
-        source: 'Feed Screen',
-        details: { selectedCount: selectedArticleIds.length }
-      });
+      
+      // Handle limit exceeded errors
+      if (error.response?.status === 403 && error.response?.data?.type === 'limit_exceeded') {
+        const errorData = error.response.data;
+        Alert.alert(
+          'Limit Reached', 
+          errorData.message,
+          [
+            { text: 'OK', style: 'default' },
+            { text: 'View Usage', onPress: () => {
+              // TODO: Navigate to subscription/usage page
+              console.log('Usage info:', errorData.usage_info);
+            }}
+          ]
+        );
+      } else {
+        ErrorHandlingService.showError(error, { 
+          action: 'create_audio',
+          source: 'Feed Screen',
+          details: { selectedCount: selectedArticleIds.length }
+        });
+      }
     } finally {
       setCreatingAudio(false);
     }
@@ -519,11 +564,56 @@ export default function FeedScreen() {
 
     setCreatingAudio(true);
     try {
-      // Get up to 3 articles from currently filtered results
-      const availableArticles = articles.slice(0, 3);
-      const articleIds = availableArticles.map(article => article.id);
-      const articleTitles = availableArticles.map(article => article.title);
-      const articleUrls = availableArticles.map(article => article.link);
+      // Use backend Auto-Pick algorithm with current filter constraints
+      const requestBody: any = {
+        max_articles: 10, // Feed-auto limit
+      };
+      
+      // Apply current filter constraints to Auto-Pick
+      if (selectedSource !== 'All') {
+        // Find the source ID for the selected source name
+        const selectedSourceObj = sources.find(source => source.name === selectedSource);
+        if (selectedSourceObj) {
+          requestBody.active_source_ids = [selectedSourceObj.id];
+        }
+      }
+      
+      // Apply genre filter using backend support
+      if (selectedGenre !== 'All') {
+        requestBody.preferred_genres = [selectedGenre];
+      }
+      
+      // Get personalized article selection from backend
+      const autoPickResponse = await axios.post(
+        `${API}/auto-pick`,
+        requestBody,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      
+      const availableArticles = autoPickResponse.data;
+      
+      if (availableArticles.length === 0) {
+        Alert.alert('No Articles', 'No suitable articles found with current filter settings.');
+        return;
+      }
+
+      // Get user's maximum articles limit and validate
+      const maxArticles = await AudioLimitService.getMaxArticlesForUser(token!);
+      const articlesToUse = Math.min(availableArticles.length, maxArticles);
+
+      // Validate against user limits before proceeding
+      const validation = await AudioLimitService.validateAudioCreation(token!, articlesToUse);
+      
+      if (!validation.isValid) {
+        Alert.alert('Audio Creation Limit', validation.errorMessage || 'Unable to create audio due to plan limits.');
+        setCreatingAudio(false);
+        return;
+      }
+      
+      const selectedArticles = availableArticles.slice(0, articlesToUse);
+      const articleIds = selectedArticles.map((article: Article) => article.id);
+      const articleTitles = selectedArticles.map((article: Article) => article.title);
+      const articleUrls = selectedArticles.map((article: Article) => article.link);
 
 
       const response = await axios.post(
@@ -566,13 +656,142 @@ export default function FeedScreen() {
       donateShortcut('auto-pick');
     } catch (error: any) {
       console.error('Error creating auto-picked audio:', error);
-      ErrorHandlingService.showError(error, { 
-        action: 'create_audio',
-        source: 'Feed Auto-pick',
-        details: { genre: selectedGenre, source: selectedSource }
-      });
+      
+      // Handle limit exceeded errors
+      if (error.response?.status === 403 && error.response?.data?.type === 'limit_exceeded') {
+        const errorData = error.response.data;
+        Alert.alert(
+          'Limit Reached', 
+          errorData.message,
+          [
+            { text: 'OK', style: 'default' },
+            { text: 'View Usage', onPress: () => {
+              // TODO: Navigate to subscription/usage page
+              console.log('Usage info:', errorData.usage_info);
+            }}
+          ]
+        );
+      } else {
+        ErrorHandlingService.showError(error, { 
+          action: 'create_audio',
+          source: 'Feed Auto-pick',
+          details: { genre: selectedGenre, source: selectedSource }
+        });
+      }
     } finally {
       setCreatingAudio(false);
+    }
+  };
+
+  const handleFeedLikeArticle = async (article: Article) => {
+    try {
+      const isCurrentlyLiked = feedLikedArticles.has(article.id);
+      
+      if (isCurrentlyLiked) {
+        // Cancel like - remove from liked articles
+        setFeedLikedArticles(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(article.id);
+          return newSet;
+        });
+        
+        // Send cancel interaction to backend
+        await axios.post(
+          `${API}/user-interaction`,
+          {
+            article_id: article.id,
+            interaction_type: 'cancelled_like',
+            genre: article.genre
+          },
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+      } else {
+        // Add like
+        setFeedLikedArticles(prev => new Set([...prev, article.id]));
+        setFeedDislikedArticles(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(article.id);
+          return newSet;
+        });
+        
+        await axios.post(
+          `${API}/user-interaction`,
+          {
+            article_id: article.id,
+            interaction_type: 'liked',
+            genre: article.genre
+          },
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+      }
+    } catch (error: any) {
+      console.error('Error recording interaction:', error);
+      // Revert optimistic update on error
+      if (feedLikedArticles.has(article.id)) {
+        setFeedLikedArticles(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(article.id);
+          return newSet;
+        });
+      } else {
+        setFeedLikedArticles(prev => new Set([...prev, article.id]));
+      }
+    }
+  };
+
+  const handleFeedDislikeArticle = async (article: Article) => {
+    try {
+      const isCurrentlyDisliked = feedDislikedArticles.has(article.id);
+      
+      if (isCurrentlyDisliked) {
+        // Cancel dislike - remove from disliked articles
+        setFeedDislikedArticles(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(article.id);
+          return newSet;
+        });
+        
+        // Send cancel interaction to backend
+        await axios.post(
+          `${API}/user-interaction`,
+          {
+            article_id: article.id,
+            interaction_type: 'cancelled_dislike',
+            genre: article.genre
+          },
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+      } else {
+        // Add dislike
+        setFeedDislikedArticles(prev => new Set([...prev, article.id]));
+        setFeedLikedArticles(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(article.id);
+          return newSet;
+        });
+        
+        await axios.post(
+          `${API}/user-interaction`,
+          {
+            article_id: article.id,
+            interaction_type: 'disliked',
+            genre: article.genre
+          },
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+      }
+    } catch (error: any) {
+      console.error('Error recording interaction:', error);
+      // Revert optimistic update on error
+      if (feedDislikedArticles.has(article.id)) {
+        setFeedDislikedArticles(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(article.id);
+          return newSet;
+        });
+      } else {
+        setFeedDislikedArticles(prev => new Set([...prev, article.id]));
+      }
     }
   };
 
@@ -682,42 +901,48 @@ export default function FeedScreen() {
         ))}
       </ScrollView>
 
-      {/* Select All/Deselect All Button */}
-      {articles.length > 0 && (
-        <View style={styles.selectAllContainer}>
-          <Text style={[styles.filterInfo, { color: theme.textSecondary }]}>
-            {articles.length} article{articles.length !== 1 ? 's' : ''} in current filter
-            {getSelectedInCurrentFilterCount() > 0 && (
-              <Text style={{ color: theme.primary }}>
-                {' '}({getSelectedInCurrentFilterCount()} selected)
-              </Text>
-            )}
-          </Text>
-          <TouchableOpacity
-            onPress={areAllCurrentArticlesSelected() ? deselectAllInCurrentFilter : selectAllInCurrentFilter}
-            style={[
-              styles.selectAllButton,
-              { 
-                backgroundColor: areAllCurrentArticlesSelected() ? theme.surface : theme.primary,
-                borderColor: theme.primary 
-              }
-            ]}
-          >
-            <Ionicons 
-              name={areAllCurrentArticlesSelected() ? "remove-circle-outline" : "checkmark-circle-outline"} 
-              size={16} 
-              color={areAllCurrentArticlesSelected() ? theme.primary : "#fff"} 
-              style={{ marginRight: 4 }}
-            />
-            <Text style={[
-              styles.selectAllButtonText,
-              { color: areAllCurrentArticlesSelected() ? theme.primary : "#fff" }
-            ]}>
-              {areAllCurrentArticlesSelected() ? 'Deselect All' : 'Select All'}
+      {/* Manual Pick Button - Always visible with pick count */}
+      <View style={styles.manualPickContainer}>
+        {/* Pick Counter - Show when in selection mode and articles are selected */}
+        {selectionMode && selectedArticleIds.length > 0 && (
+          <View style={styles.pickCounter}>
+            <Text style={[styles.pickCounterText, { color: theme.textMuted }]}>
+              {selectedArticleIds.length}/20
             </Text>
-          </TouchableOpacity>
-        </View>
-      )}
+          </View>
+        )}
+        
+        <TouchableOpacity
+          style={[
+            styles.manualPickButton, 
+            { 
+              backgroundColor: selectionMode ? theme.primary : theme.surface, 
+              borderColor: theme.primary 
+            }
+          ]}
+          onPress={toggleSelectionMode}
+          disabled={creatingAudio}
+          accessibilityRole="button"
+          accessibilityLabel={selectionMode ? "Exit manual selection mode" : "Start manual article selection"}
+          accessibilityHint={selectionMode ? "Tap to exit manual selection mode" : "Tap to manually select articles for audio creation"}
+          accessibilityState={{ selected: selectionMode }}
+        >
+          <Ionicons 
+            name="list" 
+            size={16} 
+            color={selectionMode ? "#fff" : theme.primary} 
+            style={{ marginRight: 6 }} 
+          />
+          <Text style={[
+            styles.manualPickButtonText, 
+            { color: selectionMode ? "#fff" : theme.primary }
+          ]}>
+            Manual Pick
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Removed: Unnecessary article count info */}
 
       <ScrollView 
         style={styles.articlesContainer}
@@ -731,34 +956,7 @@ export default function FeedScreen() {
           />
         }
       >
-        {/* Selection Summary */}
-        {selectedArticleIds.length > 0 && (
-          <View style={[styles.selectionSummary, { backgroundColor: theme.accent, borderColor: theme.primary }]}>
-            <View style={styles.selectionInfo}>
-              <Text style={[styles.selectionText, { color: theme.primary }]}>
-                {selectedArticleIds.length} article{selectedArticleIds.length !== 1 ? 's' : ''} selected
-              </Text>
-              <Text style={[styles.selectionSubtext, { color: theme.textSecondary }]}>
-                Selections persist across all filters
-              </Text>
-            </View>
-            <View style={styles.selectionButtons}>
-              <TouchableOpacity
-                onPress={() => setShowSelectedModal(true)}
-                style={[styles.viewSelectedButton, { backgroundColor: theme.primary }]}
-              >
-                <Ionicons name="list" size={16} color="#fff" />
-                <Text style={styles.viewSelectedButtonText}>View</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={clearAllSelections}
-                style={[styles.clearButton, { backgroundColor: theme.surface }]}
-              >
-                <Text style={[styles.clearButtonText, { color: theme.textSecondary }]}>Clear All</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
+        {/* Pattern B: Clean - no redundant selection summary */}
         
         
         {articles.length === 0 ? (
@@ -768,162 +966,190 @@ export default function FeedScreen() {
             const isSelected = article.normalizedId ? selectedArticleIds.includes(article.normalizedId) : false;
             
             return (
-            <TouchableOpacity
+            <View
               key={article.id}
               style={[
                 styles.articleCard, 
                 { backgroundColor: theme.surface },
+                selectionMode && [
+                  styles.articleCardSelectionMode,
+                  { backgroundColor: isSelected ? theme.accent : theme.surface }
+                ],
                 isSelected && { borderColor: theme.primary, borderWidth: 2 }
               ]}
-              onPress={() => handleArticlePress(article.link)} // Open link on tap
-              accessibilityRole="button"
-              accessibilityLabel={`Article: ${article.title} from ${article.source_name}`}
-              accessibilityHint="Tap to read the full article in browser"
-              accessibilityState={{ selected: isSelected }}
             >
-              <View style={styles.articleContent}>
-                <Text style={[styles.articleSource, { color: theme.textMuted }]}>{article.source_name}</Text>
-                <Text style={[styles.articleTitle, { color: theme.text }]}>{article.title}</Text>
-                <Text style={[styles.articleSummary, { color: theme.textSecondary }]}>{article.summary}</Text>
-                <Text style={[styles.articlePublished, { color: theme.textMuted }]}>
-                  {article.published ? format(new Date(article.published), 'MMM dd, yyyy') : 'Unknown Date'}
-                </Text>
-                {article.genre && (
-                  <Text style={[styles.articleGenre, { color: theme.textMuted }]}>Genre: {article.genre}</Text>
-                )}
-              </View>
+              {/* Jump to Article Button - Show in selection mode */}
+              {selectionMode && (
+                <TouchableOpacity
+                  style={styles.jumpButton}
+                  onPress={() => handleArticlePress(article.link)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Read full article: ${article.title}`}
+                  accessibilityHint="Tap to open the full article in browser"
+                >
+                  <Ionicons name="open-outline" size={18} color={theme.primary} />
+                </TouchableOpacity>
+              )}
+
+              {/* Main touchable area for article selection/reading */}
               <TouchableOpacity
-                style={[
-                  styles.plusButton,
-                  isSelected && styles.plusButtonSelected,
-                ]}
-                onPress={() => toggleArticleSelection(article.id)}
-                accessibilityRole="checkbox"
-                accessibilityLabel={`${isSelected ? 'Remove' : 'Add'} ${article.title} to audio selection`}
-                accessibilityHint={`${isSelected ? 'Tap to remove this article from your audio creation selection' : 'Tap to add this article to your audio creation selection'}`}
-                accessibilityState={{ checked: isSelected }}
+                style={styles.articleTouchableArea}
+                onPress={selectionMode ? () => toggleArticleSelection(article.id) : () => handleArticlePress(article.link)}
+                accessibilityRole="button"
+                accessibilityLabel={`Article: ${article.title} from ${article.source_name}`}
+                accessibilityHint={selectionMode ? 'Tap to select/deselect this article' : 'Tap to read the full article in browser'}
+                accessibilityState={{ selected: isSelected }}
               >
-                <Ionicons
-                  name={isSelected ? 'checkmark-circle' : 'add-circle-outline'}
-                  size={28}
-                  color={isSelected ? theme.primary : theme.textMuted}
-                />
+                {/* Pattern B: Left-side checkbox in selection mode */}
+                {selectionMode && (
+                  <View style={styles.selectionCheckbox}>
+                    <Ionicons
+                      name={isSelected ? 'checkmark-circle' : 'ellipse-outline'}
+                      size={24}
+                      color={isSelected ? theme.primary : theme.textMuted}
+                    />
+                  </View>
+                )}
+                
+                <View style={[styles.articleContent, selectionMode && styles.articleContentWithCheckbox]}>
+                  {/* Header row with source and genre */}
+                  <View style={styles.articleHeader}>
+                    <Text style={[styles.articleSource, { color: theme.textMuted }]}>{article.source_name}</Text>
+                    {article.genre && (
+                      <View style={[styles.genreTag, { backgroundColor: theme.secondary }]}>
+                        <Text style={[styles.genreTagText, { color: theme.primary }]}>{article.genre}</Text>
+                      </View>
+                    )}
+                  </View>
+                  
+                  {/* Title - limited to 2 lines */}
+                  <Text style={[styles.articleTitle, { color: theme.text }]} numberOfLines={2}>{article.title}</Text>
+                  
+                  {/* Summary - limited to 2 lines */}
+                  <Text style={[styles.articleSummary, { color: theme.textSecondary }]} numberOfLines={2}>{article.summary}</Text>
+                  
+                  {/* Date positioned at bottom left */}
+                  <Text style={[styles.articlePublished, { color: theme.textMuted }]}>
+                    {article.published ? format(new Date(article.published), 'MMM dd, yyyy') : 'Unknown Date'}
+                  </Text>
+                </View>
               </TouchableOpacity>
-            </TouchableOpacity>
+              
+              {/* Like/Dislike Buttons - Show in normal mode */}
+              {!selectionMode && (
+                <View style={styles.feedActionButtons}>
+                  <TouchableOpacity 
+                    onPress={() => handleFeedLikeArticle(article)}
+                    style={[
+                      styles.feedLikeButton, 
+                      { backgroundColor: feedLikedArticles.has(article.id) ? theme.success : theme.accent },
+                      feedLikedArticles.has(article.id) && styles.activeButton
+                    ]}
+                    accessibilityRole="button"
+                    accessibilityLabel={feedLikedArticles.has(article.id) ? `Unlike article: ${article.title}` : `Like article: ${article.title}`}
+                    accessibilityHint={feedLikedArticles.has(article.id) ? "Tap to remove like from this article" : "Tap to mark this article as liked to improve recommendations"}
+                    accessibilityState={{ selected: feedLikedArticles.has(article.id) }}
+                  >
+                    <Ionicons 
+                      name={feedLikedArticles.has(article.id) ? "heart" : "heart-outline"} 
+                      size={14} 
+                      color={feedLikedArticles.has(article.id) ? "#fff" : theme.success}
+                    />
+                  </TouchableOpacity>
+                  <TouchableOpacity 
+                    onPress={() => handleFeedDislikeArticle(article)}
+                    style={[
+                      styles.feedDislikeButton, 
+                      { backgroundColor: feedDislikedArticles.has(article.id) ? theme.error : theme.accent },
+                      feedDislikedArticles.has(article.id) && styles.activeButton
+                    ]}
+                    accessibilityRole="button"
+                    accessibilityLabel={feedDislikedArticles.has(article.id) ? `Remove dislike from article: ${article.title}` : `Dislike article: ${article.title}`}
+                    accessibilityHint={feedDislikedArticles.has(article.id) ? "Tap to remove dislike from this article" : "Tap to mark this article as disliked to improve recommendations"}
+                    accessibilityState={{ selected: feedDislikedArticles.has(article.id) }}
+                  >
+                    <Ionicons 
+                      name={feedDislikedArticles.has(article.id) ? "close-circle" : "close-circle-outline"} 
+                      size={14} 
+                      color={feedDislikedArticles.has(article.id) ? "#fff" : theme.error}
+                    />
+                  </TouchableOpacity>
+                </View>
+              )}
+              
+              {/* Pattern B: No plus buttons - selection only in selection mode */}
+            </View>
             );
           })
         )}
       </ScrollView>
 
-      {selectedArticleIds.length > 0 && !showMiniPlayer && (
-        <LoadingButton
-          title={`Create Audio (${selectedArticleIds.length})`}
-          onPress={handleCreateAudio}
-          loading={creatingAudio}
-          variant="primary"
-          icon="musical-notes"
-          style={styles.createAudioButton}
-          testID="create-audio-button"
-          accessibilityLabel={`Create audio from ${selectedArticleIds.length} selected articles`}
-          accessibilityHint="Creates an audio podcast from your selected articles that you can listen to"
-        />
+      {/* Selection Count Info - Show in selection mode */}
+      {selectionMode && selectedArticleIds.length > 0 && (
+        <View style={[styles.selectionCountInfo, { backgroundColor: theme.accent }]}>
+          <Text style={[styles.selectionCountText, { color: theme.primary }]}>
+            {selectedArticleIds.length} article{selectedArticleIds.length !== 1 ? 's' : ''} selected
+          </Text>
+        </View>
       )}
 
-      {/* Floating Action Button - Show when mini player is active and articles are selected */}
-      {selectedArticleIds.length > 0 && showMiniPlayer && (
+      {/* Auto Pick - Main FAB - Always visible when not in selection mode */}
+      {!selectionMode && (
         <TouchableOpacity
-          style={[styles.floatingActionButton, { backgroundColor: theme.primary }]}
-          onPress={handleCreateAudio}
+          style={[
+            styles.mainFAB, 
+            { 
+              backgroundColor: theme.primary,
+              bottom: showMiniPlayer ? 140 : 20,
+              right: 20
+            }
+          ]}
+          onPress={handleAutoPickFromFeed}
           disabled={creatingAudio}
+          activeOpacity={0.8}
           accessibilityRole="button"
-          accessibilityLabel={`Create audio from ${selectedArticleIds.length} selected articles`}
-          accessibilityHint="Creates an audio podcast from your selected articles that you can listen to"
-          accessibilityState={{ disabled: creatingAudio }}
+          accessibilityLabel="Auto-pick articles and create audio"
+          accessibilityHint="Automatically selects top articles from current filter and creates audio"
         >
           {creatingAudio ? (
             <ActivityIndicator color="#fff" size={20} />
           ) : (
-            <Ionicons name="add" size={24} color="#fff" />
+            <Ionicons name="sparkles" size={24} color="#fff" />
           )}
         </TouchableOpacity>
       )}
 
-      {/* Auto Pick Floating Button - Position based on mini player state */}
-      <TouchableOpacity
-        style={[
-          styles.autoPickFloatingButton, 
-          { 
-            backgroundColor: theme.primary,
-            bottom: showMiniPlayer ? 140 : 20 // Adjust position based on mini player
-          }
-        ]}
-        onPress={handleAutoPickFromFeed}
-        disabled={creatingAudio}
-        activeOpacity={0.8}
-      >
-        {creatingAudio ? (
-          <ActivityIndicator color="#fff" size={20} />
-        ) : (
-          <Ionicons name="sparkles" size={24} color="#fff" />
-        )}
-      </TouchableOpacity>
+      {/* Create Audio FAB - Show in selection mode when articles are selected */}
+      {selectionMode && selectedArticleIds.length > 0 && (
+        <TouchableOpacity
+          style={[
+            styles.mainFAB,
+            {
+              backgroundColor: theme.success,
+              bottom: showMiniPlayer ? 140 : 20,
+              right: 20
+            }
+          ]}
+          onPress={handleCreateAudio}
+          disabled={creatingAudio}
+          activeOpacity={0.8}
+          accessibilityRole="button"
+          accessibilityLabel={`Create audio from ${selectedArticleIds.length} selected articles`}
+          accessibilityHint="Tap to create audio from selected articles"
+        >
+          {creatingAudio ? (
+            <ActivityIndicator color="#fff" size={20} />
+          ) : (
+            <Ionicons 
+              name="musical-notes" 
+              size={24} 
+              color="#fff" 
+            />
+          )}
+        </TouchableOpacity>
+      )}
 
-      {/* Selected Articles Modal */}
-      <Modal
-        animationType="slide"
-        transparent={false}
-        visible={showSelectedModal}
-        onRequestClose={() => setShowSelectedModal(false)}
-      >
-        <View style={[styles.modalContainer, { backgroundColor: theme.background }]}>
-          <View style={[styles.modalHeader, { backgroundColor: theme.surface, borderBottomColor: theme.border }]}>
-            <Text style={[styles.modalTitle, { color: theme.text }]}>Selected Articles ({selectedArticleIds.length})</Text>
-            <TouchableOpacity 
-              onPress={() => setShowSelectedModal(false)}
-              style={styles.modalCloseButton}
-            >
-              <Ionicons name="close" size={24} color={theme.text} />
-            </TouchableOpacity>
-          </View>
-          
-          <ScrollView style={styles.modalContent}>
-            {getSelectedArticles().length === 0 ? (
-              <Text style={[styles.noSelectedText, { color: theme.textSecondary }]}>
-                No articles selected
-              </Text>
-            ) : (
-              getSelectedArticles().map((article) => (
-                <View key={article.id} style={[styles.selectedArticleCard, { backgroundColor: theme.surface }]}>
-                  <TouchableOpacity 
-                    onPress={() => handleArticlePress(article.link)}
-                    style={styles.selectedArticleContent}
-                  >
-                    <Text style={[styles.selectedArticleSource, { color: theme.textMuted }]}>
-                      {article.source_name}
-                    </Text>
-                    <Text style={[styles.selectedArticleTitle, { color: theme.text }]} numberOfLines={2}>
-                      {article.title}
-                    </Text>
-                    <Text style={[styles.selectedArticleSummary, { color: theme.textSecondary }]} numberOfLines={2}>
-                      {article.summary}
-                    </Text>
-                    {article.genre && (
-                      <Text style={[styles.selectedArticleGenre, { color: theme.primary }]}>Genre: {article.genre}</Text>
-                    )}
-                  </TouchableOpacity>
-                  
-                  <TouchableOpacity
-                    onPress={() => removeFromSelection(article.id)}
-                    style={[styles.removeButton, { backgroundColor: theme.error }]}
-                  >
-                    <Ionicons name="remove" size={20} color="#fff" />
-                  </TouchableOpacity>
-                </View>
-              ))
-            )}
-          </ScrollView>
-        </View>
-      </Modal>
+      {/* Removed: Complex Selected Articles Modal */}
 
       {/* Success Modal */}
       <AudioCreationSuccessModal
@@ -945,7 +1171,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f0f4f8',
-    // paddingTop: 10, // Remove or adjust this if it's causing too much space
   },
   loadingContainer: {
     flex: 1,
@@ -992,7 +1217,7 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     backgroundColor: '#e2e8f0',
     marginRight: 8,
-    marginBottom: 4, // Set marginBottom to 4 as requested
+    marginBottom: 4,
   },
   genreButtonActive: {
     backgroundColor: '#4f46e5',
@@ -1018,19 +1243,36 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 16,
     marginTop: 4,
-    marginBottom: 4,
-    minHeight: 120,
+    marginBottom: 8,
+    height: 140, // Fixed height
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.08,
     shadowRadius: 4,
     elevation: 3,
-    flexDirection: 'row',
-    alignItems: 'flex-start',
+    position: 'relative',
+  },
+  // Pattern B: Selection mode styles
+  articleCardSelectionMode: {
+    paddingLeft: 8,
+  },
+  selectionCheckbox: {
+    paddingHorizontal: 8,
+    paddingRight: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    minHeight: 40,
   },
   articleContent: {
-    flex: 1, // Takes up remaining space
-    marginRight: 10, // Space for the button
+    flex: 1,
+    height: '100%',
+    paddingRight: 60, // Space for like/dislike buttons
+    justifyContent: 'flex-start',
+    position: 'relative',
+  },
+  articleContentWithCheckbox: {
+    marginRight: 10,
+    marginLeft: 0,
   },
   plusButton: {
     padding: 5,
@@ -1038,28 +1280,35 @@ const styles = StyleSheet.create({
     backgroundColor: '#e2e8f0',
   },
   plusButtonSelected: {
-    backgroundColor: '#d1e7dd', // A lighter green for selected state
+    backgroundColor: '#d1e7dd',
   },
   articleSource: {
-    fontSize: 12,
+    fontSize: 11,
     color: '#6b7280',
-    marginBottom: 5,
+    fontWeight: '500',
+    flex: 1,
   },
   articleTitle: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: 'bold',
-    marginBottom: 5,
+    marginBottom: 6,
+    marginTop: 4,
     color: '#1f2937',
+    lineHeight: 20,
   },
   articleSummary: {
-    fontSize: 14,
+    fontSize: 13,
     color: '#4b5563',
-    marginBottom: 10,
+    marginBottom: 8,
+    lineHeight: 18,
+    flex: 1,
   },
   articlePublished: {
-    fontSize: 12,
+    fontSize: 11,
     color: '#9ca3af',
-    textAlign: 'right',
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
   },
   articleGenre: {
     fontSize: 12,
@@ -1091,29 +1340,9 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#6b7280',
   },
-  floatingActionButton: {
+  // Pattern B: Clean FAB and Sticky Bar styles
+  mainFAB: {
     position: 'absolute',
-    bottom: 80, // Above mini player
-    right: 20,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: '#4f46e5',
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
-    elevation: 8,
-  },
-  autoPickFloatingButton: {
-    position: 'absolute',
-    bottom: 20, // Lower position
-    right: 20,
     width: 56,
     height: 56,
     borderRadius: 28,
@@ -1128,147 +1357,149 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     elevation: 8,
   },
-  selectionSummary: {
+  fabTouchable: {
+    width: '100%',
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 28,
+  },
+  // Simple sticky bar
+  stickyBar: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+  },
+  stickyBarTouchable: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 12,
-    marginBottom: 8,
+    justifyContent: 'center',
+    paddingVertical: 12,
     borderRadius: 8,
+  },
+  stickyBarText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: 8,
+  },
+  // Simple info container
+  manualPickContainer: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+  },
+  manualPickButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 20,
     borderWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  selectionInfo: {
-    flex: 1,
-  },
-  selectionText: {
+  manualPickButtonText: {
     fontSize: 14,
     fontWeight: '600',
   },
-  selectionSubtext: {
-    fontSize: 12,
-    marginTop: 2,
+  simpleInfoContainer: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
   },
-  clearButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-  },
-  clearButtonText: {
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  selectionButtons: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  viewSelectedButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    gap: 4,
-  },
-  viewSelectedButtonText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  modalContainer: {
-    flex: 1,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 15,
-    borderBottomWidth: 1,
-    paddingTop: 50,
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  modalCloseButton: {
-    padding: 8,
-  },
-  modalContent: {
-    flex: 1,
-    paddingHorizontal: 20,
-    paddingVertical: 15,
-  },
-  noSelectedText: {
+  simpleInfoText: {
+    fontSize: 14,
     textAlign: 'center',
-    marginTop: 50,
-    fontSize: 16,
   },
-  selectedArticleCard: {
+  selectionCountInfo: {
+    position: 'absolute',
+    bottom: 90,
+    right: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  selectionCountText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  pickCounter: {
+    marginRight: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  pickCounterText: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  jumpButton: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    width: 28,
+    height: 28,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1,
+  },
+  articleTouchableArea: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'flex-start',
-    padding: 12,
-    marginBottom: 8,
-    borderRadius: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
   },
-  selectedArticleContent: {
-    flex: 1,
-    marginRight: 12,
-  },
-  selectedArticleSource: {
-    fontSize: 12,
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-  selectedArticleTitle: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    marginBottom: 4,
-    lineHeight: 18,
-  },
-  selectedArticleSummary: {
-    fontSize: 12,
-    lineHeight: 16,
-    marginBottom: 4,
-  },
-  selectedArticleGenre: {
-    fontSize: 10,
-    fontWeight: '600',
-  },
-  removeButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  selectAllContainer: {
+  articleHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    marginBottom: 8,
+    marginBottom: 2,
   },
-  filterInfo: {
-    fontSize: 14,
-    flex: 1,
+  genreTag: {
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 8,
+    maxWidth: 70,
   },
-  selectAllButton: {
+  genreTagText: {
+    fontSize: 9,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  feedActionButtons: {
     flexDirection: 'row',
+    position: 'absolute',
+    bottom: 8,
+    right: 8,
+    gap: 6,
+  },
+  feedLikeButton: {
+    padding: 4,
+    borderRadius: 14,
+    width: 28,
+    height: 28,
+    justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    borderWidth: 1,
-    marginLeft: 12,
   },
-  selectAllButtonText: {
-    fontSize: 12,
-    fontWeight: '500',
+  feedDislikeButton: {
+    padding: 4,
+    borderRadius: 14,
+    width: 28,
+    height: 28,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
+  // Removed: Complex selection UI styles
+  // Removed: Modal and complex selection UI styles
+  // Removed: selectAllContainer, filterInfo, selectAllButton, selectAllButtonText
 });

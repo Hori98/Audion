@@ -1119,3 +1119,728 @@ INFO:     Waiting for application startup.
 2025-08-04 11:54:53,981 - INFO - Cleanup tasks completed
 INFO:     Application startup complete.
 INFO:     192.168.11.60:53033 - "GET /api/rss-sources HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49372 - "POST /api/auth/register HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49375 - "POST /api/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49377 - "GET /api/sources HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:49379 - "POST /api/sources HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:49381 - "GET /api/sources HTTP/1.1" 404 Not Found
+2025-08-04 18:05:51,124 - INFO - Fetched 0 articles before filtering.
+INFO:     127.0.0.1:49383 - "GET /api/articles HTTP/1.1" 200 OK
+2025-08-04 18:05:51,170 - INFO - Fetched 0 articles before filtering.
+INFO:     127.0.0.1:49385 - "GET /api/articles HTTP/1.1" 200 OK
+2025-08-04 18:05:51,206 - INFO - Fetched 0 articles before filtering.
+INFO:     127.0.0.1:49387 - "GET /api/articles HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49389 - "GET /api/audio/library HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49391 - "GET /api/user-profile HTTP/1.1" 200 OK
+2025-08-04 18:05:51,344 - INFO - Fetched 0 articles before filtering.
+INFO:     127.0.0.1:49393 - "GET /api/articles HTTP/1.1" 200 OK
+2025-08-04 18:05:51,365 - INFO - Auto-pick request from user: a97e662c-5c12-40e6-bfba-9971a5ad7cbd
+2025-08-04 18:05:51,384 - INFO - Found 0 active RSS sources for user a97e662c-5c12-40e6-bfba-9971a5ad7cbd
+2025-08-04 18:05:51,384 - ERROR - Auto-pick error: 404: No active RSS sources found. Please add some sources or activate existing ones.
+2025-08-04 18:05:51,385 - ERROR - Traceback: Traceback (most recent call last):
+  File "/Users/hori/Desktop/audion_project_final/Audion_Emergent.AI_Demo/backend/server.py", line 1354, in get_auto_picked_articles
+    raise HTTPException(status_code=404, detail="No active RSS sources found. Please add some sources or activate existing ones.")
+fastapi.exceptions.HTTPException: 404: No active RSS sources found. Please add some sources or activate existing ones.
+
+INFO:     127.0.0.1:49395 - "POST /api/auto-pick HTTP/1.1" 500 Internal Server Error
+2025-08-04 18:05:51,424 - ERROR - Auto-pick create audio error: 404: No RSS sources found
+INFO:     127.0.0.1:49397 - "POST /api/auto-pick/create-audio HTTP/1.1" 500 Internal Server Error
+INFO:     192.168.11.60:49951 - "GET /api/rss-sources HTTP/1.1" 200 OK
+INFO:     192.168.11.60:49951 - "GET /api/user/profile HTTP/1.1" 200 OK
+INFO:     192.168.11.60:49954 - "GET /api/rss-sources HTTP/1.1" 200 OK
+2025-08-04 18:11:19,552 - INFO - Fetched 0 articles before filtering.
+INFO:     192.168.11.60:49951 - "GET /api/articles HTTP/1.1" 200 OK
+INFO:     192.168.11.60:49952 - "GET /api/rss-sources HTTP/1.1" 200 OK
+INFO:     192.168.11.60:50008 - "GET /api/user-profile HTTP/1.1" 200 OK
+INFO:     192.168.11.60:50007 - "GET /api/user/profile HTTP/1.1" 200 OK
+INFO:     192.168.11.60:50009 - "GET /api/rss-sources HTTP/1.1" 200 OK
+2025-08-04 18:11:41,848 - INFO - Auto-pick request from user: 8135236f-38cd-4cd8-b67f-2972db82ef94
+2025-08-04 18:11:41,869 - INFO - Found 0 active RSS sources for user 8135236f-38cd-4cd8-b67f-2972db82ef94
+2025-08-04 18:11:41,869 - ERROR - Auto-pick error: 404: No active RSS sources found. Please add some sources or activate existing ones.
+2025-08-04 18:11:41,872 - ERROR - Traceback: Traceback (most recent call last):
+  File "/Users/hori/Desktop/audion_project_final/Audion_Emergent.AI_Demo/backend/server.py", line 1354, in get_auto_picked_articles
+    raise HTTPException(status_code=404, detail="No active RSS sources found. Please add some sources or activate existing ones.")
+fastapi.exceptions.HTTPException: 404: No active RSS sources found. Please add some sources or activate existing ones.
+
+INFO:     192.168.11.60:50007 - "POST /api/auto-pick HTTP/1.1" 500 Internal Server Error
+WARNING:  StatReload detected changes in 'server.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+2025-08-04 18:15:18,935 - INFO - Disconnected from MongoDB
+INFO:     Application shutdown complete.
+INFO:     Finished server process [59057]
+INFO:     Started server process [67793]
+INFO:     Waiting for application startup.
+2025-08-04 18:15:20,673 - INFO - Connected to MongoDB successfully
+2025-08-04 18:15:20,969 - INFO - Database indexes created successfully
+2025-08-04 18:15:20,986 - INFO - Found 5 existing preset categories
+2025-08-04 18:15:20,986 - INFO - Preset categories initialized successfully
+2025-08-04 18:15:20,986 - INFO - Cleanup tasks completed
+INFO:     Application startup complete.
+WARNING:  StatReload detected changes in 'server.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+2025-08-04 18:15:35,108 - INFO - Disconnected from MongoDB
+INFO:     Application shutdown complete.
+INFO:     Finished server process [67793]
+INFO:     Started server process [67829]
+INFO:     Waiting for application startup.
+2025-08-04 18:15:36,725 - INFO - Connected to MongoDB successfully
+2025-08-04 18:15:36,925 - INFO - Database indexes created successfully
+2025-08-04 18:15:36,937 - INFO - Found 5 existing preset categories
+2025-08-04 18:15:36,937 - INFO - Preset categories initialized successfully
+2025-08-04 18:15:36,937 - INFO - Cleanup tasks completed
+INFO:     Application startup complete.
+WARNING:  StatReload detected changes in 'venv/lib/python3.13/site-packages/bson/__init__.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+2025-08-04 18:18:39,590 - INFO - Disconnected from MongoDB
+INFO:     Application shutdown complete.
+INFO:     Finished server process [67829]
+INFO:     Started server process [68854]
+INFO:     Waiting for application startup.
+2025-08-04 18:18:41,277 - INFO - Connected to MongoDB successfully
+2025-08-04 18:18:41,470 - INFO - Database indexes created successfully
+2025-08-04 18:18:41,485 - INFO - Found 5 existing preset categories
+2025-08-04 18:18:41,486 - INFO - Preset categories initialized successfully
+2025-08-04 18:18:41,486 - INFO - Cleanup tasks completed
+INFO:     Application startup complete.
+WARNING:  StatReload detected changes in 'venv/lib/python3.13/site-packages/PIL/__init__.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+2025-08-04 18:18:42,410 - INFO - Disconnected from MongoDB
+INFO:     Application shutdown complete.
+INFO:     Finished server process [68854]
+INFO:     Started server process [70643]
+INFO:     Waiting for application startup.
+2025-08-04 18:18:43,821 - INFO - Connected to MongoDB successfully
+2025-08-04 18:18:44,007 - INFO - Database indexes created successfully
+2025-08-04 18:18:44,020 - INFO - Found 5 existing preset categories
+2025-08-04 18:18:44,021 - INFO - Preset categories initialized successfully
+2025-08-04 18:18:44,021 - INFO - Cleanup tasks completed
+INFO:     Application startup complete.
+INFO:     192.168.11.60:50757 - "GET /api/audio/deleted HTTP/1.1" 200 OK
+INFO:     192.168.11.60:50758 - "GET /api/user/profile HTTP/1.1" 200 OK
+INFO:     192.168.11.60:50757 - "GET /api/rss-sources HTTP/1.1" 200 OK
+2025-08-04 18:20:57,517 - INFO - Updating RSS source 462c0366-1d0a-4b9d-8657-c36662a6871a with data: {'is_active': True}
+2025-08-04 18:20:57,543 - INFO - Update result - matched: 1, modified: 1
+INFO:     192.168.11.60:50757 - "PATCH /api/rss-sources/462c0366-1d0a-4b9d-8657-c36662a6871a HTTP/1.1" 200 OK
+2025-08-04 18:20:58,079 - INFO - Updating RSS source a5b8bf64-4519-423e-b71f-706c1628b6c1 with data: {'is_active': True}
+2025-08-04 18:20:58,102 - INFO - Update result - matched: 1, modified: 1
+INFO:     192.168.11.60:50757 - "PATCH /api/rss-sources/a5b8bf64-4519-423e-b71f-706c1628b6c1 HTTP/1.1" 200 OK
+2025-08-04 18:20:58,546 - INFO - Updating RSS source 543fb781-a442-4b04-95eb-f192a85e8886 with data: {'is_active': True}
+2025-08-04 18:20:58,570 - INFO - Update result - matched: 1, modified: 1
+INFO:     192.168.11.60:50757 - "PATCH /api/rss-sources/543fb781-a442-4b04-95eb-f192a85e8886 HTTP/1.1" 200 OK
+2025-08-04 18:20:59,287 - INFO - Updating RSS source 17bffc61-adae-4b90-9a78-b5b90fc0e43a with data: {'is_active': True}
+2025-08-04 18:20:59,308 - INFO - Update result - matched: 1, modified: 1
+INFO:     192.168.11.60:50757 - "PATCH /api/rss-sources/17bffc61-adae-4b90-9a78-b5b90fc0e43a HTTP/1.1" 200 OK
+2025-08-04 18:21:00,408 - INFO - Updating RSS source c440628f-3d17-4651-8f2f-e94ca16752f1 with data: {'is_active': True}
+2025-08-04 18:21:00,429 - INFO - Update result - matched: 1, modified: 1
+INFO:     192.168.11.60:50757 - "PATCH /api/rss-sources/c440628f-3d17-4651-8f2f-e94ca16752f1 HTTP/1.1" 200 OK
+2025-08-04 18:21:00,836 - INFO - Updating RSS source 2a437f1a-4c93-4e37-a404-f661f24d9878 with data: {'is_active': True}
+2025-08-04 18:21:00,859 - INFO - Update result - matched: 1, modified: 1
+INFO:     192.168.11.60:50757 - "PATCH /api/rss-sources/2a437f1a-4c93-4e37-a404-f661f24d9878 HTTP/1.1" 200 OK
+2025-08-04 18:21:01,437 - INFO - Updating RSS source fa7d5604-1b69-4d9c-aac0-d3eae24f0bc6 with data: {'is_active': True}
+2025-08-04 18:21:01,459 - INFO - Update result - matched: 1, modified: 1
+INFO:     192.168.11.60:50757 - "PATCH /api/rss-sources/fa7d5604-1b69-4d9c-aac0-d3eae24f0bc6 HTTP/1.1" 200 OK
+INFO:     192.168.11.60:50781 - "GET /api/rss-sources HTTP/1.1" 200 OK
+INFO:     192.168.11.60:50757 - "GET /api/user/profile HTTP/1.1" 200 OK
+2025-08-04 18:21:02,370 - INFO - Fetched new feed for Reuters Business
+2025-08-04 18:21:03,253 - INFO - Fetched new feed for Bloomberg
+2025-08-04 18:21:03,254 - INFO - Enhanced Classification: "(EMBARGO TUE AUG 4, 2300HK)  JAPANESE DIGITAL CHUN..." -> Technology (scores: Technology: 4.8)
+2025-08-04 18:21:03,254 - INFO - Enhanced Classification: "US Eco Data ‘Conflicting, Confusing’: Principal’s ..." -> Finance (scores: Finance: 8.4, Technology: 3.0, Science: 0.9)
+2025-08-04 18:21:03,254 - INFO - Enhanced Classification: "EU Awaits Trump Actions on Its Car Tariffs, Exempt..." -> Technology (scores: Technology: 6.0, Politics: 3.5, Environment: 3.0)
+2025-08-04 18:21:03,254 - INFO - Enhanced Classification: "UBS Plans SRT Deal Out of Program Inherited From C..." -> Finance (scores: Finance: 6.5, Technology: 3.0, Politics: 1.8)
+2025-08-04 18:21:03,255 - INFO - Enhanced Classification: "Metlen’s Shares Rise in Thin London Debut After At..." -> Finance (scores: Finance: 5.2, Technology: 4.5, Environment: 0.9)
+2025-08-04 18:21:03,255 - INFO - Enhanced Classification: "Hong Kong’s New Listing Rules Seen as Helping Hot ..." -> Technology (scores: Technology: 3.0, Finance: 1.8, Education: 1.5)
+2025-08-04 18:21:03,255 - INFO - Enhanced Classification: "Stocks Rebound as Traders Bet on Fed Rate Cuts: Ma..." -> Finance (scores: Finance: 11.8, Technology: 3.0, Science: 0.9)
+2025-08-04 18:21:03,255 - INFO - Enhanced Classification: "UK Lenders Jump on Motor Court Finance Ruling..." -> Finance (scores: Finance: 3.2, Technology: 3.0, Environment: 3.0)
+2025-08-04 18:21:03,255 - INFO - Enhanced Classification: "Citi’s Gold Bears Turn Bullish on US Growth, Infla..." -> Finance (scores: Finance: 5.2, Environment: 3.8, Technology: 3.0)
+2025-08-04 18:21:03,255 - INFO - Enhanced Classification: "Swiss Pharmaceuticals React to Trump’s 39% Tariffs..." -> Technology (scores: Technology: 3.0, Health: 1.5)
+2025-08-04 18:21:03,791 - INFO - Fetched new feed for Fortune
+2025-08-04 18:21:03,791 - INFO - Enhanced Classification: "Greer says U.S.-China talks ‘about halfway there’ ..." -> Technology (scores: Technology: 6.0, Entertainment: 1.5)
+2025-08-04 18:21:03,791 - INFO - Enhanced Classification: "North Korean IT worker infiltrations exploded 220%..." -> Technology (scores: Technology: 11.2, Environment: 3.0, Science: 0.9)
+2025-08-04 18:21:03,792 - INFO - Enhanced Classification: "Dow futures reverse higher as recession alarm bell..." -> Finance (scores: Finance: 7.0, Environment: 3.8, Technology: 3.0)
+2025-08-04 18:21:03,792 - INFO - Enhanced Classification: "Trump’s former jobs data chief decries firing of s..." -> Technology (scores: Technology: 3.0, Science: 0.9)
+2025-08-04 18:21:03,792 - INFO - Enhanced Classification: "Iran’s currency has plunged so much in value that ..." -> Finance (scores: Finance: 3.5, Technology: 3.0)
+2025-08-04 18:21:03,792 - INFO - Enhanced Classification: "Wall Street’s view of a ‘Kevlar economy’ has just ..." -> Technology (scores: Technology: 6.0, Environment: 3.8, Finance: 1.8)
+2025-08-04 18:21:03,792 - INFO - Enhanced Classification: "US trade advisor says Trump tariff rates are ‘pret..." -> Technology (scores: Technology: 3.0, Environment: 3.0)
+2025-08-04 18:21:03,792 - INFO - Enhanced Classification: "Top economist Brad DeLong to recent college grads:..." -> Technology (scores: Technology: 3.5, Education: 3.5, Finance: 1.8)
+2025-08-04 18:21:03,792 - INFO - Enhanced Classification: "Top economist warns the U.S. is ‘on the precipice ..." -> Finance (scores: Finance: 7.0, Technology: 3.0, Environment: 0.8)
+2025-08-04 18:21:03,792 - INFO - Enhanced Classification: "Erika McEntarfer, the BLS head fired by Trump, got..." -> Politics (scores: Politics: 4.8, Technology: 3.0, Entertainment: 1.5)
+2025-08-04 18:21:03,955 - INFO - Fetched new feed for BBC World
+2025-08-04 18:21:03,955 - INFO - Enhanced Classification: "Dozens of migrants die in boat capsize off Yemen..." -> Environment (scores: Environment: 4.8, Technology: 3.0)
+2025-08-04 18:21:03,955 - INFO - Enhanced Classification: "World leaders condemn videos of emaciated Israeli ..." -> Technology (scores: Technology: 6.0)
+2025-08-04 18:21:03,955 - INFO - Enhanced Classification: "Israeli minister sparks anger by praying at sensit..." -> Technology (scores: Technology: 3.0, Politics: 1.8)
+2025-08-04 18:21:03,955 - INFO - Enhanced Classification: "Democrats flee Texas to block Republican redistric..." -> Politics (scores: Politics: 6.5)
+2025-08-04 18:21:03,955 - INFO - Enhanced Classification: "Russian volcano erupts for first time in more than..." -> Technology (scores: Technology: 3.0, Entertainment: 1.5)
+2025-08-04 18:21:03,955 - INFO - Enhanced Classification: "Boeing defence workers go on strike in new blow to..." -> Technology (scores: Technology: 6.0, Politics: 3.0, Education: 1.5)
+2025-08-04 18:21:03,955 - INFO - Enhanced Classification: "F1 tycoon pleads guilty in rare Singapore corrupti..." -> Technology (scores: Technology: 6.0, Travel: 3.5, Politics: 1.8)
+2025-08-04 18:21:03,955 - INFO - Enhanced Classification: "Chile rescuers find body of last trapped miner - f..." -> Technology (scores: Technology: 4.5, Entertainment: 1.5)
+2025-08-04 18:21:03,955 - INFO - Enhanced Classification: "Ukraine drone attack causes fire at Sochi oil depo..." -> Technology (scores: Technology: 3.0)
+2025-08-04 18:21:03,956 - INFO - Enhanced Classification: "Manhunt intensifies for Montana bar shooting suspe..." -> Technology (scores: Technology: 3.0, Entertainment: 1.5)
+2025-08-04 18:21:04,829 - INFO - Fetched new feed for CNN International
+2025-08-04 18:21:04,830 - INFO - Enhanced Classification: "Trump pleads not guilty to 34 felony counts..." -> Technology (scores: Technology: 6.0, Sports: 0.8)
+2025-08-04 18:21:04,830 - INFO - Enhanced Classification: "Haberman reveals why Trump attacked judge and his ..." -> Technology (scores: Technology: 6.0, Travel: 3.5, Environment: 3.0)
+2025-08-04 18:21:04,830 - INFO - Enhanced Classification: "What to know about the Trump indictment on the eve..." -> Technology (scores: Technology: 7.5, Environment: 3.0, Sports: 0.8)
+2025-08-04 18:21:04,830 - INFO - Enhanced Classification: "READ: Trump indictment related to hush money payme..." -> Technology (scores: Technology: 6.0, Sports: 0.8)
+2025-08-04 18:21:04,830 - INFO - Enhanced Classification: "Russian authorities detain suspect over St. Peters..." -> Technology (scores: Technology: 6.0, Sports: 0.8)
+2025-08-04 18:21:04,830 - INFO - Enhanced Classification: "Video shows moment of deadly explosion at cafe in ..." -> Technology (scores: Technology: 6.0, Entertainment: 1.5)
+2025-08-04 18:21:04,830 - INFO - Enhanced Classification: "Wall Street Journal reporter Evan Gershkovich appe..." -> Technology (scores: Technology: 7.5, Science: 3.5, Environment: 3.0)
+2025-08-04 18:21:04,830 - INFO - Enhanced Classification: "Suspected Chinese spy balloon was able to transmit..." -> Technology (scores: Technology: 3.0)
+2025-08-04 18:21:04,830 - INFO - Enhanced Classification: "Beijing promised to 'fight back' over Taiwan leade..." -> Politics (scores: Politics: 7.0, Technology: 6.0, Environment: 3.0)
+2025-08-04 18:21:04,830 - INFO - Enhanced Classification: "'Scary, cold, hungry and lonely': Volunteer soldie..." -> Health (scores: Health: 3.2, Technology: 3.0, Finance: 1.5)
+2025-08-04 18:21:04,835 - INFO - Fetched new feed for Reuters World
+2025-08-04 18:21:04,923 - INFO - Fetched new feed for TechCrunch
+2025-08-04 18:21:04,923 - INFO - Enhanced Classification: "Apple might be building its own AI ‘answer engine’..." -> Technology (scores: Technology: 8.5)
+2025-08-04 18:21:04,923 - INFO - Enhanced Classification: "Mastercard denies pressuring game platforms, Valve..." -> Technology (scores: Technology: 4.5, Sports: 1.8, Finance: 1.5)
+2025-08-04 18:21:04,923 - INFO - Enhanced Classification: "SAP is acquiring SmartRecruiters..." -> Technology (scores: Technology: 4.8, Entertainment: 1.5)
+2025-08-04 18:21:04,923 - INFO - Enhanced Classification: "Inside OpenAI’s quest to make AI do anything for y..." -> Technology (scores: Technology: 12.3, Environment: 3.0)
+2025-08-04 18:21:04,923 - INFO - Enhanced Classification: "The uproar over Vogue’s AI-generated ad isn’t just..." -> Technology (scores: Technology: 9.8, Environment: 3.0)
+2025-08-04 18:21:04,923 - INFO - Enhanced Classification: "Tim Cook reportedly tells employees Apple ‘must’ w..." -> Technology (scores: Technology: 6.8)
+2025-08-04 18:21:04,923 - INFO - Enhanced Classification: "Lina Khan points to Figma IPO as vindication of M&..." -> Technology (scores: Technology: 7.7, Finance: 3.8, Entertainment: 1.5)
+2025-08-04 18:21:04,924 - INFO - Enhanced Classification: "Anthropic cuts off OpenAI’s access to its Claude m..." -> Technology (scores: Technology: 5.2, Environment: 3.0)
+2025-08-04 18:21:04,924 - INFO - Enhanced Classification: "What founders should think about if looking to rai..." -> Technology (scores: Technology: 7.5, Entertainment: 3.2)
+2025-08-04 18:21:04,924 - INFO - Enhanced Classification: "Venture firm CRV raises $750M, downsizing after re..." -> Technology (scores: Technology: 6.9, Finance: 1.5)
+2025-08-04 18:21:04,924 - INFO - Fetched 50 articles before filtering.
+INFO:     192.168.11.60:50781 - "GET /api/articles HTTP/1.1" 200 OK
+INFO:     192.168.11.60:50782 - "GET /api/rss-sources HTTP/1.1" 200 OK
+INFO:     192.168.11.60:50781 - "GET /api/rss-sources HTTP/1.1" 200 OK
+INFO:     192.168.11.60:50787 - "GET /api/rss-sources HTTP/1.1" 200 OK
+INFO:     192.168.11.60:50757 - "GET /api/audio/deleted HTTP/1.1" 200 OK
+INFO:     192.168.11.60:50785 - "GET /api/user/profile HTTP/1.1" 200 OK
+INFO:     192.168.11.60:50786 - "GET /api/user/profile HTTP/1.1" 200 OK
+INFO:     192.168.11.60:50757 - "GET /api/rss-sources HTTP/1.1" 200 OK
+2025-08-04 18:21:06,919 - INFO - Using cached feed for Reuters Business
+2025-08-04 18:21:06,919 - INFO - Using cached feed for Bloomberg
+2025-08-04 18:21:06,919 - INFO - Enhanced Classification: "(EMBARGO TUE AUG 4, 2300HK)  JAPANESE DIGITAL CHUN..." -> Technology (scores: Technology: 4.8)
+2025-08-04 18:21:06,919 - INFO - Enhanced Classification: "US Eco Data ‘Conflicting, Confusing’: Principal’s ..." -> Finance (scores: Finance: 8.4, Technology: 3.0, Science: 0.9)
+2025-08-04 18:21:06,919 - INFO - Enhanced Classification: "EU Awaits Trump Actions on Its Car Tariffs, Exempt..." -> Technology (scores: Technology: 6.0, Politics: 3.5, Environment: 3.0)
+2025-08-04 18:21:06,919 - INFO - Enhanced Classification: "UBS Plans SRT Deal Out of Program Inherited From C..." -> Finance (scores: Finance: 6.5, Technology: 3.0, Politics: 1.8)
+2025-08-04 18:21:06,920 - INFO - Enhanced Classification: "Metlen’s Shares Rise in Thin London Debut After At..." -> Finance (scores: Finance: 5.2, Technology: 4.5, Environment: 0.9)
+2025-08-04 18:21:06,920 - INFO - Enhanced Classification: "Hong Kong’s New Listing Rules Seen as Helping Hot ..." -> Technology (scores: Technology: 3.0, Finance: 1.8, Education: 1.5)
+2025-08-04 18:21:06,920 - INFO - Enhanced Classification: "Stocks Rebound as Traders Bet on Fed Rate Cuts: Ma..." -> Finance (scores: Finance: 11.8, Technology: 3.0, Science: 0.9)
+2025-08-04 18:21:06,920 - INFO - Enhanced Classification: "UK Lenders Jump on Motor Court Finance Ruling..." -> Finance (scores: Finance: 3.2, Technology: 3.0, Environment: 3.0)
+2025-08-04 18:21:06,920 - INFO - Enhanced Classification: "Citi’s Gold Bears Turn Bullish on US Growth, Infla..." -> Finance (scores: Finance: 5.2, Environment: 3.8, Technology: 3.0)
+2025-08-04 18:21:06,920 - INFO - Enhanced Classification: "Swiss Pharmaceuticals React to Trump’s 39% Tariffs..." -> Technology (scores: Technology: 3.0, Health: 1.5)
+2025-08-04 18:21:06,920 - INFO - Using cached feed for Fortune
+2025-08-04 18:21:06,920 - INFO - Enhanced Classification: "Greer says U.S.-China talks ‘about halfway there’ ..." -> Technology (scores: Technology: 6.0, Entertainment: 1.5)
+2025-08-04 18:21:06,920 - INFO - Enhanced Classification: "North Korean IT worker infiltrations exploded 220%..." -> Technology (scores: Technology: 11.2, Environment: 3.0, Science: 0.9)
+2025-08-04 18:21:06,920 - INFO - Enhanced Classification: "Dow futures reverse higher as recession alarm bell..." -> Finance (scores: Finance: 7.0, Environment: 3.8, Technology: 3.0)
+2025-08-04 18:21:06,920 - INFO - Enhanced Classification: "Trump’s former jobs data chief decries firing of s..." -> Technology (scores: Technology: 3.0, Science: 0.9)
+2025-08-04 18:21:06,921 - INFO - Enhanced Classification: "Iran’s currency has plunged so much in value that ..." -> Finance (scores: Finance: 3.5, Technology: 3.0)
+2025-08-04 18:21:06,921 - INFO - Enhanced Classification: "Wall Street’s view of a ‘Kevlar economy’ has just ..." -> Technology (scores: Technology: 6.0, Environment: 3.8, Finance: 1.8)
+2025-08-04 18:21:06,921 - INFO - Enhanced Classification: "US trade advisor says Trump tariff rates are ‘pret..." -> Technology (scores: Technology: 3.0, Environment: 3.0)
+2025-08-04 18:21:06,921 - INFO - Enhanced Classification: "Top economist Brad DeLong to recent college grads:..." -> Technology (scores: Technology: 3.5, Education: 3.5, Finance: 1.8)
+2025-08-04 18:21:06,921 - INFO - Enhanced Classification: "Top economist warns the U.S. is ‘on the precipice ..." -> Finance (scores: Finance: 7.0, Technology: 3.0, Environment: 0.8)
+2025-08-04 18:21:06,921 - INFO - Enhanced Classification: "Erika McEntarfer, the BLS head fired by Trump, got..." -> Politics (scores: Politics: 4.8, Technology: 3.0, Entertainment: 1.5)
+2025-08-04 18:21:06,921 - INFO - Using cached feed for BBC World
+2025-08-04 18:21:06,921 - INFO - Enhanced Classification: "Dozens of migrants die in boat capsize off Yemen..." -> Environment (scores: Environment: 4.8, Technology: 3.0)
+2025-08-04 18:21:06,921 - INFO - Enhanced Classification: "World leaders condemn videos of emaciated Israeli ..." -> Technology (scores: Technology: 6.0)
+2025-08-04 18:21:06,921 - INFO - Enhanced Classification: "Israeli minister sparks anger by praying at sensit..." -> Technology (scores: Technology: 3.0, Politics: 1.8)
+2025-08-04 18:21:06,921 - INFO - Enhanced Classification: "Democrats flee Texas to block Republican redistric..." -> Politics (scores: Politics: 6.5)
+2025-08-04 18:21:06,921 - INFO - Enhanced Classification: "Russian volcano erupts for first time in more than..." -> Technology (scores: Technology: 3.0, Entertainment: 1.5)
+2025-08-04 18:21:06,921 - INFO - Enhanced Classification: "Boeing defence workers go on strike in new blow to..." -> Technology (scores: Technology: 6.0, Politics: 3.0, Education: 1.5)
+2025-08-04 18:21:06,921 - INFO - Enhanced Classification: "F1 tycoon pleads guilty in rare Singapore corrupti..." -> Technology (scores: Technology: 6.0, Travel: 3.5, Politics: 1.8)
+2025-08-04 18:21:06,922 - INFO - Enhanced Classification: "Chile rescuers find body of last trapped miner - f..." -> Technology (scores: Technology: 4.5, Entertainment: 1.5)
+2025-08-04 18:21:06,922 - INFO - Enhanced Classification: "Ukraine drone attack causes fire at Sochi oil depo..." -> Technology (scores: Technology: 3.0)
+2025-08-04 18:21:06,922 - INFO - Enhanced Classification: "Manhunt intensifies for Montana bar shooting suspe..." -> Technology (scores: Technology: 3.0, Entertainment: 1.5)
+2025-08-04 18:21:06,922 - INFO - Using cached feed for CNN International
+2025-08-04 18:21:06,922 - INFO - Enhanced Classification: "Trump pleads not guilty to 34 felony counts..." -> Technology (scores: Technology: 6.0, Sports: 0.8)
+2025-08-04 18:21:06,922 - INFO - Enhanced Classification: "Haberman reveals why Trump attacked judge and his ..." -> Technology (scores: Technology: 6.0, Travel: 3.5, Environment: 3.0)
+2025-08-04 18:21:06,922 - INFO - Enhanced Classification: "What to know about the Trump indictment on the eve..." -> Technology (scores: Technology: 7.5, Environment: 3.0, Sports: 0.8)
+2025-08-04 18:21:06,922 - INFO - Enhanced Classification: "READ: Trump indictment related to hush money payme..." -> Technology (scores: Technology: 6.0, Sports: 0.8)
+2025-08-04 18:21:06,922 - INFO - Enhanced Classification: "Russian authorities detain suspect over St. Peters..." -> Technology (scores: Technology: 6.0, Sports: 0.8)
+2025-08-04 18:21:06,922 - INFO - Enhanced Classification: "Video shows moment of deadly explosion at cafe in ..." -> Technology (scores: Technology: 6.0, Entertainment: 1.5)
+2025-08-04 18:21:06,922 - INFO - Enhanced Classification: "Wall Street Journal reporter Evan Gershkovich appe..." -> Technology (scores: Technology: 7.5, Science: 3.5, Environment: 3.0)
+2025-08-04 18:21:06,922 - INFO - Enhanced Classification: "Suspected Chinese spy balloon was able to transmit..." -> Technology (scores: Technology: 3.0)
+2025-08-04 18:21:06,923 - INFO - Enhanced Classification: "Beijing promised to 'fight back' over Taiwan leade..." -> Politics (scores: Politics: 7.0, Technology: 6.0, Environment: 3.0)
+2025-08-04 18:21:06,923 - INFO - Enhanced Classification: "'Scary, cold, hungry and lonely': Volunteer soldie..." -> Health (scores: Health: 3.2, Technology: 3.0, Finance: 1.5)
+2025-08-04 18:21:06,923 - INFO - Using cached feed for Reuters World
+2025-08-04 18:21:06,923 - INFO - Using cached feed for TechCrunch
+2025-08-04 18:21:06,923 - INFO - Enhanced Classification: "Apple might be building its own AI ‘answer engine’..." -> Technology (scores: Technology: 8.5)
+2025-08-04 18:21:06,923 - INFO - Enhanced Classification: "Mastercard denies pressuring game platforms, Valve..." -> Technology (scores: Technology: 4.5, Sports: 1.8, Finance: 1.5)
+2025-08-04 18:21:06,923 - INFO - Enhanced Classification: "SAP is acquiring SmartRecruiters..." -> Technology (scores: Technology: 4.8, Entertainment: 1.5)
+2025-08-04 18:21:06,923 - INFO - Enhanced Classification: "Inside OpenAI’s quest to make AI do anything for y..." -> Technology (scores: Technology: 12.3, Environment: 3.0)
+2025-08-04 18:21:06,923 - INFO - Enhanced Classification: "The uproar over Vogue’s AI-generated ad isn’t just..." -> Technology (scores: Technology: 9.8, Environment: 3.0)
+2025-08-04 18:21:06,923 - INFO - Enhanced Classification: "Tim Cook reportedly tells employees Apple ‘must’ w..." -> Technology (scores: Technology: 6.8)
+2025-08-04 18:21:06,923 - INFO - Enhanced Classification: "Lina Khan points to Figma IPO as vindication of M&..." -> Technology (scores: Technology: 7.7, Finance: 3.8, Entertainment: 1.5)
+2025-08-04 18:21:06,924 - INFO - Enhanced Classification: "Anthropic cuts off OpenAI’s access to its Claude m..." -> Technology (scores: Technology: 5.2, Environment: 3.0)
+2025-08-04 18:21:06,924 - INFO - Enhanced Classification: "What founders should think about if looking to rai..." -> Technology (scores: Technology: 7.5, Entertainment: 3.2)
+2025-08-04 18:21:06,924 - INFO - Enhanced Classification: "Venture firm CRV raises $750M, downsizing after re..." -> Technology (scores: Technology: 6.9, Finance: 1.5)
+2025-08-04 18:21:06,924 - INFO - Fetched 50 articles before filtering.
+2025-08-04 18:21:06,924 - INFO - Filtered to 36 articles for genre: Technology
+INFO:     192.168.11.60:50757 - "GET /api/articles?genre=Technology HTTP/1.1" 200 OK
+INFO:     192.168.11.60:50757 - "GET /api/rss-sources HTTP/1.1" 200 OK
+2025-08-04 18:21:07,691 - INFO - Using cached feed for Reuters Business
+2025-08-04 18:21:07,691 - INFO - Using cached feed for Bloomberg
+2025-08-04 18:21:07,691 - INFO - Enhanced Classification: "(EMBARGO TUE AUG 4, 2300HK)  JAPANESE DIGITAL CHUN..." -> Technology (scores: Technology: 4.8)
+2025-08-04 18:21:07,691 - INFO - Enhanced Classification: "US Eco Data ‘Conflicting, Confusing’: Principal’s ..." -> Finance (scores: Finance: 8.4, Technology: 3.0, Science: 0.9)
+2025-08-04 18:21:07,691 - INFO - Enhanced Classification: "EU Awaits Trump Actions on Its Car Tariffs, Exempt..." -> Technology (scores: Technology: 6.0, Politics: 3.5, Environment: 3.0)
+2025-08-04 18:21:07,691 - INFO - Enhanced Classification: "UBS Plans SRT Deal Out of Program Inherited From C..." -> Finance (scores: Finance: 6.5, Technology: 3.0, Politics: 1.8)
+2025-08-04 18:21:07,692 - INFO - Enhanced Classification: "Metlen’s Shares Rise in Thin London Debut After At..." -> Finance (scores: Finance: 5.2, Technology: 4.5, Environment: 0.9)
+2025-08-04 18:21:07,692 - INFO - Enhanced Classification: "Hong Kong’s New Listing Rules Seen as Helping Hot ..." -> Technology (scores: Technology: 3.0, Finance: 1.8, Education: 1.5)
+2025-08-04 18:21:07,692 - INFO - Enhanced Classification: "Stocks Rebound as Traders Bet on Fed Rate Cuts: Ma..." -> Finance (scores: Finance: 11.8, Technology: 3.0, Science: 0.9)
+2025-08-04 18:21:07,692 - INFO - Enhanced Classification: "UK Lenders Jump on Motor Court Finance Ruling..." -> Finance (scores: Finance: 3.2, Technology: 3.0, Environment: 3.0)
+2025-08-04 18:21:07,692 - INFO - Enhanced Classification: "Citi’s Gold Bears Turn Bullish on US Growth, Infla..." -> Finance (scores: Finance: 5.2, Environment: 3.8, Technology: 3.0)
+2025-08-04 18:21:07,692 - INFO - Enhanced Classification: "Swiss Pharmaceuticals React to Trump’s 39% Tariffs..." -> Technology (scores: Technology: 3.0, Health: 1.5)
+2025-08-04 18:21:07,692 - INFO - Using cached feed for Fortune
+2025-08-04 18:21:07,692 - INFO - Enhanced Classification: "Greer says U.S.-China talks ‘about halfway there’ ..." -> Technology (scores: Technology: 6.0, Entertainment: 1.5)
+2025-08-04 18:21:07,692 - INFO - Enhanced Classification: "North Korean IT worker infiltrations exploded 220%..." -> Technology (scores: Technology: 11.2, Environment: 3.0, Science: 0.9)
+2025-08-04 18:21:07,692 - INFO - Enhanced Classification: "Dow futures reverse higher as recession alarm bell..." -> Finance (scores: Finance: 7.0, Environment: 3.8, Technology: 3.0)
+2025-08-04 18:21:07,692 - INFO - Enhanced Classification: "Trump’s former jobs data chief decries firing of s..." -> Technology (scores: Technology: 3.0, Science: 0.9)
+2025-08-04 18:21:07,692 - INFO - Enhanced Classification: "Iran’s currency has plunged so much in value that ..." -> Finance (scores: Finance: 3.5, Technology: 3.0)
+2025-08-04 18:21:07,693 - INFO - Enhanced Classification: "Wall Street’s view of a ‘Kevlar economy’ has just ..." -> Technology (scores: Technology: 6.0, Environment: 3.8, Finance: 1.8)
+2025-08-04 18:21:07,693 - INFO - Enhanced Classification: "US trade advisor says Trump tariff rates are ‘pret..." -> Technology (scores: Technology: 3.0, Environment: 3.0)
+2025-08-04 18:21:07,693 - INFO - Enhanced Classification: "Top economist Brad DeLong to recent college grads:..." -> Technology (scores: Technology: 3.5, Education: 3.5, Finance: 1.8)
+2025-08-04 18:21:07,693 - INFO - Enhanced Classification: "Top economist warns the U.S. is ‘on the precipice ..." -> Finance (scores: Finance: 7.0, Technology: 3.0, Environment: 0.8)
+2025-08-04 18:21:07,693 - INFO - Enhanced Classification: "Erika McEntarfer, the BLS head fired by Trump, got..." -> Politics (scores: Politics: 4.8, Technology: 3.0, Entertainment: 1.5)
+2025-08-04 18:21:07,693 - INFO - Using cached feed for BBC World
+2025-08-04 18:21:07,693 - INFO - Enhanced Classification: "Dozens of migrants die in boat capsize off Yemen..." -> Environment (scores: Environment: 4.8, Technology: 3.0)
+2025-08-04 18:21:07,693 - INFO - Enhanced Classification: "World leaders condemn videos of emaciated Israeli ..." -> Technology (scores: Technology: 6.0)
+2025-08-04 18:21:07,693 - INFO - Enhanced Classification: "Israeli minister sparks anger by praying at sensit..." -> Technology (scores: Technology: 3.0, Politics: 1.8)
+2025-08-04 18:21:07,693 - INFO - Enhanced Classification: "Democrats flee Texas to block Republican redistric..." -> Politics (scores: Politics: 6.5)
+2025-08-04 18:21:07,693 - INFO - Enhanced Classification: "Russian volcano erupts for first time in more than..." -> Technology (scores: Technology: 3.0, Entertainment: 1.5)
+2025-08-04 18:21:07,693 - INFO - Enhanced Classification: "Boeing defence workers go on strike in new blow to..." -> Technology (scores: Technology: 6.0, Politics: 3.0, Education: 1.5)
+2025-08-04 18:21:07,693 - INFO - Enhanced Classification: "F1 tycoon pleads guilty in rare Singapore corrupti..." -> Technology (scores: Technology: 6.0, Travel: 3.5, Politics: 1.8)
+2025-08-04 18:21:07,693 - INFO - Enhanced Classification: "Chile rescuers find body of last trapped miner - f..." -> Technology (scores: Technology: 4.5, Entertainment: 1.5)
+2025-08-04 18:21:07,694 - INFO - Enhanced Classification: "Ukraine drone attack causes fire at Sochi oil depo..." -> Technology (scores: Technology: 3.0)
+2025-08-04 18:21:07,694 - INFO - Enhanced Classification: "Manhunt intensifies for Montana bar shooting suspe..." -> Technology (scores: Technology: 3.0, Entertainment: 1.5)
+2025-08-04 18:21:07,694 - INFO - Using cached feed for CNN International
+2025-08-04 18:21:07,694 - INFO - Enhanced Classification: "Trump pleads not guilty to 34 felony counts..." -> Technology (scores: Technology: 6.0, Sports: 0.8)
+2025-08-04 18:21:07,694 - INFO - Enhanced Classification: "Haberman reveals why Trump attacked judge and his ..." -> Technology (scores: Technology: 6.0, Travel: 3.5, Environment: 3.0)
+2025-08-04 18:21:07,694 - INFO - Enhanced Classification: "What to know about the Trump indictment on the eve..." -> Technology (scores: Technology: 7.5, Environment: 3.0, Sports: 0.8)
+2025-08-04 18:21:07,694 - INFO - Enhanced Classification: "READ: Trump indictment related to hush money payme..." -> Technology (scores: Technology: 6.0, Sports: 0.8)
+2025-08-04 18:21:07,694 - INFO - Enhanced Classification: "Russian authorities detain suspect over St. Peters..." -> Technology (scores: Technology: 6.0, Sports: 0.8)
+2025-08-04 18:21:07,694 - INFO - Enhanced Classification: "Video shows moment of deadly explosion at cafe in ..." -> Technology (scores: Technology: 6.0, Entertainment: 1.5)
+2025-08-04 18:21:07,694 - INFO - Enhanced Classification: "Wall Street Journal reporter Evan Gershkovich appe..." -> Technology (scores: Technology: 7.5, Science: 3.5, Environment: 3.0)
+2025-08-04 18:21:07,694 - INFO - Enhanced Classification: "Suspected Chinese spy balloon was able to transmit..." -> Technology (scores: Technology: 3.0)
+2025-08-04 18:21:07,694 - INFO - Enhanced Classification: "Beijing promised to 'fight back' over Taiwan leade..." -> Politics (scores: Politics: 7.0, Technology: 6.0, Environment: 3.0)
+2025-08-04 18:21:07,694 - INFO - Enhanced Classification: "'Scary, cold, hungry and lonely': Volunteer soldie..." -> Health (scores: Health: 3.2, Technology: 3.0, Finance: 1.5)
+2025-08-04 18:21:07,694 - INFO - Using cached feed for Reuters World
+2025-08-04 18:21:07,694 - INFO - Using cached feed for TechCrunch
+2025-08-04 18:21:07,694 - INFO - Enhanced Classification: "Apple might be building its own AI ‘answer engine’..." -> Technology (scores: Technology: 8.5)
+2025-08-04 18:21:07,695 - INFO - Enhanced Classification: "Mastercard denies pressuring game platforms, Valve..." -> Technology (scores: Technology: 4.5, Sports: 1.8, Finance: 1.5)
+2025-08-04 18:21:07,695 - INFO - Enhanced Classification: "SAP is acquiring SmartRecruiters..." -> Technology (scores: Technology: 4.8, Entertainment: 1.5)
+2025-08-04 18:21:07,695 - INFO - Enhanced Classification: "Inside OpenAI’s quest to make AI do anything for y..." -> Technology (scores: Technology: 12.3, Environment: 3.0)
+2025-08-04 18:21:07,695 - INFO - Enhanced Classification: "The uproar over Vogue’s AI-generated ad isn’t just..." -> Technology (scores: Technology: 9.8, Environment: 3.0)
+2025-08-04 18:21:07,695 - INFO - Enhanced Classification: "Tim Cook reportedly tells employees Apple ‘must’ w..." -> Technology (scores: Technology: 6.8)
+2025-08-04 18:21:07,695 - INFO - Enhanced Classification: "Lina Khan points to Figma IPO as vindication of M&..." -> Technology (scores: Technology: 7.7, Finance: 3.8, Entertainment: 1.5)
+2025-08-04 18:21:07,695 - INFO - Enhanced Classification: "Anthropic cuts off OpenAI’s access to its Claude m..." -> Technology (scores: Technology: 5.2, Environment: 3.0)
+2025-08-04 18:21:07,695 - INFO - Enhanced Classification: "What founders should think about if looking to rai..." -> Technology (scores: Technology: 7.5, Entertainment: 3.2)
+2025-08-04 18:21:07,695 - INFO - Enhanced Classification: "Venture firm CRV raises $750M, downsizing after re..." -> Technology (scores: Technology: 6.9, Finance: 1.5)
+2025-08-04 18:21:07,695 - INFO - Fetched 50 articles before filtering.
+2025-08-04 18:21:07,695 - INFO - Filtered to 9 articles for genre: Finance
+INFO:     192.168.11.60:50757 - "GET /api/articles?genre=Finance HTTP/1.1" 200 OK
+INFO:     192.168.11.60:50819 - "GET /api/rss-sources HTTP/1.1" 200 OK
+INFO:     192.168.11.60:50757 - "GET /api/user/profile HTTP/1.1" 200 OK
+INFO:     192.168.11.60:50818 - "GET /api/user-profile HTTP/1.1" 200 OK
+2025-08-04 18:21:12,246 - INFO - Auto-pick request from user: 8135236f-38cd-4cd8-b67f-2972db82ef94
+2025-08-04 18:21:12,263 - INFO - Using 7 explicitly specified sources for user 8135236f-38cd-4cd8-b67f-2972db82ef94
+2025-08-04 18:21:12,263 - INFO - Enhanced Classification: "(EMBARGO TUE AUG 4, 2300HK)  JAPANESE DIGITAL CHUN..." -> Technology (scores: Technology: 4.8)
+2025-08-04 18:21:12,264 - INFO - Enhanced Classification: "US Eco Data ‘Conflicting, Confusing’: Principal’s ..." -> Finance (scores: Finance: 8.4, Technology: 3.0, Science: 0.9)
+2025-08-04 18:21:12,264 - INFO - Enhanced Classification: "EU Awaits Trump Actions on Its Car Tariffs, Exempt..." -> Technology (scores: Technology: 6.0, Politics: 3.5, Environment: 3.0)
+2025-08-04 18:21:12,264 - INFO - Enhanced Classification: "UBS Plans SRT Deal Out of Program Inherited From C..." -> Finance (scores: Finance: 6.5, Technology: 3.0, Politics: 1.8)
+2025-08-04 18:21:12,264 - INFO - Enhanced Classification: "Metlen’s Shares Rise in Thin London Debut After At..." -> Finance (scores: Finance: 5.2, Technology: 4.5, Environment: 0.9)
+2025-08-04 18:21:12,264 - INFO - Enhanced Classification: "Hong Kong’s New Listing Rules Seen as Helping Hot ..." -> Technology (scores: Technology: 3.0, Finance: 1.8, Education: 1.5)
+2025-08-04 18:21:12,264 - INFO - Enhanced Classification: "Stocks Rebound as Traders Bet on Fed Rate Cuts: Ma..." -> Finance (scores: Finance: 11.8, Technology: 3.0, Science: 0.9)
+2025-08-04 18:21:12,264 - INFO - Enhanced Classification: "UK Lenders Jump on Motor Court Finance Ruling..." -> Finance (scores: Finance: 3.2, Technology: 3.0, Environment: 3.0)
+2025-08-04 18:21:12,264 - INFO - Enhanced Classification: "Citi’s Gold Bears Turn Bullish on US Growth, Infla..." -> Finance (scores: Finance: 5.2, Environment: 3.8, Technology: 3.0)
+2025-08-04 18:21:12,264 - INFO - Enhanced Classification: "Swiss Pharmaceuticals React to Trump’s 39% Tariffs..." -> Technology (scores: Technology: 3.0, Health: 1.5)
+2025-08-04 18:21:12,264 - INFO - Enhanced Classification: "Swiss Stocks Decline on US Tariffs, Push for Lower..." -> Politics (scores: Politics: 3.5, Travel: 3.5, Finance: 3.2)
+2025-08-04 18:21:12,265 - INFO - Enhanced Classification: "The AI Industry Is Becoming Like Professional Spor..." -> Sports (scores: Sports: 4.8, Technology: 3.5, Environment: 0.8)
+2025-08-04 18:21:12,265 - INFO - Enhanced Classification: "Odd Lots: How the AI Industry Is Becoming Like Spo..." -> Technology (scores: Technology: 6.5, Sports: 4.0, Environment: 0.8)
+2025-08-04 18:21:12,265 - INFO - Enhanced Classification: "Vietnam’s Vingroup Plans to Build $14.3 Billion Po..." -> Technology (scores: Technology: 4.5, Politics: 3.0, Finance: 1.8)
+2025-08-04 18:21:12,265 - INFO - Enhanced Classification: "Korean Stocks Bounce Back as Opposition to Tax Hik..." -> Environment (scores: Environment: 3.0, Finance: 1.5)
+2025-08-04 18:21:12,265 - INFO - Enhanced Classification: "US Stocks Will Be in Trouble in August: 3-Minute M..." -> Technology (scores: Technology: 3.0, Finance: 3.0)
+2025-08-04 18:21:12,265 - INFO - Enhanced Classification: "OPEC+ Signals Next Move Is Undecided as Tumultuous..." -> Technology (scores: Technology: 3.0, Entertainment: 1.8)
+2025-08-04 18:21:12,265 - INFO - Enhanced Classification: "Pakistan Adds Chinese Attack Helicopters to Upgrad..." -> Technology (scores: Technology: 3.0)
+2025-08-04 18:21:12,265 - INFO - Enhanced Classification: "European Stocks Advance, Swiss Stocks Drop on Shoc..." -> Finance (scores: Finance: 4.8, Politics: 3.5, Technology: 3.0)
+2025-08-04 18:21:12,265 - INFO - Enhanced Classification: "Hong Kong ETFs in China See Record Inflows on Dip ..." -> Finance (scores: Finance: 4.8, Technology: 3.0, Environment: 0.8)
+2025-08-04 18:21:12,265 - INFO - Enhanced Classification: "Greer says U.S.-China talks ‘about halfway there’ ..." -> Technology (scores: Technology: 6.0, Entertainment: 1.5)
+2025-08-04 18:21:12,265 - INFO - Enhanced Classification: "North Korean IT worker infiltrations exploded 220%..." -> Technology (scores: Technology: 11.2, Environment: 3.0, Science: 0.9)
+2025-08-04 18:21:12,265 - INFO - Enhanced Classification: "Dow futures reverse higher as recession alarm bell..." -> Finance (scores: Finance: 7.0, Environment: 3.8, Technology: 3.0)
+2025-08-04 18:21:12,266 - INFO - Enhanced Classification: "Trump’s former jobs data chief decries firing of s..." -> Technology (scores: Technology: 3.0, Science: 0.9)
+2025-08-04 18:21:12,266 - INFO - Enhanced Classification: "Iran’s currency has plunged so much in value that ..." -> Finance (scores: Finance: 3.5, Technology: 3.0)
+2025-08-04 18:21:12,266 - INFO - Enhanced Classification: "Wall Street’s view of a ‘Kevlar economy’ has just ..." -> Technology (scores: Technology: 6.0, Environment: 3.8, Finance: 1.8)
+2025-08-04 18:21:12,266 - INFO - Enhanced Classification: "US trade advisor says Trump tariff rates are ‘pret..." -> Technology (scores: Technology: 3.0, Environment: 3.0)
+2025-08-04 18:21:12,266 - INFO - Enhanced Classification: "Top economist Brad DeLong to recent college grads:..." -> Technology (scores: Technology: 3.5, Education: 3.5, Finance: 1.8)
+2025-08-04 18:21:12,266 - INFO - Enhanced Classification: "Top economist warns the U.S. is ‘on the precipice ..." -> Finance (scores: Finance: 7.0, Technology: 3.0, Environment: 0.8)
+2025-08-04 18:21:12,266 - INFO - Enhanced Classification: "Erika McEntarfer, the BLS head fired by Trump, got..." -> Politics (scores: Politics: 4.8, Technology: 3.0, Entertainment: 1.5)
+2025-08-04 18:21:12,266 - INFO - Enhanced Classification: "Dozens of migrants die in boat capsize off Yemen..." -> Environment (scores: Environment: 4.8, Technology: 3.0)
+2025-08-04 18:21:12,266 - INFO - Enhanced Classification: "World leaders condemn videos of emaciated Israeli ..." -> Technology (scores: Technology: 6.0)
+2025-08-04 18:21:12,266 - INFO - Enhanced Classification: "Israeli minister sparks anger by praying at sensit..." -> Technology (scores: Technology: 3.0, Politics: 1.8)
+2025-08-04 18:21:12,266 - INFO - Enhanced Classification: "Democrats flee Texas to block Republican redistric..." -> Politics (scores: Politics: 6.5)
+2025-08-04 18:21:12,266 - INFO - Enhanced Classification: "Russian volcano erupts for first time in more than..." -> Technology (scores: Technology: 3.0, Entertainment: 1.5)
+2025-08-04 18:21:12,267 - INFO - Enhanced Classification: "Boeing defence workers go on strike in new blow to..." -> Technology (scores: Technology: 6.0, Politics: 3.0, Education: 1.5)
+2025-08-04 18:21:12,267 - INFO - Enhanced Classification: "F1 tycoon pleads guilty in rare Singapore corrupti..." -> Technology (scores: Technology: 6.0, Travel: 3.5, Politics: 1.8)
+2025-08-04 18:21:12,267 - INFO - Enhanced Classification: "Chile rescuers find body of last trapped miner - f..." -> Technology (scores: Technology: 4.5, Entertainment: 1.5)
+2025-08-04 18:21:12,267 - INFO - Enhanced Classification: "Ukraine drone attack causes fire at Sochi oil depo..." -> Technology (scores: Technology: 3.0)
+2025-08-04 18:21:12,267 - INFO - Enhanced Classification: "Manhunt intensifies for Montana bar shooting suspe..." -> Technology (scores: Technology: 3.0, Entertainment: 1.5)
+2025-08-04 18:21:12,267 - INFO - Enhanced Classification: "Aid group says worker killed by Israeli military i..." -> Technology (scores: Technology: 6.0, Environment: 3.0)
+2025-08-04 18:21:12,267 - INFO - Enhanced Classification: "New Zealand woman arrested after two-year-old foun..." -> Technology (scores: Technology: 6.0)
+2025-08-04 18:21:12,267 - INFO - Enhanced Classification: "Tens of thousands turn out for Sydney pro-Palestin..." -> Technology (scores: Technology: 3.0, Politics: 3.0)
+2025-08-04 18:21:12,267 - INFO - Enhanced Classification: "Watch: How many pull-ups can you do? Trump revives..." -> Education (scores: Education: 7.0, Technology: 3.0, Environment: 3.0)
+2025-08-04 18:21:12,267 - INFO - Enhanced Classification: "Secret filming exposes the 'madams' involved in Ke..." -> Entertainment (scores: Entertainment: 3.0, Environment: 3.0)
+2025-08-04 18:21:12,267 - INFO - Enhanced Classification: "Mission begins to save snails threatened by own be..." -> Technology (scores: Technology: 6.0, Science: 3.0, Environment: 3.0)
+2025-08-04 18:21:12,267 - INFO - Enhanced Classification: "The big fat 'fake' Indian wedding - Gen Z's latest..." -> Technology (scores: Technology: 3.0, Entertainment: 1.5, Education: 1.5)
+2025-08-04 18:21:12,267 - INFO - Enhanced Classification: "Hackers, secret cables and security fears: The exp..." -> Technology (scores: Technology: 7.5, Politics: 1.8)
+2025-08-04 18:21:12,267 - INFO - Enhanced Classification: "'I felt an unspoken pressure to smile' - Kenyan wo..." -> General (scores: )
+2025-08-04 18:21:12,268 - INFO - Enhanced Classification: "Melting glaciers threaten to wipe out European vil..." -> Technology (scores: Technology: 6.0)
+2025-08-04 18:21:12,268 - INFO - Enhanced Classification: "Trump pleads not guilty to 34 felony counts..." -> Technology (scores: Technology: 6.0, Sports: 0.8)
+2025-08-04 18:21:12,268 - INFO - Enhanced Classification: "Haberman reveals why Trump attacked judge and his ..." -> Technology (scores: Technology: 6.0, Travel: 3.5, Environment: 3.0)
+2025-08-04 18:21:12,268 - INFO - Enhanced Classification: "What to know about the Trump indictment on the eve..." -> Technology (scores: Technology: 7.5, Environment: 3.0, Sports: 0.8)
+2025-08-04 18:21:12,268 - INFO - Enhanced Classification: "READ: Trump indictment related to hush money payme..." -> Technology (scores: Technology: 6.0, Sports: 0.8)
+2025-08-04 18:21:12,268 - INFO - Enhanced Classification: "Russian authorities detain suspect over St. Peters..." -> Technology (scores: Technology: 6.0, Sports: 0.8)
+2025-08-04 18:21:12,268 - INFO - Enhanced Classification: "Video shows moment of deadly explosion at cafe in ..." -> Technology (scores: Technology: 6.0, Entertainment: 1.5)
+2025-08-04 18:21:12,268 - INFO - Enhanced Classification: "Wall Street Journal reporter Evan Gershkovich appe..." -> Technology (scores: Technology: 7.5, Science: 3.5, Environment: 3.0)
+2025-08-04 18:21:12,268 - INFO - Enhanced Classification: "Suspected Chinese spy balloon was able to transmit..." -> Technology (scores: Technology: 3.0)
+2025-08-04 18:21:12,268 - INFO - Enhanced Classification: "Beijing promised to 'fight back' over Taiwan leade..." -> Politics (scores: Politics: 7.0, Technology: 6.0, Environment: 3.0)
+2025-08-04 18:21:12,268 - INFO - Enhanced Classification: "'Scary, cold, hungry and lonely': Volunteer soldie..." -> Health (scores: Health: 3.2, Technology: 3.0, Finance: 1.5)
+2025-08-04 18:21:12,268 - INFO - Enhanced Classification: "The four astronauts NASA picked for the first crew..." -> Technology (scores: Technology: 6.0, Environment: 3.0, Science: 1.8)
+2025-08-04 18:21:12,268 - INFO - Enhanced Classification: "French minister under fire for Playboy magazine co..." -> Technology (scores: Technology: 4.5, Politics: 3.5, Entertainment: 1.5)
+2025-08-04 18:21:12,269 - INFO - Enhanced Classification: "Why did Finland's PM lose? Reporter explains the k..." -> Politics (scores: Politics: 15.8, Technology: 6.0, Sports: 3.5)
+2025-08-04 18:21:12,269 - INFO - Enhanced Classification: "Britain's pound is beating every other major curre..." -> Technology (scores: Technology: 6.0, Politics: 4.8, Environment: 3.8)
+2025-08-04 18:21:12,269 - INFO - Enhanced Classification: "Finland's Prime Minister Sanna Marin concedes elec..." -> Politics (scores: Politics: 11.2, Technology: 6.0, Sports: 3.5)
+2025-08-04 18:21:12,269 - INFO - Enhanced Classification: "Hundreds of millions at risk from Chinese shopping..." -> Technology (scores: Technology: 7.8, Sports: 0.8)
+2025-08-04 18:21:12,269 - INFO - Enhanced Classification: "The $500 billion beauty industry's 'green' ambitio..." -> Technology (scores: Technology: 7.5, Environment: 6.1, Politics: 3.0)
+2025-08-04 18:21:12,269 - INFO - Enhanced Classification: "A new approach to a Covid-19 nasal vaccine shows e..." -> Health (scores: Health: 10.5, Technology: 4.5, Science: 4.5)
+2025-08-04 18:21:12,269 - INFO - Enhanced Classification: "Video shows moment man throws yogurt on two women ..." -> Technology (scores: Technology: 7.5, Entertainment: 1.8)
+2025-08-04 18:21:12,269 - INFO - Enhanced Classification: "Israeli military veterans, a backbone of protest m..." -> Technology (scores: Technology: 3.0, Education: 1.5)
+2025-08-04 18:21:12,269 - INFO - Enhanced Classification: "Apple might be building its own AI ‘answer engine’..." -> Technology (scores: Technology: 8.5)
+2025-08-04 18:21:12,269 - INFO - Enhanced Classification: "Mastercard denies pressuring game platforms, Valve..." -> Technology (scores: Technology: 4.5, Sports: 1.8, Finance: 1.5)
+2025-08-04 18:21:12,269 - INFO - Enhanced Classification: "SAP is acquiring SmartRecruiters..." -> Technology (scores: Technology: 4.8, Entertainment: 1.5)
+2025-08-04 18:21:12,269 - INFO - Enhanced Classification: "Inside OpenAI’s quest to make AI do anything for y..." -> Technology (scores: Technology: 12.3, Environment: 3.0)
+2025-08-04 18:21:12,270 - INFO - Enhanced Classification: "The uproar over Vogue’s AI-generated ad isn’t just..." -> Technology (scores: Technology: 9.8, Environment: 3.0)
+2025-08-04 18:21:12,270 - INFO - Enhanced Classification: "Tim Cook reportedly tells employees Apple ‘must’ w..." -> Technology (scores: Technology: 6.8)
+2025-08-04 18:21:12,270 - INFO - Enhanced Classification: "Lina Khan points to Figma IPO as vindication of M&..." -> Technology (scores: Technology: 7.7, Finance: 3.8, Entertainment: 1.5)
+2025-08-04 18:21:12,270 - INFO - Enhanced Classification: "Anthropic cuts off OpenAI’s access to its Claude m..." -> Technology (scores: Technology: 5.2, Environment: 3.0)
+2025-08-04 18:21:12,270 - INFO - Enhanced Classification: "What founders should think about if looking to rai..." -> Technology (scores: Technology: 7.5, Entertainment: 3.2)
+2025-08-04 18:21:12,270 - INFO - Enhanced Classification: "Venture firm CRV raises $750M, downsizing after re..." -> Technology (scores: Technology: 6.9, Finance: 1.5)
+2025-08-04 18:21:12,270 - INFO - Enhanced Classification: "Kleiner Perkins is having a very good week..." -> Technology (scores: Technology: 3.8, Entertainment: 1.5)
+2025-08-04 18:21:12,270 - INFO - Enhanced Classification: "A backlog at the Commerce Department is reportedly..." -> Technology (scores: Technology: 3.0, Finance: 3.0, Environment: 3.0)
+2025-08-04 18:21:12,270 - INFO - Enhanced Classification: "Tesla partly liable in Florida Autopilot trial, ju..." -> Technology (scores: Technology: 11.0, Entertainment: 1.5)
+2025-08-04 18:21:12,270 - INFO - Enhanced Classification: "Google bets on STAN, an Indian social gaming platf..." -> Technology (scores: Technology: 8.0, Entertainment: 2.4, Finance: 1.8)
+2025-08-04 18:21:12,270 - INFO - Enhanced Classification: "Nintendo raising original Switch console prices du..." -> Technology (scores: Technology: 6.0, Politics: 3.5, Finance: 1.8)
+2025-08-04 18:21:12,270 - INFO - Enhanced Classification: "More details emerge on how Windsurf’s VCs and foun..." -> Technology (scores: Technology: 5.5, Politics: 3.0)
+2025-08-04 18:21:12,271 - INFO - Enhanced Classification: "Fundamental Research Labs nabs $30M+ to build AI a..." -> Technology (scores: Technology: 6.5, Science: 3.5, Entertainment: 0.9)
+2025-08-04 18:21:12,271 - INFO - Enhanced Classification: "Sex toy maker Lovense threatens legal action after..." -> Technology (scores: Technology: 4.8, Science: 0.9, Politics: 0.8)
+2025-08-04 18:21:12,271 - INFO - Enhanced Classification: "Truecaller’s call-recording feature won’t work on ..." -> Technology (scores: Technology: 9.2, Environment: 3.8, Finance: 1.8)
+2025-08-04 18:21:12,271 - INFO - Enhanced Classification: "TikTok launches ‘TikTok Pro’ in Europe with built-..." -> Technology (scores: Technology: 4.8, Education: 1.8)
+INFO:     192.168.11.60:50819 - "POST /api/auto-pick HTTP/1.1" 200 OK
+INFO:     192.168.11.60:50818 - "GET /api/playlists HTTP/1.1" 200 OK
+INFO:     192.168.11.60:50757 - "GET /api/user/profile HTTP/1.1" 200 OK
+INFO:     192.168.11.60:50757 - "GET /api/rss-sources HTTP/1.1" 200 OK
+INFO:     192.168.11.60:50757 - "GET /api/rss-sources HTTP/1.1" 200 OK
+INFO:     192.168.11.60:50757 - "GET /api/rss-sources HTTP/1.1" 200 OK
+2025-08-04 18:21:18,099 - INFO - Using cached feed for Reuters Business
+2025-08-04 18:21:18,099 - INFO - Fetched 0 articles before filtering.
+INFO:     192.168.11.60:50757 - "GET /api/articles?source=Reuters+Business HTTP/1.1" 200 OK
+INFO:     192.168.11.60:50757 - "GET /api/rss-sources HTTP/1.1" 200 OK
+2025-08-04 18:21:18,841 - INFO - Using cached feed for Bloomberg
+2025-08-04 18:21:18,841 - INFO - Enhanced Classification: "(EMBARGO TUE AUG 4, 2300HK)  JAPANESE DIGITAL CHUN..." -> Technology (scores: Technology: 4.8)
+2025-08-04 18:21:18,842 - INFO - Enhanced Classification: "US Eco Data ‘Conflicting, Confusing’: Principal’s ..." -> Finance (scores: Finance: 8.4, Technology: 3.0, Science: 0.9)
+2025-08-04 18:21:18,843 - INFO - Enhanced Classification: "EU Awaits Trump Actions on Its Car Tariffs, Exempt..." -> Technology (scores: Technology: 6.0, Politics: 3.5, Environment: 3.0)
+2025-08-04 18:21:18,843 - INFO - Enhanced Classification: "UBS Plans SRT Deal Out of Program Inherited From C..." -> Finance (scores: Finance: 6.5, Technology: 3.0, Politics: 1.8)
+2025-08-04 18:21:18,843 - INFO - Enhanced Classification: "Metlen’s Shares Rise in Thin London Debut After At..." -> Finance (scores: Finance: 5.2, Technology: 4.5, Environment: 0.9)
+2025-08-04 18:21:18,844 - INFO - Enhanced Classification: "Hong Kong’s New Listing Rules Seen as Helping Hot ..." -> Technology (scores: Technology: 3.0, Finance: 1.8, Education: 1.5)
+2025-08-04 18:21:18,844 - INFO - Enhanced Classification: "Stocks Rebound as Traders Bet on Fed Rate Cuts: Ma..." -> Finance (scores: Finance: 11.8, Technology: 3.0, Science: 0.9)
+2025-08-04 18:21:18,844 - INFO - Enhanced Classification: "UK Lenders Jump on Motor Court Finance Ruling..." -> Finance (scores: Finance: 3.2, Technology: 3.0, Environment: 3.0)
+2025-08-04 18:21:18,845 - INFO - Enhanced Classification: "Citi’s Gold Bears Turn Bullish on US Growth, Infla..." -> Finance (scores: Finance: 5.2, Environment: 3.8, Technology: 3.0)
+2025-08-04 18:21:18,845 - INFO - Enhanced Classification: "Swiss Pharmaceuticals React to Trump’s 39% Tariffs..." -> Technology (scores: Technology: 3.0, Health: 1.5)
+2025-08-04 18:21:18,845 - INFO - Fetched 10 articles before filtering.
+INFO:     192.168.11.60:50757 - "GET /api/articles?source=Bloomberg HTTP/1.1" 200 OK
+INFO:     192.168.11.60:50757 - "GET /api/rss-sources HTTP/1.1" 200 OK
+INFO:     192.168.11.60:50757 - "GET /api/rss-sources HTTP/1.1" 200 OK
+2025-08-04 18:21:21,931 - INFO - Using cached feed for Reuters World
+2025-08-04 18:21:21,931 - INFO - Fetched 0 articles before filtering.
+INFO:     192.168.11.60:50757 - "GET /api/articles?source=Reuters+World HTTP/1.1" 200 OK
+INFO:     192.168.11.60:50757 - "GET /api/rss-sources HTTP/1.1" 200 OK
+2025-08-04 18:21:24,372 - INFO - Using cached feed for BBC World
+2025-08-04 18:21:24,372 - INFO - Enhanced Classification: "Dozens of migrants die in boat capsize off Yemen..." -> Environment (scores: Environment: 4.8, Technology: 3.0)
+2025-08-04 18:21:24,372 - INFO - Enhanced Classification: "World leaders condemn videos of emaciated Israeli ..." -> Technology (scores: Technology: 6.0)
+2025-08-04 18:21:24,372 - INFO - Enhanced Classification: "Israeli minister sparks anger by praying at sensit..." -> Technology (scores: Technology: 3.0, Politics: 1.8)
+2025-08-04 18:21:24,372 - INFO - Enhanced Classification: "Democrats flee Texas to block Republican redistric..." -> Politics (scores: Politics: 6.5)
+2025-08-04 18:21:24,373 - INFO - Enhanced Classification: "Russian volcano erupts for first time in more than..." -> Technology (scores: Technology: 3.0, Entertainment: 1.5)
+2025-08-04 18:21:24,373 - INFO - Enhanced Classification: "Boeing defence workers go on strike in new blow to..." -> Technology (scores: Technology: 6.0, Politics: 3.0, Education: 1.5)
+2025-08-04 18:21:24,373 - INFO - Enhanced Classification: "F1 tycoon pleads guilty in rare Singapore corrupti..." -> Technology (scores: Technology: 6.0, Travel: 3.5, Politics: 1.8)
+2025-08-04 18:21:24,373 - INFO - Enhanced Classification: "Chile rescuers find body of last trapped miner - f..." -> Technology (scores: Technology: 4.5, Entertainment: 1.5)
+2025-08-04 18:21:24,373 - INFO - Enhanced Classification: "Ukraine drone attack causes fire at Sochi oil depo..." -> Technology (scores: Technology: 3.0)
+2025-08-04 18:21:24,373 - INFO - Enhanced Classification: "Manhunt intensifies for Montana bar shooting suspe..." -> Technology (scores: Technology: 3.0, Entertainment: 1.5)
+2025-08-04 18:21:24,373 - INFO - Fetched 10 articles before filtering.
+INFO:     192.168.11.60:50757 - "GET /api/articles?source=BBC+World HTTP/1.1" 200 OK
+WARNING:  StatReload detected changes in 'models/__init__.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+2025-08-04 18:22:21,304 - INFO - Disconnected from MongoDB
+INFO:     Application shutdown complete.
+INFO:     Finished server process [70643]
+INFO:     Started server process [71024]
+INFO:     Waiting for application startup.
+2025-08-04 18:22:22,982 - INFO - Connected to MongoDB successfully
+2025-08-04 18:22:23,264 - INFO - Database indexes created successfully
+2025-08-04 18:22:23,283 - INFO - Found 5 existing preset categories
+2025-08-04 18:22:23,283 - INFO - Preset categories initialized successfully
+2025-08-04 18:22:23,283 - INFO - Cleanup tasks completed
+INFO:     Application startup complete.
+WARNING:  StatReload detected changes in 'services/__init__.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+2025-08-04 18:28:07,761 - INFO - Disconnected from MongoDB
+INFO:     Application shutdown complete.
+INFO:     Finished server process [71024]
+INFO:     Started server process [71230]
+INFO:     Waiting for application startup.
+2025-08-04 18:28:09,187 - INFO - Connected to MongoDB successfully
+2025-08-04 18:28:09,459 - INFO - Database indexes created successfully
+2025-08-04 18:28:09,474 - INFO - Found 5 existing preset categories
+2025-08-04 18:28:09,474 - INFO - Preset categories initialized successfully
+2025-08-04 18:28:09,474 - INFO - Cleanup tasks completed
+INFO:     Application startup complete.
+WARNING:  StatReload detected changes in 'routers/__init__.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+2025-08-04 18:30:28,603 - INFO - Disconnected from MongoDB
+INFO:     Application shutdown complete.
+INFO:     Finished server process [71230]
+INFO:     Started server process [71332]
+INFO:     Waiting for application startup.
+2025-08-04 18:30:30,179 - INFO - Connected to MongoDB successfully
+2025-08-04 18:30:30,419 - INFO - Database indexes created successfully
+2025-08-04 18:30:30,433 - INFO - Found 5 existing preset categories
+2025-08-04 18:30:30,433 - INFO - Preset categories initialized successfully
+2025-08-04 18:30:30,433 - INFO - Cleanup tasks completed
+INFO:     Application startup complete.
+WARNING:  StatReload detected changes in 'server.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+2025-08-04 18:37:08,776 - INFO - Disconnected from MongoDB
+INFO:     Application shutdown complete.
+INFO:     Finished server process [71332]
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+    from multiprocessing.spawn import spawn_main; spawn_main(tracker_fd=5, pipe_handle=7)
+                                                  ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.13/3.13.5/Frameworks/Python.framework/Versions/3.13/lib/python3.13/multiprocessing/spawn.py", line 122, in spawn_main
+    exitcode = _main(fd, parent_sentinel)
+  File "/opt/homebrew/Cellar/python@3.13/3.13.5/Frameworks/Python.framework/Versions/3.13/lib/python3.13/multiprocessing/spawn.py", line 131, in _main
+    prepare(preparation_data)
+    ~~~~~~~^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.13/3.13.5/Frameworks/Python.framework/Versions/3.13/lib/python3.13/multiprocessing/spawn.py", line 246, in prepare
+    _fixup_main_from_path(data['init_main_from_path'])
+    ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.13/3.13.5/Frameworks/Python.framework/Versions/3.13/lib/python3.13/multiprocessing/spawn.py", line 297, in _fixup_main_from_path
+    main_content = runpy.run_path(main_path,
+                                  run_name="__mp_main__")
+  File "<frozen runpy>", line 287, in run_path
+  File "<frozen runpy>", line 98, in _run_module_code
+  File "<frozen runpy>", line 88, in _run_code
+  File "/Users/hori/Desktop/audion_project_final/Audion_Emergent.AI_Demo/backend/server.py", line 21, in <module>
+    from routers import routers
+  File "/Users/hori/Desktop/audion_project_final/Audion_Emergent.AI_Demo/backend/routers/__init__.py", line 5, in <module>
+    from .auth import router as auth_router
+  File "/Users/hori/Desktop/audion_project_final/Audion_Emergent.AI_Demo/backend/routers/auth.py", line 11, in <module>
+    from services.auth_service import authenticate_user, create_user, create_jwt_token, get_current_user
+  File "/Users/hori/Desktop/audion_project_final/Audion_Emergent.AI_Demo/backend/services/__init__.py", line 6, in <module>
+    from .auth_service import (
+    ...<2 lines>...
+    )
+  File "/Users/hori/Desktop/audion_project_final/Audion_Emergent.AI_Demo/backend/services/auth_service.py", line 6, in <module>
+    import jwt
+  File "/Users/hori/Desktop/audion_project_final/Audion_Emergent.AI_Demo/backend/venv/lib/python3.13/site-packages/jwt/__init__.py", line 1, in <module>
+    from .api_jwk import PyJWK, PyJWKSet
+  File "/Users/hori/Desktop/audion_project_final/Audion_Emergent.AI_Demo/backend/venv/lib/python3.13/site-packages/jwt/api_jwk.py", line 7, in <module>
+    from .algorithms import get_default_algorithms, has_crypto, requires_cryptography
+  File "/Users/hori/Desktop/audion_project_final/Audion_Emergent.AI_Demo/backend/venv/lib/python3.13/site-packages/jwt/algorithms.py", line 11, in <module>
+    from .utils import (
+    ...<9 lines>...
+    )
+  File "/Users/hori/Desktop/audion_project_final/Audion_Emergent.AI_Demo/backend/venv/lib/python3.13/site-packages/jwt/utils.py", line 7, in <module>
+    from cryptography.hazmat.primitives.asymmetric.ec import EllipticCurve
+  File "/Users/hori/Desktop/audion_project_final/Audion_Emergent.AI_Demo/backend/venv/lib/python3.13/site-packages/cryptography/hazmat/primitives/asymmetric/ec.py", line 11, in <module>
+    from cryptography.exceptions import UnsupportedAlgorithm, _Reasons
+  File "/Users/hori/Desktop/audion_project_final/Audion_Emergent.AI_Demo/backend/venv/lib/python3.13/site-packages/cryptography/exceptions.py", line 9, in <module>
+    from cryptography.hazmat.bindings._rust import exceptions as rust_exceptions
+ImportError: cannot import name 'exceptions' from 'cryptography.hazmat.bindings._rust' (/Users/hori/Desktop/audion_project_final/Audion_Emergent.AI_Demo/backend/venv/lib/python3.13/site-packages/cryptography/hazmat/bindings/_rust/__init__.py)
+WARNING:  StatReload detected changes in 'server.py'. Reloading...
+INFO:     Started server process [98817]
+INFO:     Waiting for application startup.
+2025-08-05 10:50:10,574 - INFO - Connected to MongoDB successfully
+2025-08-05 10:50:10,743 - INFO - Database indexes created successfully
+2025-08-05 10:50:10,756 - INFO - Found 5 existing preset categories
+2025-08-05 10:50:10,756 - INFO - Preset categories initialized successfully
+2025-08-05 10:50:10,756 - INFO - Cleanup tasks completed
+INFO:     Application startup complete.
+INFO:      - "OPTIONS /api/rss-sources HTTP/1.1" 200 OK
+WARNING:  StatReload detected changes in 'server.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+2025-08-05 14:20:26,192 - INFO - Disconnected from MongoDB
+INFO:     Application shutdown complete.
+INFO:     Finished server process [98817]
+INFO:     Started server process [8387]
+INFO:     Waiting for application startup.
+2025-08-05 14:20:27,706 - INFO - Connected to MongoDB successfully
+2025-08-05 14:20:28,079 - INFO - Database indexes created successfully
+2025-08-05 14:20:28,099 - INFO - Found 5 existing preset categories
+2025-08-05 14:20:28,099 - INFO - Preset categories initialized successfully
+2025-08-05 14:20:28,099 - INFO - Cleanup tasks completed
+INFO:     Application startup complete.
+WARNING:  StatReload detected changes in 'server.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+2025-08-07 13:19:24,837 - INFO - Disconnected from MongoDB
+INFO:     Application shutdown complete.
+INFO:     Finished server process [8387]
+INFO:     Started server process [28622]
+INFO:     Waiting for application startup.
+2025-08-07 13:19:25,892 - ERROR - Failed to connect to MongoDB: no nameservers
+2025-08-07 13:19:25,892 - INFO - Server will run in limited mode without database
+2025-08-07 13:19:25,892 - INFO - Skipping database initialization - running in limited mode
+INFO:     Application startup complete.
+WARNING:  StatReload detected changes in 'server.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+ERROR:    Traceback (most recent call last):
+  File "/Users/hori/Desktop/audion_project_final/Audion_Emergent.AI_Demo/backend/venv/lib/python3.13/site-packages/starlette/routing.py", line 732, in lifespan
+    async with self.lifespan_context(app) as maybe_state:
+               ~~~~~~~~~~~~~~~~~~~~~^^^^^
+  File "/opt/homebrew/Cellar/python@3.13/3.13.5/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py", line 221, in __aexit__
+    await anext(self.gen)
+  File "/Users/hori/Desktop/audion_project_final/Audion_Emergent.AI_Demo/backend/server.py", line 109, in lifespan
+    client.close()
+    ^^^^^^
+UnboundLocalError: cannot access local variable 'client' where it is not associated with a value
+
+ERROR:    Application shutdown failed. Exiting.
+INFO:     Finished server process [28622]
+INFO:     Started server process [28739]
+INFO:     Waiting for application startup.
+2025-08-07 13:33:23,007 - ERROR - Failed to connect to MongoDB: no nameservers
+2025-08-07 13:33:23,007 - INFO - Server will run in limited mode without database
+2025-08-07 13:33:23,007 - INFO - Skipping database initialization - running in limited mode
+INFO:     Application startup complete.
+WARNING:  StatReload detected changes in 'server.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+ERROR:    Traceback (most recent call last):
+  File "/Users/hori/Desktop/audion_project_final/Audion_Emergent.AI_Demo/backend/venv/lib/python3.13/site-packages/starlette/routing.py", line 732, in lifespan
+    async with self.lifespan_context(app) as maybe_state:
+               ~~~~~~~~~~~~~~~~~~~~~^^^^^
+  File "/opt/homebrew/Cellar/python@3.13/3.13.5/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py", line 221, in __aexit__
+    await anext(self.gen)
+  File "/Users/hori/Desktop/audion_project_final/Audion_Emergent.AI_Demo/backend/server.py", line 109, in lifespan
+    client.close()
+    ^^^^^^
+UnboundLocalError: cannot access local variable 'client' where it is not associated with a value
+
+ERROR:    Application shutdown failed. Exiting.
+INFO:     Finished server process [28739]
+INFO:     Started server process [28943]
+INFO:     Waiting for application startup.
+2025-08-07 13:34:51,546 - INFO - Connected to MongoDB successfully
+2025-08-07 13:34:52,077 - INFO - Database indexes created successfully
+2025-08-07 13:34:52,125 - INFO - Found 5 existing preset categories
+2025-08-07 13:34:52,125 - INFO - Preset categories initialized successfully
+2025-08-07 13:34:52,125 - INFO - Cleanup tasks completed
+INFO:     Application startup complete.
+WARNING:  StatReload detected changes in 'server.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+2025-08-07 13:35:13,086 - INFO - Disconnected from MongoDB
+INFO:     Application shutdown complete.
+INFO:     Finished server process [28943]
+INFO:     Started server process [29025]
+INFO:     Waiting for application startup.
+2025-08-07 13:35:14,816 - INFO - Connected to MongoDB successfully
+2025-08-07 13:35:15,387 - INFO - Database indexes created successfully
+2025-08-07 13:35:15,442 - INFO - Found 5 existing preset categories
+2025-08-07 13:35:15,442 - INFO - Preset categories initialized successfully
+2025-08-07 13:35:15,442 - INFO - Cleanup tasks completed
+INFO:     Application startup complete.
+WARNING:  StatReload detected changes in 'server.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+2025-08-07 13:35:27,872 - INFO - Disconnected from MongoDB
+INFO:     Application shutdown complete.
+INFO:     Finished server process [29025]
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+    from multiprocessing.spawn import spawn_main; spawn_main(tracker_fd=5, pipe_handle=7)
+                                                  ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.13/3.13.5/Frameworks/Python.framework/Versions/3.13/lib/python3.13/multiprocessing/spawn.py", line 122, in spawn_main
+    exitcode = _main(fd, parent_sentinel)
+  File "/opt/homebrew/Cellar/python@3.13/3.13.5/Frameworks/Python.framework/Versions/3.13/lib/python3.13/multiprocessing/spawn.py", line 131, in _main
+    prepare(preparation_data)
+    ~~~~~~~^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.13/3.13.5/Frameworks/Python.framework/Versions/3.13/lib/python3.13/multiprocessing/spawn.py", line 246, in prepare
+    _fixup_main_from_path(data['init_main_from_path'])
+    ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.13/3.13.5/Frameworks/Python.framework/Versions/3.13/lib/python3.13/multiprocessing/spawn.py", line 297, in _fixup_main_from_path
+    main_content = runpy.run_path(main_path,
+                                  run_name="__mp_main__")
+  File "<frozen runpy>", line 286, in run_path
+  File "<frozen runpy>", line 259, in _get_code_from_file
+  File "/Users/hori/Desktop/audion_project_final/Audion_Emergent.AI_Demo/backend/server.py", line 1140
+    logging.info(f"Audio creation approved: {article_count} articles for user {current_user.id} (plan: {usage_info['plan']})")
+    ^^^^^^^
+SyntaxError: expected 'except' or 'finally' block
+WARNING:  StatReload detected changes in 'server.py'. Reloading...
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+    from multiprocessing.spawn import spawn_main; spawn_main(tracker_fd=5, pipe_handle=7)
+                                                  ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.13/3.13.5/Frameworks/Python.framework/Versions/3.13/lib/python3.13/multiprocessing/spawn.py", line 122, in spawn_main
+    exitcode = _main(fd, parent_sentinel)
+  File "/opt/homebrew/Cellar/python@3.13/3.13.5/Frameworks/Python.framework/Versions/3.13/lib/python3.13/multiprocessing/spawn.py", line 131, in _main
+    prepare(preparation_data)
+    ~~~~~~~^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.13/3.13.5/Frameworks/Python.framework/Versions/3.13/lib/python3.13/multiprocessing/spawn.py", line 246, in prepare
+    _fixup_main_from_path(data['init_main_from_path'])
+    ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.13/3.13.5/Frameworks/Python.framework/Versions/3.13/lib/python3.13/multiprocessing/spawn.py", line 297, in _fixup_main_from_path
+    main_content = runpy.run_path(main_path,
+                                  run_name="__mp_main__")
+  File "<frozen runpy>", line 286, in run_path
+  File "<frozen runpy>", line 259, in _get_code_from_file
+  File "/Users/hori/Desktop/audion_project_final/Audion_Emergent.AI_Demo/backend/server.py", line 1140
+    logging.info(f"Audio creation approved: {article_count} articles for user {current_user.id} (plan: {usage_info['plan']})")
+    ^^^^^^^
+SyntaxError: expected 'except' or 'finally' block
+WARNING:  StatReload detected changes in 'server.py'. Reloading...
+INFO:     Started server process [29152]
+INFO:     Waiting for application startup.
+2025-08-07 13:35:48,023 - INFO - Connected to MongoDB successfully
+2025-08-07 13:35:48,497 - INFO - Database indexes created successfully
+2025-08-07 13:35:48,551 - INFO - Found 5 existing preset categories
+2025-08-07 13:35:48,552 - INFO - Preset categories initialized successfully
+2025-08-07 13:35:48,552 - INFO - Cleanup tasks completed
+INFO:     Application startup complete.
+WARNING:  StatReload detected changes in 'server.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+2025-08-07 13:41:43,586 - INFO - Disconnected from MongoDB
+INFO:     Application shutdown complete.
+INFO:     Finished server process [29152]
+INFO:     Started server process [30669]
+INFO:     Waiting for application startup.
+2025-08-07 13:41:45,337 - INFO - Connected to MongoDB successfully
+2025-08-07 13:41:45,874 - INFO - Database indexes created successfully
+2025-08-07 13:41:45,924 - INFO - Found 5 existing preset categories
+2025-08-07 13:41:45,924 - INFO - Preset categories initialized successfully
+2025-08-07 13:41:45,924 - INFO - Cleanup tasks completed
+INFO:     Application startup complete.
+WARNING:  StatReload detected changes in 'server.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+2025-08-07 13:41:58,009 - INFO - Disconnected from MongoDB
+INFO:     Application shutdown complete.
+INFO:     Finished server process [30669]
+INFO:     Started server process [30699]
+INFO:     Waiting for application startup.
+2025-08-07 13:41:59,639 - INFO - Connected to MongoDB successfully
+2025-08-07 13:42:00,217 - INFO - Database indexes created successfully
+2025-08-07 13:42:00,261 - INFO - Found 5 existing preset categories
+2025-08-07 13:42:00,261 - INFO - Preset categories initialized successfully
+2025-08-07 13:42:00,261 - INFO - Cleanup tasks completed
+INFO:     Application startup complete.

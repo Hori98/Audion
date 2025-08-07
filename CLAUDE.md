@@ -44,7 +44,7 @@ python -m venv venv           # Create virtual environment
 source venv/bin/activate      # Activate virtual environment (macOS/Linux)
 pip install -r backend/requirements.txt  # Install dependencies
 cd backend
-uvicorn server:app --reload --port 8001   # Start development server
+uvicorn server:app --reload --port 8003   # Start development server (Claude AI testing)
 ```
 
 ### Testing

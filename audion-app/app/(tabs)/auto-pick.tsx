@@ -25,6 +25,7 @@ import LoadingIndicator from '../../components/LoadingIndicator';
 import LoadingButton from '../../components/LoadingButton';
 import CacheService from '../../services/CacheService';
 import { ErrorHandlingService } from '../../services/ErrorHandlingService';
+import AudioLimitService from '../../services/AudioLimitService';
 
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:8000';
 const API = `${BACKEND_URL}/api`;
@@ -71,6 +72,9 @@ export default function AutoPickScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [excludedArticles, setExcludedArticles] = useState<Set<string>>(new Set());
   const [shuffling, setShuffling] = useState(false);
+  const [likedArticles, setLikedArticles] = useState<Set<string>>(new Set());
+  const [dislikedArticles, setDislikedArticles] = useState<Set<string>>(new Set());
+  const [maxAudioArticles, setMaxAudioArticles] = useState<number>(3);
 
   const genres = [
     'Technology', 'Finance', 'Sports', 'Politics', 'Health',
@@ -84,9 +88,22 @@ export default function AutoPickScreen() {
         // fetchUserInsights(); // Commented out as unused
         // Use smart caching that validates against current active sources
         fetchAutoPickedArticles();
+        loadUserSubscriptionInfo();
       }
     }, [token])
   );
+
+  const loadUserSubscriptionInfo = async () => {
+    if (!token) return;
+    
+    try {
+      const maxArticles = await AudioLimitService.getMaxArticlesForUser(token);
+      setMaxAudioArticles(maxArticles);
+    } catch (error) {
+      console.error('Failed to load subscription info:', error);
+      setMaxAudioArticles(3); // Default fallback
+    }
+  };
 
   const fetchUserProfile = async () => {
     try {
@@ -229,38 +246,119 @@ export default function AutoPickScreen() {
 
   const handleLikeArticle = async (article: Article) => {
     try {
-      await axios.post(
-        `${API}/user-interaction`,
-        {
-          article_id: article.id,
-          interaction_type: 'liked',
-          genre: article.genre
-        },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      Alert.alert('Success', 'Your preference has been recorded!');
+      const isCurrentlyLiked = likedArticles.has(article.id);
+      
+      if (isCurrentlyLiked) {
+        // Cancel like - remove from liked articles
+        setLikedArticles(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(article.id);
+          return newSet;
+        });
+        
+        // Send cancel interaction to backend
+        await axios.post(
+          `${API}/user-interaction`,
+          {
+            article_id: article.id,
+            interaction_type: 'cancelled_like',
+            genre: article.genre
+          },
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+      } else {
+        // Add like
+        setLikedArticles(prev => new Set([...prev, article.id]));
+        setDislikedArticles(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(article.id);
+          return newSet;
+        });
+        
+        await axios.post(
+          `${API}/user-interaction`,
+          {
+            article_id: article.id,
+            interaction_type: 'liked',
+            genre: article.genre
+          },
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+      }
+      
       await fetchUserProfile(); // Refresh profile to show updated preferences
     } catch (error: any) {
       console.error('Error recording interaction:', error);
+      // Revert optimistic update on error
+      if (likedArticles.has(article.id)) {
+        setLikedArticles(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(article.id);
+          return newSet;
+        });
+      } else {
+        setLikedArticles(prev => new Set([...prev, article.id]));
+      }
     }
   };
 
   const handleDislikeArticle = async (article: Article) => {
     try {
-      await axios.post(
-        `${API}/user-interaction`,
-        {
-          article_id: article.id,
-          interaction_type: 'disliked',
-          genre: article.genre
-        },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      Alert.alert('Success', 'Your preference has been recorded!');
+      const isCurrentlyDisliked = dislikedArticles.has(article.id);
+      
+      if (isCurrentlyDisliked) {
+        // Cancel dislike - remove from disliked articles
+        setDislikedArticles(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(article.id);
+          return newSet;
+        });
+        
+        // Send cancel interaction to backend
+        await axios.post(
+          `${API}/user-interaction`,
+          {
+            article_id: article.id,
+            interaction_type: 'cancelled_dislike',
+            genre: article.genre
+          },
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+      } else {
+        // Add dislike
+        setDislikedArticles(prev => new Set([...prev, article.id]));
+        setLikedArticles(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(article.id);
+          return newSet;
+        });
+        
+        await axios.post(
+          `${API}/user-interaction`,
+          {
+            article_id: article.id,
+            interaction_type: 'disliked',
+            genre: article.genre
+          },
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        
+        await fetchAutoPickedArticles(); // Refresh articles with updated preferences
+      }
+      
       await fetchUserProfile(); // Refresh profile
-      await fetchAutoPickedArticles(); // Refresh articles with updated preferences
     } catch (error: any) {
       console.error('Error recording interaction:', error);
+      // Revert optimistic update on error
+      if (dislikedArticles.has(article.id)) {
+        setDislikedArticles(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(article.id);
+          return newSet;
+        });
+      } else {
+        setDislikedArticles(prev => new Set([...prev, article.id]));
+      }
     }
   };
 
@@ -298,14 +396,28 @@ export default function AutoPickScreen() {
     try {
       // Filter out excluded articles for audio creation
       const availableArticles = autoPickedArticles.filter(article => !excludedArticles.has(article.id));
-      const articleIds = availableArticles.slice(0, 3).map(article => article.id);
-      const articleTitles = availableArticles.slice(0, 3).map(article => article.title);
-      const articleUrls = availableArticles.slice(0, 3).map(article => article.link);
       
-      if (articleIds.length === 0) {
+      if (availableArticles.length === 0) {
         Alert.alert('No Articles', 'Please ensure at least one article is not excluded.');
+        setCreatingAudio(false);
         return;
       }
+
+      // Determine how many articles to use (up to user's limit)
+      const articlesToUse = Math.min(availableArticles.length, maxAudioArticles);
+      
+      // Validate against user limits before proceeding
+      const validation = await AudioLimitService.validateAudioCreation(token!, articlesToUse);
+      
+      if (!validation.isValid) {
+        Alert.alert('Audio Creation Limit', validation.errorMessage || 'Unable to create audio due to plan limits.');
+        setCreatingAudio(false);
+        return;
+      }
+      
+      const articleIds = availableArticles.slice(0, articlesToUse).map(article => article.id);
+      const articleTitles = availableArticles.slice(0, articlesToUse).map(article => article.title);
+      const articleUrls = availableArticles.slice(0, articlesToUse).map(article => article.link);
 
       const response = await axios.post(
         `${API}/audio/create`,
@@ -319,7 +431,7 @@ export default function AutoPickScreen() {
 
       // Record user interactions for personalization (async to avoid blocking)
       const recordInteractions = async () => {
-        for (const article of availableArticles.slice(0, 3)) {
+        for (const article of availableArticles.slice(0, maxArticles)) {
           try {
             await axios.post(
               `${API}/user-interaction`,
@@ -345,11 +457,28 @@ export default function AutoPickScreen() {
       donateShortcut('auto-pick');
     } catch (error: any) {
       console.error('Error creating auto-picked audio:', error);
-      ErrorHandlingService.showError(error, { 
-        action: 'create_audio',
-        source: 'Auto-pick Screen',
-        details: { excludedCount: excludedArticles.size, availableCount: autoPickedArticles.length }
-      });
+      
+      // Handle limit exceeded errors
+      if (error.response?.status === 403 && error.response?.data?.type === 'limit_exceeded') {
+        const errorData = error.response.data;
+        Alert.alert(
+          'Limit Reached', 
+          errorData.message,
+          [
+            { text: 'OK', style: 'default' },
+            { text: 'View Usage', onPress: () => {
+              // TODO: Navigate to subscription/usage page
+              console.log('Usage info:', errorData.usage_info);
+            }}
+          ]
+        );
+      } else {
+        ErrorHandlingService.showError(error, { 
+          action: 'create_audio',
+          source: 'Auto-pick Screen',
+          details: { excludedCount: excludedArticles.size, availableCount: autoPickedArticles.length }
+        });
+      }
     } finally {
       setCreatingAudio(false);
     }
@@ -432,6 +561,8 @@ export default function AutoPickScreen() {
         ) : (
           autoPickedArticles.map((article) => {
             const isExcluded = excludedArticles.has(article.id);
+            const isLiked = likedArticles.has(article.id);
+            const isDisliked = dislikedArticles.has(article.id);
             return (
               <View 
                 key={article.id} 
@@ -475,25 +606,41 @@ export default function AutoPickScreen() {
                 <View style={styles.actionButtons}>
                   <TouchableOpacity 
                     onPress={() => handleLikeArticle(article)}
-                    style={[styles.likeButton, { backgroundColor: theme.accent }]}
+                    style={[
+                      styles.likeButton, 
+                      { backgroundColor: isLiked ? theme.success : theme.accent },
+                      isLiked && styles.activeButton
+                    ]}
                     disabled={isExcluded}
                     accessibilityRole="button"
-                    accessibilityLabel={`Like article: ${article.title}`}
-                    accessibilityHint="Tap to mark this article as liked to improve recommendations"
-                    accessibilityState={{ disabled: isExcluded }}
+                    accessibilityLabel={isLiked ? `Unlike article: ${article.title}` : `Like article: ${article.title}`}
+                    accessibilityHint={isLiked ? "Tap to remove like from this article" : "Tap to mark this article as liked to improve recommendations"}
+                    accessibilityState={{ disabled: isExcluded, selected: isLiked }}
                   >
-                    <Ionicons name="heart" size={20} color={isExcluded ? theme.textMuted : theme.success} />
+                    <Ionicons 
+                      name={isLiked ? "heart" : "heart-outline"} 
+                      size={20} 
+                      color={isExcluded ? theme.textMuted : (isLiked ? "#fff" : theme.success)} 
+                    />
                   </TouchableOpacity>
                   <TouchableOpacity 
                     onPress={() => handleDislikeArticle(article)}
-                    style={[styles.dislikeButton, { backgroundColor: theme.accent }]}
+                    style={[
+                      styles.dislikeButton, 
+                      { backgroundColor: isDisliked ? theme.error : theme.accent },
+                      isDisliked && styles.activeButton
+                    ]}
                     disabled={isExcluded}
                     accessibilityRole="button"
-                    accessibilityLabel={`Dislike article: ${article.title}`}
-                    accessibilityHint="Tap to mark this article as disliked to improve recommendations"
-                    accessibilityState={{ disabled: isExcluded }}
+                    accessibilityLabel={isDisliked ? `Remove dislike from article: ${article.title}` : `Dislike article: ${article.title}`}
+                    accessibilityHint={isDisliked ? "Tap to remove dislike from this article" : "Tap to mark this article as disliked to improve recommendations"}
+                    accessibilityState={{ disabled: isExcluded, selected: isDisliked }}
                   >
-                    <Ionicons name="close-circle" size={20} color={isExcluded ? theme.textMuted : theme.error} />
+                    <Ionicons 
+                      name={isDisliked ? "close-circle" : "close-circle-outline"} 
+                      size={20} 
+                      color={isExcluded ? theme.textMuted : (isDisliked ? "#fff" : theme.error)} 
+                    />
                   </TouchableOpacity>
                   <TouchableOpacity 
                     onPress={() => handleExcludeArticle(article.id)}
@@ -782,6 +929,14 @@ const styles = StyleSheet.create({
     padding: 8,
     borderRadius: 20,
     backgroundColor: '#f3f4f6',
+  },
+  activeButton: {
+    transform: [{ scale: 1.1 }],
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
   },
   excludedCard: {
     opacity: 0.6,

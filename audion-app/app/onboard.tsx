@@ -35,6 +35,7 @@ export default function OnboardScreen() {
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [settingUp, setSettingUp] = useState(false);
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
 
   const API = process.env.EXPO_PUBLIC_BACKEND_URL ? `${process.env.EXPO_PUBLIC_BACKEND_URL}/api` : 'http://localhost:8000/api';
 
@@ -65,6 +66,11 @@ export default function OnboardScreen() {
   const handleSetupComplete = async () => {
     if (selectedCategories.length === 0) {
       Alert.alert('Selection Required', 'Please select at least one interest category.');
+      return;
+    }
+
+    if (!acceptedTerms) {
+      Alert.alert('Terms Required', 'Please accept the Terms of Service and Privacy Policy to continue.');
       return;
     }
 
@@ -179,6 +185,31 @@ export default function OnboardScreen() {
             </Text>
           </View>
         )}
+
+        {/* Terms Acceptance Section */}
+        <View style={styles.termsContainer}>
+          <TouchableOpacity 
+            style={styles.checkboxContainer}
+            onPress={() => setAcceptedTerms(!acceptedTerms)}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.checkbox, acceptedTerms && styles.checkboxChecked]}>
+              {acceptedTerms && (
+                <Ionicons name="checkmark" size={16} color="#fff" />
+              )}
+            </View>
+            <View style={styles.termsTextContainer}>
+              <Text style={styles.termsText}>I accept the </Text>
+              <TouchableOpacity onPress={() => router.push('/terms-of-service')}>
+                <Text style={styles.termsLink}>Terms of Service</Text>
+              </TouchableOpacity>
+              <Text style={styles.termsText}> and </Text>
+              <TouchableOpacity onPress={() => router.push('/privacy-policy')}>
+                <Text style={styles.termsLink}>Privacy Policy</Text>
+              </TouchableOpacity>
+            </View>
+          </TouchableOpacity>
+        </View>
       </ScrollView>
 
       {/* Continue Button */}
@@ -186,10 +217,10 @@ export default function OnboardScreen() {
         <TouchableOpacity
           style={[
             styles.continueButton,
-            selectedCategories.length === 0 && styles.continueButtonDisabled
+            (selectedCategories.length === 0 || !acceptedTerms) && styles.continueButtonDisabled
           ]}
           onPress={handleSetupComplete}
-          disabled={selectedCategories.length === 0 || settingUp}
+          disabled={selectedCategories.length === 0 || !acceptedTerms || settingUp}
         >
           {settingUp ? (
             <ActivityIndicator color="#fff" />
@@ -352,5 +383,47 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 18,
     fontWeight: 'bold',
+  },
+  termsContainer: {
+    marginHorizontal: 24,
+    marginTop: 32,
+    marginBottom: 16,
+  },
+  checkboxContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+  },
+  checkbox: {
+    width: 20,
+    height: 20,
+    borderRadius: 4,
+    borderWidth: 2,
+    borderColor: '#d1d5db',
+    backgroundColor: '#ffffff',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 2,
+  },
+  checkboxChecked: {
+    backgroundColor: '#4f46e5',
+    borderColor: '#4f46e5',
+  },
+  termsTextContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+  },
+  termsText: {
+    fontSize: 14,
+    color: '#6b7280',
+    lineHeight: 20,
+  },
+  termsLink: {
+    fontSize: 14,
+    color: '#4f46e5',
+    fontWeight: '500',
+    textDecorationLine: 'underline',
   },
 });
