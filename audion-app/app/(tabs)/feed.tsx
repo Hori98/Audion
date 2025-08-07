@@ -119,7 +119,7 @@ export default function FeedScreen() {
   // Generate normalized ID for article deduplication
   const generateNormalizedId = (article: Article): string => {
     // Use title + source + published date to create a unique identifier
-    const key = `${article.title.trim()}_${article.source_name.trim()}_${article.published}`;
+    const key = `${article.title.trim()}_${(article.source_name || article.source || 'unknown').trim()}_${article.published || article.published_at}`;
     // Simple hash function to create shorter ID
     let hash = 0;
     for (let i = 0; i < key.length; i++) {

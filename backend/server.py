@@ -907,6 +907,14 @@ async def auto_pick_articles(user_id: str, all_articles: List[Article], max_arti
 
 # Auth helpers
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    """
+    Simple user authentication using the token as user ID.
+    This bypasses JWT verification for development simplicity.
+    """
+    global db_connected
+    if not db_connected:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Database not connected")
+    
     token = credentials.credentials
     user = await db.users.find_one({"id": token})
     if not user:

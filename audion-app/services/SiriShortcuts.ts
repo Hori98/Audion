@@ -59,7 +59,10 @@ class SiriShortcutsService {
    * Handle incoming deep links from Siri shortcuts
    */
   private handleDeepLink = ({ url }: { url: string }) => {
-    console.log('SiriShortcuts: Received deep link:', url);
+    // Only log in development mode and exclude expo dev server URLs
+    if (__DEV__ && !url.includes('192.0.0.2') && !url.startsWith('exp://')) {
+      console.log('SiriShortcuts: Received deep link:', url);
+    }
     
     const { path, queryParams } = Linking.parse(url);
     

@@ -59,7 +59,10 @@ class AppIconShortcutsService {
    * Handle incoming deep links from app icon shortcuts
    */
   private handleDeepLink = ({ url }: { url: string }) => {
-    console.log('AppIconShortcuts: Received deep link:', url);
+    // Only log in development mode and exclude expo dev server URLs
+    if (__DEV__ && !url.includes('192.0.0.2') && !url.startsWith('exp://')) {
+      console.log('AppIconShortcuts: Received deep link:', url);
+    }
     
     const { path, queryParams } = Linking.parse(url);
     

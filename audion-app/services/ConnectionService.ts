@@ -27,14 +27,14 @@ class ConnectionService {
   private axiosInstance: AxiosInstance;
   private connectionStatus: ConnectionStatus;
   private healthCheckInterval: NodeJS.Timeout | null = null;
-  private readonly HEALTH_CHECK_INTERVAL = 30000; // 30 seconds
-  private readonly CONNECTION_TIMEOUT = 10000; // 10 seconds
+  private readonly HEALTH_CHECK_INTERVAL = 60000; // 60 seconds (reduced frequency)
+  private readonly CONNECTION_TIMEOUT = 30000; // 30 seconds (increased for slow networks)
   private readonly BACKEND_URLS = [
-    'http://localhost:8001', // Primary development server
-    process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:8001',
-    'http://127.0.0.1:8001', // Localhost alternative
-    'http://localhost:8002', // Testing fallback
-    'http://192.168.11.63:8001', // Current network IP
+    process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:8003',
+    'http://localhost:8003', // Primary development server
+    'http://127.0.0.1:8003', // Localhost alternative
+    'http://localhost:8001', // Legacy fallback
+    'http://192.168.11.63:8003', // Current network IP
   ];
 
   private constructor() {
@@ -175,10 +175,20 @@ class ConnectionService {
     }
 
     try {
-      await this.findWorkingBackendUrl();
+      // Add initial grace period for backend startup (increased for slow networks)
+      console.log('⏳ Waiting for backend to be ready...');
+      await new Promise(resolve => setTimeout(resolve, 5000));
+      
+      // Set a maximum timeout for the entire connection process
+      const connectionPromise = this.findWorkingBackendUrl();
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Connection timeout')), 30000)
+      );
+      
+      await Promise.race([connectionPromise, timeoutPromise]);
     } catch (error) {
-      console.error('Failed to establish backend connection:', error);
-      throw new Error('Unable to connect to backend server. Please check your connection and try again.');
+      console.warn('Backend connection failed:', error?.message || error);
+      throw new Error(`Connection failed: ${error?.message || 'Unknown error'}. App will continue in offline mode.`);
     }
   }
 
@@ -187,13 +197,17 @@ class ConnectionService {
     retryConfig: Partial<RetryConfig> = {}
   ): Promise<T> {
     const config: RetryConfig = {
-      maxRetries: 3,
-      baseDelay: 1000,
-      maxDelay: 10000,
+      maxRetries: 2, // Reduced retries for faster failure detection
+      baseDelay: 3000, // Increased for slow networks
+      maxDelay: 15000, // Increased max delay
       backoffMultiplier: 2,
       retryCondition: (error) => {
         // Retry on network/timeout errors, not on 4xx client errors
-        return !error.response || error.response.status >= 500 || error.code === 'ECONNABORTED';
+        const shouldRetry = !error.response || error.response.status >= 500 || error.code === 'ECONNABORTED' || error.message === 'Network Error';
+        if (shouldRetry && error.message === 'Network Error') {
+          console.log('🔄 Network error detected, will retry...');
+        }
+        return shouldRetry;
       },
       ...retryConfig
     };

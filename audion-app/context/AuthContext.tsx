@@ -53,8 +53,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       await connectionService.ensureConnection();
       console.log('✅ Backend connection established');
     } catch (error) {
-      console.error('❌ Failed to establish backend connection:', error);
-      // Continue with app initialization even if backend is not available
+      console.warn('⚠️ Backend connection failed, continuing in offline mode:', error?.message || error);
+      // Continue with app initialization in offline mode
     }
   };
 
@@ -68,7 +68,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
     
     try {
-      const sources = await connectionService.get('/api/rss-sources', {
+      // Ensure backend connection before making API request
+      await connectionService.ensureConnection();
+      
+      const sources = await connectionService.get('/rss-sources', {
         headers: { Authorization: `Bearer ${userToken}` }
       });
       // If user has RSS sources, they're not new
@@ -78,12 +81,15 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         setIsNewUser(true);
       }
     } catch (error: any) {
-      console.log('Could not check user onboard status:', error);
-      
-      // If it's an authentication error (401/403), throw to indicate invalid token
-      if (error?.response?.status === 401 || error?.response?.status === 403) {
-        throw error; // Let calling code handle invalid token
+      // Handle authentication errors (401, 403) and 404 errors which might be auth-related
+      if (error?.response?.status === 401 || error?.response?.status === 403 || 
+          error?.response?.status === 404) {
+        console.log(`Authentication/access failed during onboard status check (${error?.response?.status}), clearing token`);
+        await handleAuthError();
+        return;
       }
+      
+      console.log('Could not check user onboard status (non-auth error):', error.message || error);
       
       // For other errors (network, server issues), default to existing user
       setIsNewUser(false);
@@ -222,17 +228,17 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   const handleAuthError = async () => {
-    console.log('=== HANDLING AUTH ERROR - FORCE LOGOUT ===');
+    console.log('=== HANDLING AUTH ERROR - SIMPLE LOGOUT ===');
     try {
-      // Clear all auth-related data
+      // Clear storage with error handling
       await AsyncStorage.multiRemove([
         'token',
-        'user',
+        'user', 
         'isNewUser',
         'feed_selected_articles'
-      ]);
+      ]).catch(err => console.warn('Storage clear error:', err));
       
-      // Clear axios auth header
+      // Clear headers safely
       delete axios.defaults.headers.common['Authorization'];
       apiService.setAuthToken(null);
       
@@ -241,18 +247,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       setUser(null);
       setIsNewUser(false);
       
-      // Force reload/navigation
-      if (typeof window !== 'undefined') {
-        window.location.reload();
-      } else {
-        // For native, trigger re-render by updating loading state
-        setLoading(true);
-        setTimeout(() => {
-          setLoading(false);
-        }, 100);
-      }
+      console.log('Auth error handled successfully');
     } catch (error) {
-      console.error('Error during auth error handling:', error);
+      console.error('Critical auth error handling failure:', error);
     }
   };
 

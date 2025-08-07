@@ -1,0 +1,6 @@
+INFO:     Started server process [45603]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8003 (Press CTRL+C to quit)
+2025-08-07 21:50:18,654 - INFO - Retrieved 3 onboarding categories
+INFO:     127.0.0.1:64724 - "GET /api/onboard/categories HTTP/1.1" 200 OK
