@@ -440,12 +440,12 @@ export default function SettingsScreen() {
 
   const settingSections: SettingSection[] = [
     {
-      title: 'Account',
+      title: 'User & Account',
       items: [
         {
           id: 'profile',
-          title: 'Profile Settings',
-          subtitle: 'Edit your profile information and avatar',
+          title: 'Profile & Identity',
+          subtitle: 'Profile image, display name, bio',
           icon: 'person-outline',
           type: 'navigation',
           onPress: () => {
@@ -454,46 +454,22 @@ export default function SettingsScreen() {
         },
         {
           id: 'account',
-          title: 'Account Settings',
-          subtitle: 'Password, email, security',
-          icon: 'shield-outline',
+          title: 'Authentication & Security',
+          subtitle: 'Password, email, two-factor authentication',
+          icon: 'shield-checkmark-outline',
           type: 'navigation',
           onPress: () => {
             router.push('/account-settings');
           }
-        }
-      ]
-    },
-    {
-      title: 'Audio & Playback',
-      items: [
-        {
-          id: 'audio-quality',
-          title: 'Audio Quality',
-          subtitle: 'Standard quality, playback speed',
-          icon: 'musical-notes-outline',
-          type: 'navigation',
-          onPress: () => {
-            router.push('/audio-quality-settings');
-          }
         },
         {
-          id: 'auto-play',
-          title: 'Auto-play Next',
-          subtitle: 'Automatically play next audio in queue',
-          icon: 'play-forward-outline',
-          type: 'toggle',
-          value: autoPlay,
-          onToggle: setAutoPlay
-        },
-        {
-          id: 'downloads',
-          title: 'Download Settings',
-          subtitle: 'Offline playback, storage management',
-          icon: 'download-outline',
+          id: 'subscription',
+          title: 'Subscription & Billing',
+          subtitle: 'Plan details, payment methods',
+          icon: 'card-outline',
           type: 'navigation',
           onPress: () => {
-            Alert.alert('Coming Soon', 'Download settings will be available soon');
+            Alert.alert('Coming Soon', 'Subscription management will be available soon');
           }
         }
       ]
@@ -512,13 +488,13 @@ export default function SettingsScreen() {
           }
         },
         {
-          id: 'auto-pick',
-          title: 'Auto-Pick Settings',
-          subtitle: 'Customize automatic content selection',
-          icon: 'sparkles-outline',
+          id: 'interests',
+          title: 'Genre Preferences & Auto-Pick',
+          subtitle: 'Content preferences, automatic selection settings',
+          icon: 'heart-outline',
           type: 'navigation',
           onPress: () => {
-            Alert.alert('Coming Soon', 'Auto-Pick settings will be available soon');
+            router.push('/genre-preferences');
           }
         },
         {
@@ -532,20 +508,157 @@ export default function SettingsScreen() {
           }
         },
         {
-          id: 'interests',
-          title: 'Genre Preferences',
-          subtitle: 'Customize content categories',
-          icon: 'heart-outline',
+          id: 'content-filters',
+          title: 'Content Filters',
+          subtitle: 'Block keywords, sources, topics',
+          icon: 'funnel-outline',
+          type: 'navigation',
+          onPress: () => router.push('/content-filters')
+        }
+      ]
+    },
+    {
+      title: 'Audio & Playback',
+      items: [
+        {
+          id: 'audio-quality',
+          title: 'Audio Quality & Performance',
+          subtitle: 'Bitrate, compression, streaming quality',
+          icon: 'musical-notes-outline',
           type: 'navigation',
           onPress: () => {
-            Alert.alert('Coming Soon', 'Genre preferences will be available soon');
+            router.push('/audio-quality-settings');
+          }
+        },
+        {
+          id: 'playback-controls',
+          title: 'Playback Controls',
+          subtitle: 'Auto-play, skip behavior, gestures',
+          icon: 'play-circle-outline',
+          type: 'navigation',
+          onPress: () => router.push('/playback-controls')
+        },
+        {
+          id: 'auto-play',
+          title: 'Auto-play Next',
+          subtitle: 'Automatically play next audio in queue',
+          icon: 'play-forward-outline',
+          type: 'toggle',
+          value: autoPlay,
+          onToggle: setAutoPlay
+        },
+        {
+          id: 'downloads',
+          title: 'Downloads & Offline',
+          subtitle: 'Offline playback, storage management',
+          icon: 'download-outline',
+          type: 'navigation',
+          onPress: () => {
+            router.push('/download-settings');
           }
         }
       ]
     },
     {
-      title: 'Storage & Cache',
+      title: 'Scheduling & Automation',
       items: [
+        {
+          id: 'schedule-enabled',
+          title: 'Daily Auto-Generation',
+          subtitle: 'Generate audio at scheduled times',
+          icon: 'time-outline',
+          type: 'toggle',
+          value: scheduleEnabled,
+          onToggle: (value: boolean) => {
+            setScheduleEnabled(value);
+            setTimeout(() => saveSettings(), 100);
+          }
+        },
+        {
+          id: 'schedule-time',
+          title: 'Delivery Schedule',
+          subtitle: `${scheduleTime} (${scheduleEnabled ? 'Active' : 'Inactive'})`,
+          icon: 'alarm-outline',
+          type: 'navigation',
+          onPress: () => {
+            setTimePickerVisible(true);
+          }
+        },
+        {
+          id: 'schedule-preferences',
+          title: 'Automation Preferences',
+          subtitle: `${scheduleCount} articles, genre filters`,
+          icon: 'options-outline',
+          type: 'navigation',
+          onPress: () => {
+            Alert.alert(
+              'Daily Auto-Pick Settings',
+              'Configure your automation preferences',
+              [
+                { text: 'Article Count', onPress: () => {
+                  Alert.alert(
+                    'Daily Auto-Pick Article Count',
+                    'How many articles should be included in your daily auto-generated audio?',
+                    [
+                      { text: '1 Article', onPress: () => { setScheduleCount(1); setTimeout(() => saveSettings(), 100); } },
+                      { text: '3 Articles', onPress: () => { setScheduleCount(3); setTimeout(() => saveSettings(), 100); } },
+                      { text: '5 Articles', onPress: () => { setScheduleCount(5); setTimeout(() => saveSettings(), 100); } },
+                      { text: '7 Articles', onPress: () => { setScheduleCount(7); setTimeout(() => saveSettings(), 100); } },
+                      { text: 'Cancel', style: 'cancel' }
+                    ]
+                  );
+                }},
+                { text: 'Genre Filters', onPress: () => {
+                  Alert.alert('Coming Soon', 'Advanced automation preferences will be available soon');
+                }},
+                { text: 'Cancel', style: 'cancel' }
+              ]
+            );
+          }
+        },
+        {
+          id: 'notifications',
+          title: 'Notifications & Alerts',
+          subtitle: 'Push notifications, completion alerts',
+          icon: 'notifications-outline',
+          type: 'navigation',
+          onPress: () => {
+            router.push('/notification-settings');
+          }
+        }
+      ]
+    },
+    {
+      title: 'Privacy & Data',
+      items: [
+        {
+          id: 'data-collection',
+          title: 'Data Collection & Analytics',
+          subtitle: 'Usage analytics, crash reports',
+          icon: 'analytics-outline',
+          type: 'navigation',
+          onPress: () => {
+            router.push('/data-collection-settings');
+          }
+        },
+        {
+          id: 'export-backup',
+          title: 'Export & Backup',
+          subtitle: 'Download data, backup settings',
+          icon: 'cloud-download-outline',
+          type: 'navigation',
+          onPress: () => router.push('/export-backup')
+        },
+        {
+          id: 'storage-management',
+          title: 'Storage Management',
+          subtitle: 'Cache, deleted items, storage usage',
+          icon: 'server-outline',
+          type: 'navigation',
+          onPress: () => {
+            router.push('/storage-usage');
+          }
+        },
         {
           id: 'deleted-audio',
           title: 'Deleted Audio Recovery',
@@ -559,150 +672,28 @@ export default function SettingsScreen() {
               return;
             }
             
-            // Show simple list for now - could be expanded to a dedicated page
             const audioList = deletedAudio.map(audio => 
               `• ${audio.title} (${audio.days_remaining} days remaining)`
             ).join('\n');
             
             Alert.alert(
               'Deleted Audio Files',
-              `Recoverable audio files:\n\n${audioList}\n\nThese files will be permanently deleted after 14 days. Use "Clear All Deleted Audio" to remove them immediately.`,
-              [{ text: 'OK' }]
-            );
-          }
-        },
-        {
-          id: 'clear-cache',
-          title: 'Clear All Deleted Audio',
-          subtitle: 'Permanently remove all deleted items',
-          icon: 'trash-bin-outline',
-          type: 'action',
-          onPress: handleClearAllDeleted
-        },
-        {
-          id: 'storage-info',
-          title: 'Storage Usage',
-          subtitle: 'View audio storage and cache usage',
-          icon: 'server-outline',
-          type: 'navigation',
-          onPress: () => {
-            Alert.alert('Coming Soon', 'Storage info will be available soon');
-          }
-        }
-      ]
-    },
-    {
-      title: 'Notifications',
-      items: [
-        {
-          id: 'notifications',
-          title: 'Push Notifications',
-          subtitle: 'New content, recommendations',
-          icon: 'notifications-outline',
-          type: 'toggle',
-          value: notifications,
-          onToggle: setNotifications
-        },
-        {
-          id: 'auto-pick-notifications',
-          title: 'Auto-Pick Completion',
-          subtitle: 'Notify when new audio is ready',
-          icon: 'checkmark-circle-outline',
-          type: 'navigation',
-          onPress: () => {
-            router.push('/notification-settings');
-          }
-        }
-      ]
-    },
-    {
-      title: 'Auto-Schedule',
-      items: [
-        {
-          id: 'schedule-enabled',
-          title: 'Daily Auto-Pick',
-          subtitle: 'Generate audio at scheduled time',
-          icon: 'time-outline',
-          type: 'toggle',
-          value: scheduleEnabled,
-          onToggle: (value: boolean) => {
-            setScheduleEnabled(value);
-            setTimeout(() => saveSettings(), 100);
-          }
-        },
-        {
-          id: 'schedule-time',
-          title: 'Delivery Time',
-          subtitle: `${scheduleTime} (${scheduleEnabled ? 'Active' : 'Inactive'})`,
-          icon: 'alarm-outline',
-          type: 'navigation',
-          onPress: () => {
-            setTimePickerVisible(true);
-          }
-        },
-        {
-          id: 'schedule-count',
-          title: 'Article Count',
-          subtitle: `${scheduleCount} articles per daily audio`,
-          icon: 'list-outline',
-          type: 'navigation',
-          onPress: () => {
-            Alert.alert(
-              'Daily Auto-Pick Article Count',
-              'How many articles should be included in your daily auto-generated audio?',
+              `Recoverable audio files:\n\n${audioList}\n\nThese files will be permanently deleted after 14 days.`,
               [
-                { text: '1 Article', onPress: () => { setScheduleCount(1); setTimeout(() => saveSettings(), 100); } },
-                { text: '3 Articles', onPress: () => { setScheduleCount(3); setTimeout(() => saveSettings(), 100); } },
-                { text: '5 Articles', onPress: () => { setScheduleCount(5); setTimeout(() => saveSettings(), 100); } },
-                { text: '7 Articles', onPress: () => { setScheduleCount(7); setTimeout(() => saveSettings(), 100); } },
-                { text: 'Cancel', style: 'cancel' }
+                { text: 'Clear All', style: 'destructive', onPress: handleClearAllDeleted },
+                { text: 'OK', style: 'cancel' }
               ]
             );
           }
-        },
-        {
-          id: 'schedule-preferences',
-          title: 'Content Preferences',
-          subtitle: 'Genre filters and source priority',
-          icon: 'options-outline',
-          type: 'navigation',
-          onPress: () => {
-            Alert.alert('Coming Soon', 'Advanced content preferences will be available soon');
-          }
         }
       ]
     },
     {
-      title: 'Privacy & Security',
-      items: [
-        {
-          id: 'data-collection',
-          title: 'Data Collection',
-          subtitle: 'Usage analytics, crash reports',
-          icon: 'shield-outline',
-          type: 'navigation',
-          onPress: () => {
-            Alert.alert('Coming Soon', 'Privacy settings will be available soon');
-          }
-        },
-        {
-          id: 'export-data',
-          title: 'Export My Data',
-          subtitle: 'Download your audio library data',
-          icon: 'download-outline',
-          type: 'navigation',
-          onPress: () => {
-            Alert.alert('Coming Soon', 'Data export will be available soon');
-          }
-        }
-      ]
-    },
-    {
-      title: 'Appearance',
+      title: 'Appearance & Accessibility',
       items: [
         {
           id: 'theme',
-          title: 'Theme',
+          title: 'Themes & Display',
           subtitle: `Current: ${themeMode === 'system' ? 'System' : themeMode === 'dark' ? 'Dark' : 'Light'}`,
           icon: 'contrast-outline',
           type: 'navigation',
@@ -711,58 +702,101 @@ export default function SettingsScreen() {
           }
         },
         {
+          id: 'text-settings',
+          title: 'Text & Font Settings',
+          subtitle: 'Font size, line spacing, reading mode',
+          icon: 'text-outline',
+          type: 'navigation',
+          onPress: () => router.push('/text-font-settings')
+        },
+        {
+          id: 'accessibility',
+          title: 'Accessibility Features',
+          subtitle: 'Voice guidance, color contrast, magnification',
+          icon: 'accessibility-outline',
+          type: 'navigation',
+          onPress: () => {
+            Alert.alert('Coming Soon', 'Accessibility features will be available soon');
+          }
+        },
+        {
           id: 'language',
-          title: 'Language',
-          subtitle: 'English (US)',
+          title: 'Language & Region',
+          subtitle: 'English (US), date format, units',
           icon: 'language-outline',
           type: 'navigation',
           onPress: () => {
             Alert.alert('Coming Soon', 'Language settings will be available soon');
           }
-        },
+        }
+      ]
+    },
+    {
+      title: 'System & Advanced',
+      items: [
         {
-          id: 'font-size',
-          title: 'Text Size',
-          subtitle: 'Adjust reading text size',
-          icon: 'text-outline',
+          id: 'performance',
+          title: 'Performance Settings',
+          subtitle: 'Background refresh, memory usage',
+          icon: 'speedometer-outline',
           type: 'navigation',
           onPress: () => {
-            Alert.alert('Coming Soon', 'Text size settings will be available soon');
+            Alert.alert('Coming Soon', 'Performance settings will be available soon');
+          }
+        },
+        {
+          id: 'integrations',
+          title: 'Integration Settings',
+          subtitle: 'Siri Shortcuts, widgets, external apps',
+          icon: 'link-outline',
+          type: 'navigation',
+          onPress: () => {
+            Alert.alert('Coming Soon', 'Integration settings will be available soon');
+          }
+        },
+        {
+          id: 'developer',
+          title: 'Developer Options',
+          subtitle: 'Debug mode, API logs, beta features',
+          icon: 'code-outline',
+          type: 'navigation',
+          onPress: () => {
+            Alert.alert('Coming Soon', 'Developer options will be available soon');
           }
         }
       ]
     },
     {
-      title: 'Support & Info',
+      title: 'Support & Legal',
       items: [
         {
           id: 'help',
-          title: 'Help & FAQ',
-          subtitle: 'Get help and find answers',
+          title: 'Help & Documentation',
+          subtitle: 'User guide, FAQ, tutorials',
           icon: 'help-circle-outline',
           type: 'navigation',
           onPress: () => {
-            Alert.alert('Coming Soon', 'Help section will be available soon');
+            Alert.alert('Coming Soon', 'Help documentation will be available soon');
           }
         },
         {
           id: 'feedback',
-          title: 'Send Feedback',
-          subtitle: 'Help us improve Audion',
+          title: 'Feedback & Bug Reports',
+          subtitle: 'Send feedback, report issues',
           icon: 'chatbubble-outline',
           type: 'navigation',
           onPress: () => {
-            Alert.alert('Coming Soon', 'Feedback feature will be available soon');
+            Alert.alert('Coming Soon', 'Feedback system will be available soon');
           }
         },
         {
-          id: 'report-bug',
-          title: 'Report Bug',
-          subtitle: 'Report technical issues',
-          icon: 'bug-outline',
+          id: 'about',
+          title: 'About Audion',
+          subtitle: 'Version 1.0.0 (MVP)',
+          icon: 'information-circle-outline',
           type: 'navigation',
           onPress: () => {
-            Alert.alert('Coming Soon', 'Bug reporting will be available soon');
+            Alert.alert('About Audion', 'Audion v1.0.0 (MVP)\nAI-powered news audio platform\n\nFeatures:\n• RSS news aggregation\n• AI-powered summarization\n• Text-to-speech audio generation\n• Personalized recommendations\n• Spotify-like audio interface');
           }
         },
         {
@@ -784,16 +818,6 @@ export default function SettingsScreen() {
           onPress: () => {
             router.push('/privacy-policy');
           }
-        },
-        {
-          id: 'about',
-          title: 'About Audion',
-          subtitle: 'Version 1.0.0 (MVP)',
-          icon: 'information-circle-outline',
-          type: 'navigation',
-          onPress: () => {
-            Alert.alert('About Audion', 'Audion v1.0.0 (MVP)\nAI-powered news audio platform\n\nFeatures:\n• RSS news aggregation\n• AI-powered summarization\n• Text-to-speech audio generation\n• Personalized recommendations\n• Spotify-like audio interface');
-          }
         }
       ]
     },
@@ -811,7 +835,7 @@ export default function SettingsScreen() {
         {
           id: 'force-logout',
           title: 'Force Logout',
-          subtitle: 'Clear all authentication data (for debugging)',
+          subtitle: 'Clear all authentication data (debugging)',
           icon: 'exit-outline',
           type: 'action',
           onPress: () => {
@@ -825,8 +849,6 @@ export default function SettingsScreen() {
                   style: 'destructive',
                   onPress: async () => {
                     try {
-                      
-                      // Clear all auth-related data directly
                       await AsyncStorage.multiRemove([
                         'token',
                         'user',
@@ -834,15 +856,11 @@ export default function SettingsScreen() {
                         'feed_selected_articles'
                       ]);
                       
-                      // Clear axios auth header
                       delete axios.defaults.headers.common['Authorization'];
                       
-                      
-                      // For web, force reload the entire page
                       if (typeof window !== 'undefined') {
                         window.location.reload();
                       } else {
-                        // For native, use router
                         router.replace('/');
                       }
                     } catch (error) {

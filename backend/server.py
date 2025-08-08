@@ -207,6 +207,7 @@ class UserSettingsUpdate(BaseModel):
     schedule_count: Optional[int] = None
     text_size: Optional[str] = None  # "small", "medium", "large"
     language: Optional[str] = None  # "en", "ja"
+    auto_pick_settings: Optional[dict] = None  # Auto-Pick configuration
 
 class RSSSource(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -294,6 +295,21 @@ class UserProfile(BaseModel):
     schedule_count: int = 3
     text_size: str = "medium"  # "small", "medium", "large"
     language: str = "en"  # "en", "ja"
+    # Auto-Pick Settings
+    auto_pick_settings: dict = Field(default_factory=lambda: {
+        "max_articles": 5,
+        "diversity_enabled": True,
+        "max_per_genre": 2,
+        "preferred_genres": [],
+        "excluded_genres": [],
+        "min_reading_time": 1,
+        "max_reading_time": 15,
+        "require_images": False,
+        "source_priority": "balanced",
+        "recency_weight": 0.3,
+        "popularity_weight": 0.2,
+        "personalization_weight": 0.5
+    })
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -1200,6 +1216,15 @@ async def update_user_settings(settings: UserSettingsUpdate, current_user: User 
             if settings.language not in ["en", "ja"]:
                 raise HTTPException(status_code=400, detail="Invalid language. Must be 'en' or 'ja'")
             update_data["language"] = settings.language
+            
+        if settings.auto_pick_settings is not None:
+            # Validate auto-pick settings
+            auto_pick = settings.auto_pick_settings
+            if "max_articles" in auto_pick and (auto_pick["max_articles"] < 1 or auto_pick["max_articles"] > 20):
+                raise HTTPException(status_code=400, detail="max_articles must be between 1 and 20")
+            if "source_priority" in auto_pick and auto_pick["source_priority"] not in ["balanced", "popular", "recent"]:
+                raise HTTPException(status_code=400, detail="Invalid source_priority")
+            update_data["auto_pick_settings"] = auto_pick
 
         if not update_data:
             raise HTTPException(status_code=400, detail="No valid settings to update")
@@ -2816,6 +2841,106 @@ async def get_user_profile(current_user: User = Depends(get_current_user)):
     except Exception as e:
         logging.error(f"Error fetching user profile: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch user profile")
+
+class UserProfileUpdate(BaseModel):
+    genre_preferences: Optional[Dict[str, float]] = None
+    bio: Optional[str] = None
+    display_name: Optional[str] = None
+    location: Optional[str] = None
+
+@app.put("/api/user/profile", tags=["User Profile"])
+async def update_user_profile(
+    profile_update: UserProfileUpdate,
+    current_user: User = Depends(get_current_user)
+):
+    """Update user profile information including genre preferences"""
+    try:
+        global db
+        if db is None:
+            logging.error("Database not connected")
+            raise HTTPException(status_code=503, detail="Database service unavailable")
+        
+        # Validate genre preferences if provided
+        if profile_update.genre_preferences:
+            logging.info(f"Received genre preferences: {profile_update.genre_preferences}")
+            for genre, score in profile_update.genre_preferences.items():
+                logging.info(f"Validating {genre}: {score} (type: {type(score)})")
+                if not isinstance(score, (int, float)) or score < 0.1 or score > 2.0:
+                    logging.error(f"Validation failed for {genre}: score={score}, type={type(score)}")
+                    raise HTTPException(
+                        status_code=400, 
+                        detail=f"Invalid genre preference score for {genre}: {score}. Must be between 0.1 and 2.0"
+                    )
+        
+        # Build update dictionary
+        update_data = {"updated_at": datetime.utcnow()}
+        
+        if profile_update.genre_preferences is not None:
+            update_data["genre_preferences"] = profile_update.genre_preferences
+        if profile_update.bio is not None:
+            update_data["bio"] = profile_update.bio
+        if profile_update.display_name is not None:
+            update_data["display_name"] = profile_update.display_name
+        if profile_update.location is not None:
+            update_data["location"] = profile_update.location
+        
+        # Update the user profile
+        result = await db.user_profiles.update_one(
+            {"user_id": current_user.id},
+            {"$set": update_data}
+        )
+        
+        if result.matched_count == 0:
+            # Profile doesn't exist, create it
+            from services.user_service import get_or_create_user_profile
+            profile = await get_or_create_user_profile(current_user.id)
+            
+            # Update with new data
+            await db.user_profiles.update_one(
+                {"user_id": current_user.id},
+                {"$set": update_data}
+            )
+        
+        logging.info(f"Updated profile for user {current_user.email}")
+        
+        return {
+            "success": True,
+            "message": "Profile updated successfully",
+            "updated_fields": list(update_data.keys())
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error updating user profile: {e}")
+        raise HTTPException(status_code=500, detail="Failed to update profile")
+
+@app.get("/api/user/insights", tags=["User Profile"])
+async def get_user_insights(current_user: User = Depends(get_current_user)):
+    """Get user insights and analytics based on usage patterns"""
+    try:
+        from services.user_service import get_user_insights
+        
+        insights = await get_user_insights(current_user.id)
+        return insights
+        
+    except Exception as e:
+        logging.error(f"Error fetching user insights: {e}")
+        # Return basic default insights if service fails
+        return {
+            "top_genres": [],
+            "total_interactions": 0,
+            "interaction_breakdown": {},
+            "engagement_score": 0,
+            "recent_activity": [],
+            "profile_created": None,
+            "last_updated": None,
+            "listening_patterns": {
+                "total_audio_created": 0,
+                "total_listening_time": 0,
+                "average_completion_rate": 0.0
+            }
+        }
 
 class ProfileImageUpload(BaseModel):
     image_data: str  # Base64 encoded image

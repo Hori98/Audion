@@ -28,7 +28,7 @@ const InitialLayout = () => {
     if (user && isNewUser && !inOnboard) {
       // New user should go to onboarding
       router.replace('/onboard');
-    } else if (user && !isNewUser && !inTabsGroup && segments[0] !== 'settings' && segments[0] !== 'sources' && segments[0] !== 'account-settings' && segments[0] !== 'audio-quality-settings' && segments[0] !== 'notification-settings' && segments[0] !== 'terms-of-service' && segments[0] !== 'privacy-policy' && segments[0] !== 'audio-player') {
+    } else if (user && !isNewUser && !inTabsGroup && segments[0] !== 'settings' && segments[0] !== 'sources' && segments[0] !== 'account-settings' && segments[0] !== 'audio-quality-settings' && segments[0] !== 'notification-settings' && segments[0] !== 'terms-of-service' && segments[0] !== 'privacy-policy' && segments[0] !== 'audio-player' && segments[0] !== 'auto-pick-settings' && segments[0] !== 'genre-preferences' && segments[0] !== 'download-settings' && segments[0] !== 'storage-usage' && segments[0] !== 'data-collection-settings') {
       // Existing user should go to main app (but allow settings and sources navigation)
       router.replace('/(tabs)/feed');
     } else if (!user && (inTabsGroup || inOnboard)) {

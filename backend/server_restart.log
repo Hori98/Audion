@@ -1,0 +1,13 @@
+INFO:     Will watch for changes in these directories: ['/Users/hori/Desktop/audion_project_final/Audion_Emergent.AI_Demo/backend']
+INFO:     Uvicorn running on http://127.0.0.1:8003 (Press CTRL+C to quit)
+INFO:     Started reloader process [84110] using StatReload
+INFO:     Started server process [84117]
+INFO:     Waiting for application startup.
+2025-08-08 19:28:42,968 - INFO - Connected to MongoDB successfully
+2025-08-08 19:28:43,467 - INFO - Database indexes created successfully
+2025-08-08 19:28:43,560 - INFO - Found 5 existing preset categories
+2025-08-08 19:28:43,560 - INFO - Preset categories initialized successfully
+2025-08-08 19:28:43,560 - INFO - Cleanup tasks completed
+INFO:     Application startup complete.
+INFO:     127.0.0.1:52602 - "GET /health HTTP/1.1" 200 OK
+bash: line 1: 84110 Killed: 9               python -m uvicorn server:app --reload --port 8003
