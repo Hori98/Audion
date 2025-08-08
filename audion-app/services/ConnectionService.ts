@@ -31,8 +31,9 @@ class ConnectionService {
   private readonly CONNECTION_TIMEOUT = 30000; // 30 seconds (increased for slow networks)
   private readonly BACKEND_URLS = [
     process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:8003',
-    'http://localhost:8003', // Primary development server
+    'http://localhost:8003', // Primary development server (uvicorn)
     'http://127.0.0.1:8003', // Localhost alternative
+    'http://localhost:8002', // Alternative port
     'http://localhost:8001', // Legacy fallback
     'http://192.168.11.63:8003', // Current network IP
   ];

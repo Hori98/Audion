@@ -19,6 +19,7 @@ import { useTheme } from '../context/ThemeContext';
 import axios from 'axios';
 import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import DateTimePicker from '@react-native-community/datetimepicker';
 
 interface SettingItem {
   id: string;
@@ -58,14 +59,128 @@ export default function SettingsScreen() {
   const [themeModalVisible, setThemeModalVisible] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
   
+  // Schedule delivery states
+  const [scheduleEnabled, setScheduleEnabled] = useState(false);
+  const [scheduleTime, setScheduleTime] = useState('07:00');
+  const [scheduleCount, setScheduleCount] = useState(3);
+  const [timePickerVisible, setTimePickerVisible] = useState(false);
+  
+  // Prompt settings states
+  const [selectedPromptStyle, setSelectedPromptStyle] = useState<'strict' | 'recommended' | 'friendly' | 'insight' | 'custom'>('recommended');
+  const [customPrompt, setCustomPrompt] = useState('');
+  const [promptModalVisible, setPromptModalVisible] = useState(false);
+  
   const API = process.env.EXPO_PUBLIC_BACKEND_URL ? `${process.env.EXPO_PUBLIC_BACKEND_URL}/api` : 'http://localhost:8000/api';
+
+  // Prompt presets definition
+  const PROMPT_PRESETS = [
+    {
+      id: 'strict' as const,
+      name: '厳格モード',
+      description: '事実重視・正確性を最優先',
+      icon: 'shield-checkmark-outline',
+      systemPrompt: '正確で事実に基づいたニュース原稿を作成してください。推測や主観は避け、確認された情報のみを報告し、200-250語で簡潔にまとめてください。'
+    },
+    {
+      id: 'recommended' as const,
+      name: 'おすすめ（標準）',
+      description: 'バランスの取れた汎用スタイル',
+      icon: 'checkmark-circle-outline', 
+      systemPrompt: '専門的でクリアなニュース原稿を単一ナレーター向けに作成してください。重要情報を分かりやすく整理し、200-300語で自然な話し言葉で構成してください。'
+    },
+    {
+      id: 'friendly' as const,
+      name: '優しめ（分かりやすい）',
+      description: '初心者にも理解しやすい表現', 
+      icon: 'heart-outline',
+      systemPrompt: '分かりやすく親しみやすいニュース原稿を作成してください。専門用語は簡単に説明し、背景情報も含めて初心者でも理解できるよう250-350語で丁寧に解説してください。'
+    },
+    {
+      id: 'insight' as const,
+      name: 'インサイト提供',
+      description: '分析・見解・影響を重視',
+      icon: 'bulb-outline',
+      systemPrompt: 'ニュースの背景分析と今後への影響を重視した原稿を作成してください。事実に加えて、専門的な洞察や市場・社会への意味も含め、300-400語で深い理解を提供してください。'
+    }
+  ];
+
+  const getPromptDisplayName = () => {
+    if (selectedPromptStyle === 'custom') return 'カスタム';
+    const preset = PROMPT_PRESETS.find(p => p.id === selectedPromptStyle);
+    return preset?.name || 'おすすめ（標準）';
+  };
+
+  // Helper function to convert time string to Date object
+  const timeStringToDate = (timeString: string): Date => {
+    const [hours, minutes] = timeString.split(':').map(Number);
+    const date = new Date();
+    date.setHours(hours);
+    date.setMinutes(minutes);
+    date.setSeconds(0);
+    date.setMilliseconds(0);
+    return date;
+  };
+
+  // Helper function to convert Date to time string
+  const dateToTimeString = (date: Date): string => {
+    const hours = date.getHours().toString().padStart(2, '0');
+    const minutes = date.getMinutes().toString().padStart(2, '0');
+    return `${hours}:${minutes}`;
+  };
   
   useEffect(() => {
     if (token) {
       fetchDeletedAudio();
       fetchUserProfile();
+      loadSettings();
     }
   }, [token]);
+
+  // Load settings from AsyncStorage
+  const loadSettings = async () => {
+    try {
+      // Load prompt settings
+      const savedPromptStyle = await AsyncStorage.getItem('prompt_style');
+      const savedCustomPrompt = await AsyncStorage.getItem('custom_prompt');
+      
+      if (savedPromptStyle) {
+        setSelectedPromptStyle(savedPromptStyle as any);
+      }
+      if (savedCustomPrompt) {
+        setCustomPrompt(savedCustomPrompt);
+      }
+
+      // Load schedule settings  
+      const savedScheduleEnabled = await AsyncStorage.getItem('schedule_enabled');
+      const savedScheduleTime = await AsyncStorage.getItem('schedule_time');
+      const savedScheduleCount = await AsyncStorage.getItem('schedule_count');
+
+      if (savedScheduleEnabled) {
+        setScheduleEnabled(JSON.parse(savedScheduleEnabled));
+      }
+      if (savedScheduleTime) {
+        setScheduleTime(savedScheduleTime);
+      }
+      if (savedScheduleCount) {
+        setScheduleCount(parseInt(savedScheduleCount));
+      }
+    } catch (error) {
+      console.error('Error loading settings:', error);
+    }
+  };
+
+  // Save settings to AsyncStorage
+  const saveSettings = async () => {
+    try {
+      await AsyncStorage.setItem('prompt_style', selectedPromptStyle);
+      await AsyncStorage.setItem('custom_prompt', customPrompt);
+      await AsyncStorage.setItem('schedule_enabled', JSON.stringify(scheduleEnabled));
+      await AsyncStorage.setItem('schedule_time', scheduleTime);
+      await AsyncStorage.setItem('schedule_count', scheduleCount.toString());
+    } catch (error) {
+      console.error('Error saving settings:', error);
+    }
+  };
 
 
   const fetchUserProfile = async () => {
@@ -263,6 +378,16 @@ export default function SettingsScreen() {
     );
   };
 
+  const handleTimeChange = (event: any, selectedDate?: Date) => {
+    if (selectedDate) {
+      const timeString = dateToTimeString(selectedDate);
+      setScheduleTime(timeString);
+      // Auto-save when time changes
+      setTimeout(() => saveSettings(), 100);
+    }
+    setTimePickerVisible(false);
+  };
+
   const handleDeleteAccount = () => {
     Alert.alert(
       'Delete Account',
@@ -334,8 +459,7 @@ export default function SettingsScreen() {
           icon: 'shield-outline',
           type: 'navigation',
           onPress: () => {
-            // TODO: Navigate to account settings
-            Alert.alert('Coming Soon', 'Account settings will be available soon');
+            router.push('/account-settings');
           }
         }
       ]
@@ -350,7 +474,7 @@ export default function SettingsScreen() {
           icon: 'musical-notes-outline',
           type: 'navigation',
           onPress: () => {
-            Alert.alert('Coming Soon', 'Audio settings will be available soon');
+            router.push('/audio-quality-settings');
           }
         },
         {
@@ -399,12 +523,12 @@ export default function SettingsScreen() {
         },
         {
           id: 'script-style',
-          title: 'News Script Style',
-          subtitle: 'Single narrator, dialogue format',
+          title: 'AI Script Style',
+          subtitle: `Current: ${getPromptDisplayName()}`,
           icon: 'document-text-outline',
           type: 'navigation',
           onPress: () => {
-            Alert.alert('Coming Soon', 'Script style settings will be available soon');
+            setPromptModalVisible(true);
           }
         },
         {
@@ -486,7 +610,64 @@ export default function SettingsScreen() {
           icon: 'checkmark-circle-outline',
           type: 'navigation',
           onPress: () => {
-            Alert.alert('Coming Soon', 'Notification settings will be available soon');
+            router.push('/notification-settings');
+          }
+        }
+      ]
+    },
+    {
+      title: 'Auto-Schedule',
+      items: [
+        {
+          id: 'schedule-enabled',
+          title: 'Daily Auto-Pick',
+          subtitle: 'Generate audio at scheduled time',
+          icon: 'time-outline',
+          type: 'toggle',
+          value: scheduleEnabled,
+          onToggle: (value: boolean) => {
+            setScheduleEnabled(value);
+            setTimeout(() => saveSettings(), 100);
+          }
+        },
+        {
+          id: 'schedule-time',
+          title: 'Delivery Time',
+          subtitle: `${scheduleTime} (${scheduleEnabled ? 'Active' : 'Inactive'})`,
+          icon: 'alarm-outline',
+          type: 'navigation',
+          onPress: () => {
+            setTimePickerVisible(true);
+          }
+        },
+        {
+          id: 'schedule-count',
+          title: 'Article Count',
+          subtitle: `${scheduleCount} articles per daily audio`,
+          icon: 'list-outline',
+          type: 'navigation',
+          onPress: () => {
+            Alert.alert(
+              'Daily Auto-Pick Article Count',
+              'How many articles should be included in your daily auto-generated audio?',
+              [
+                { text: '1 Article', onPress: () => { setScheduleCount(1); setTimeout(() => saveSettings(), 100); } },
+                { text: '3 Articles', onPress: () => { setScheduleCount(3); setTimeout(() => saveSettings(), 100); } },
+                { text: '5 Articles', onPress: () => { setScheduleCount(5); setTimeout(() => saveSettings(), 100); } },
+                { text: '7 Articles', onPress: () => { setScheduleCount(7); setTimeout(() => saveSettings(), 100); } },
+                { text: 'Cancel', style: 'cancel' }
+              ]
+            );
+          }
+        },
+        {
+          id: 'schedule-preferences',
+          title: 'Content Preferences',
+          subtitle: 'Genre filters and source priority',
+          icon: 'options-outline',
+          type: 'navigation',
+          onPress: () => {
+            Alert.alert('Coming Soon', 'Advanced content preferences will be available soon');
           }
         }
       ]
@@ -983,6 +1164,197 @@ export default function SettingsScreen() {
           </ScrollView>
         </SafeAreaView>
       </Modal>
+
+      {/* Time Picker Modal */}
+      {timePickerVisible && (
+        <Modal
+          animationType="slide"
+          transparent={true}
+          visible={timePickerVisible}
+          onRequestClose={() => setTimePickerVisible(false)}
+        >
+          <View style={styles.timePickerOverlay}>
+            <View style={[styles.timePickerContainer, { backgroundColor: theme.surface }]}>
+              <View style={[styles.timePickerHeader, { borderBottomColor: theme.border }]}>
+                <TouchableOpacity 
+                  onPress={() => setTimePickerVisible(false)}
+                  style={styles.timePickerCancel}
+                >
+                  <Text style={[styles.timePickerButtonText, { color: theme.textMuted }]}>Cancel</Text>
+                </TouchableOpacity>
+                <Text style={[styles.timePickerTitle, { color: theme.text }]}>Daily Delivery Time</Text>
+                <TouchableOpacity 
+                  onPress={() => setTimePickerVisible(false)}
+                  style={styles.timePickerDone}
+                >
+                  <Text style={[styles.timePickerButtonText, { color: theme.primary }]}>Done</Text>
+                </TouchableOpacity>
+              </View>
+              
+              <View style={styles.timePickerContent}>
+                <DateTimePicker
+                  value={timeStringToDate(scheduleTime)}
+                  mode="time"
+                  is24Hour={true}
+                  display="spinner"
+                  onChange={handleTimeChange}
+                  textColor={theme.text}
+                  style={styles.timePicker}
+                />
+                
+                <Text style={[styles.timePickerDescription, { color: theme.textMuted }]}>
+                  Your daily auto-pick will generate new audio content at this time every day.
+                </Text>
+              </View>
+            </View>
+          </View>
+        </Modal>
+      )}
+
+      {/* Prompt Style Selection Modal */}
+      <Modal
+        animationType="slide"
+        transparent={false}
+        visible={promptModalVisible}
+        onRequestClose={() => setPromptModalVisible(false)}
+      >
+        <SafeAreaView style={[styles.modalContainer, { backgroundColor: theme.background }]}>
+          {/* Modal Header */}
+          <View style={[styles.modalHeader, { backgroundColor: theme.surface, borderBottomColor: theme.border }]}>
+            <TouchableOpacity 
+              onPress={() => setPromptModalVisible(false)}
+              style={styles.modalBackButton}
+            >
+              <Ionicons name="arrow-back" size={24} color={theme.text} />
+            </TouchableOpacity>
+            <Text style={[styles.modalTitle, { color: theme.text }]}>AI Script Style</Text>
+            <View style={styles.placeholder} />
+          </View>
+
+          {/* Prompt Options */}
+          <ScrollView style={styles.modalContent}>
+            <View style={[styles.promptOptionsContainer, { backgroundColor: theme.surface }]}>
+              <Text style={[styles.sectionLabel, { color: theme.text, marginBottom: 16 }]}>
+                Choose how AI should generate your news scripts
+              </Text>
+              
+              {/* Preset Options */}
+              {PROMPT_PRESETS.map((preset) => (
+                <TouchableOpacity
+                  key={preset.id}
+                  style={[
+                    styles.promptOption,
+                    { backgroundColor: theme.background },
+                    selectedPromptStyle === preset.id && { 
+                      borderColor: theme.primary, 
+                      borderWidth: 2,
+                      backgroundColor: theme.primary + '10'
+                    }
+                  ]}
+                  onPress={() => setSelectedPromptStyle(preset.id)}
+                >
+                  <View style={styles.promptOptionIcon}>
+                    <Ionicons 
+                      name={preset.icon as any} 
+                      size={24} 
+                      color={selectedPromptStyle === preset.id ? theme.primary : theme.textMuted}
+                    />
+                  </View>
+                  <View style={styles.promptOptionContent}>
+                    <Text style={[
+                      styles.promptOptionTitle, 
+                      { color: selectedPromptStyle === preset.id ? theme.primary : theme.text }
+                    ]}>
+                      {preset.name}
+                    </Text>
+                    <Text style={[styles.promptOptionDescription, { color: theme.textMuted }]}>
+                      {preset.description}
+                    </Text>
+                  </View>
+                  {selectedPromptStyle === preset.id && (
+                    <Ionicons name="checkmark-circle" size={24} color={theme.primary} />
+                  )}
+                </TouchableOpacity>
+              ))}
+
+              {/* Custom Option */}
+              <TouchableOpacity
+                style={[
+                  styles.promptOption,
+                  { backgroundColor: theme.background },
+                  selectedPromptStyle === 'custom' && { 
+                    borderColor: theme.primary, 
+                    borderWidth: 2,
+                    backgroundColor: theme.primary + '10'
+                  }
+                ]}
+                onPress={() => setSelectedPromptStyle('custom')}
+              >
+                <View style={styles.promptOptionIcon}>
+                  <Ionicons 
+                    name="create-outline" 
+                    size={24} 
+                    color={selectedPromptStyle === 'custom' ? theme.primary : theme.textMuted}
+                  />
+                </View>
+                <View style={styles.promptOptionContent}>
+                  <Text style={[
+                    styles.promptOptionTitle, 
+                    { color: selectedPromptStyle === 'custom' ? theme.primary : theme.text }
+                  ]}>
+                    カスタム
+                  </Text>
+                  <Text style={[styles.promptOptionDescription, { color: theme.textMuted }]}>
+                    独自のプロンプトを作成
+                  </Text>
+                </View>
+                {selectedPromptStyle === 'custom' && (
+                  <Ionicons name="checkmark-circle" size={24} color={theme.primary} />
+                )}
+              </TouchableOpacity>
+
+              {/* Custom Prompt Input */}
+              {selectedPromptStyle === 'custom' && (
+                <View style={[styles.customPromptContainer, { backgroundColor: theme.background }]}>
+                  <Text style={[styles.sectionLabel, { color: theme.text, marginBottom: 8 }]}>
+                    カスタムプロンプト
+                  </Text>
+                  <View style={[styles.textInputWrapper, { borderColor: theme.border }]}>
+                    <Text
+                      style={[styles.customPromptInput, { color: theme.text }]}
+                      onPress={() => {
+                        Alert.prompt(
+                          'カスタムプロンプト',
+                          'AI原稿作成用のカスタムプロンプトを入力してください:',
+                          (text) => setCustomPrompt(text || ''),
+                          'plain-text',
+                          customPrompt
+                        );
+                      }}
+                    >
+                      {customPrompt || 'タップしてカスタムプロンプトを入力...'}
+                    </Text>
+                  </View>
+                </View>
+              )}
+
+              {/* Apply Button */}
+              <TouchableOpacity
+                style={[styles.applyButton, { backgroundColor: theme.primary }]}
+                onPress={async () => {
+                  await saveSettings();
+                  setPromptModalVisible(false);
+                  Alert.alert('設定完了', 'AI原稿スタイルが更新されました。新しい音声生成から適用されます。');
+                }}
+              >
+                <Text style={[styles.applyButtonText, { color: '#FFFFFF' }]}>
+                  設定を適用
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </ScrollView>
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -1245,5 +1617,121 @@ const styles = StyleSheet.create({
   themeOptionDescription: {
     fontSize: 14,
     lineHeight: 18,
+  },
+  // Time Picker Modal Styles
+  timePickerOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  timePickerContainer: {
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '60%',
+  },
+  timePickerHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+  },
+  timePickerCancel: {
+    paddingHorizontal: 8,
+  },
+  timePickerDone: {
+    paddingHorizontal: 8,
+  },
+  timePickerTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  timePickerButtonText: {
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  timePickerContent: {
+    paddingHorizontal: 20,
+    paddingVertical: 20,
+    alignItems: 'center',
+  },
+  timePicker: {
+    height: 200,
+    width: '100%',
+  },
+  timePickerDescription: {
+    fontSize: 14,
+    textAlign: 'center',
+    marginTop: 16,
+    paddingHorizontal: 20,
+    lineHeight: 20,
+  },
+  // Prompt Selection Modal Styles
+  promptOptionsContainer: {
+    marginHorizontal: 16,
+    borderRadius: 12,
+    padding: 16,
+    marginTop: 8,
+  },
+  promptOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  promptOptionIcon: {
+    marginRight: 16,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  promptOptionContent: {
+    flex: 1,
+  },
+  promptOptionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  promptOptionDescription: {
+    fontSize: 14,
+    lineHeight: 18,
+  },
+  customPromptContainer: {
+    marginTop: 16,
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  textInputWrapper: {
+    borderWidth: 1,
+    borderRadius: 8,
+    minHeight: 80,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  customPromptInput: {
+    fontSize: 14,
+    lineHeight: 20,
+    minHeight: 60,
+    textAlignVertical: 'top',
+  },
+  applyButton: {
+    marginTop: 24,
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  applyButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
   },
 });

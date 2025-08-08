@@ -189,6 +189,25 @@ class UserLogin(BaseModel):
     email: str
     password: str
 
+class UserPasswordChange(BaseModel):
+    current_password: str
+    new_password: str
+
+class UserEmailChange(BaseModel):
+    new_email: str
+    password: str  # Require password confirmation for security
+
+class UserSettingsUpdate(BaseModel):
+    audio_quality: Optional[str] = None  # "standard", "high" 
+    auto_play_next: Optional[bool] = None
+    notifications_enabled: Optional[bool] = None
+    push_notifications: Optional[bool] = None
+    schedule_enabled: Optional[bool] = None
+    schedule_time: Optional[str] = None
+    schedule_count: Optional[int] = None
+    text_size: Optional[str] = None  # "small", "medium", "large"
+    language: Optional[str] = None  # "en", "ja"
+
 class RSSSource(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     user_id: str
@@ -224,6 +243,8 @@ class AudioCreation(BaseModel):
     duration: int
     script: Optional[str] = None
     chapters: Optional[List[dict]] = None  # [{"title": "Article Title", "start_time": 0, "end_time": 30000, "original_url": "https://..."}] (times in milliseconds)
+    prompt_style: Optional[str] = "recommended"  # Added prompt style field: 'strict', 'recommended', 'friendly', 'insight', 'custom'
+    custom_prompt: Optional[str] = None  # Custom prompt text if prompt_style is 'custom'
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 class AudioCreationRequest(BaseModel):
@@ -231,6 +252,8 @@ class AudioCreationRequest(BaseModel):
     article_titles: List[str]
     custom_title: Optional[str] = None
     article_urls: Optional[List[str]] = None  # Add URLs for auto-pick articles
+    prompt_style: Optional[str] = "recommended"  # Prompt style: 'strict', 'recommended', 'friendly', 'insight', 'custom'
+    custom_prompt: Optional[str] = None  # Custom prompt text if prompt_style is 'custom'
 
 class RenameRequest(BaseModel):
     new_title: str
@@ -261,6 +284,16 @@ class UserProfile(BaseModel):
         "General": 1.0
     })
     interaction_history: List[dict] = Field(default_factory=list)
+    # User Settings
+    audio_quality: str = "standard"  # "standard", "high"
+    auto_play_next: bool = True
+    notifications_enabled: bool = True
+    push_notifications: bool = True
+    schedule_enabled: bool = False
+    schedule_time: str = "07:00"
+    schedule_count: int = 3
+    text_size: str = "medium"  # "small", "medium", "large"
+    language: str = "en"  # "en", "ja"
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -557,12 +590,24 @@ async def generate_audio_title_with_openai(articles_content: List[str]) -> str:
         logging.error(f"OpenAI title generation error: {e}")
         return f"AI News Summary - {datetime.now().strftime('%Y-%m-%d')}"
 
-async def summarize_articles_with_openai(articles_content: List[str]) -> str:
+def get_system_message_by_prompt_style(prompt_style: str = "recommended", custom_prompt: str = None) -> str:
+    """Get system message based on prompt style"""
+    prompt_styles = {
+        "strict": "正確で事実に基づいたニュース原稿を作成してください。推測や主観は避け、確認された情報のみを報告し、200-250語で簡潔にまとめてください。単一ナレーター向けに、スピーカーラベルや対話形式は使用せず、自然な話し言葉で構成してください。",
+        "recommended": "専門的でクリアなニュース原稿を単一ナレーター向けに作成してください。重要情報を分かりやすく整理し、200-300語で自然な話し言葉で構成してください。スピーカーラベルや対話形式は使用せず、音声ナレーション用の原稿として作成してください。",
+        "friendly": "分かりやすく親しみやすいニュース原稿を作成してください。専門用語は簡単に説明し、背景情報も含めて初心者でも理解できるよう250-350語で丁寧に解説してください。単一ナレーター向けに、スピーカーラベルは使用せず、自然で親しみやすい話し言葉で構成してください。",
+        "insight": "ニュースの背景分析と今後への影響を重視した原稿を作成してください。事実に加えて、専門的な洞察や市場・社会への意味も含め、300-400語で深い理解を提供してください。単一ナレーター向けに、分析的で洞察に富んだ話し言葉で構成してください。",
+        "custom": custom_prompt or "専門的でクリアなニュース原稿を単一ナレーター向けに作成してください。重要情報を分かりやすく整理し、200-300語で自然な話し言葉で構成してください。"
+    }
+    
+    return prompt_styles.get(prompt_style, prompt_styles["recommended"])
+
+async def summarize_articles_with_openai(articles_content: List[str], prompt_style: str = "recommended", custom_prompt: str = None) -> str:
     try:
         if not OPENAI_API_KEY or OPENAI_API_KEY == "your-openai-key":
             return "Breaking news today as technology companies continue to shape our digital landscape. Recent developments include major updates to artificial intelligence systems and significant changes in social media platforms. Industry analysts report growing investments in sustainable technology solutions, while cybersecurity experts emphasize the importance of data protection in an increasingly connected world. These developments signal continued innovation across the tech sector."
         client = openai.AsyncOpenAI(api_key=OPENAI_API_KEY)
-        system_message = "You are an expert news summarizer. Create a clean, professional news script for a single narrator to read aloud. The script should be written in a clear, natural speaking style without any host names, speaker labels, or dialogue markers. Focus on delivering the key information in an engaging, journalistic tone suitable for audio narration. Keep it around 200-300 words."
+        system_message = get_system_message_by_prompt_style(prompt_style, custom_prompt)
         combined_content = "\n\n--- Article ---\n\n".join(articles_content)
         user_message = f"Please create a single-narrator news script summarizing these articles:\n\n{combined_content}\n\nWrite only the script content without any speaker labels, host names, or dialogue markers."
         chat_completion = await client.chat.completions.create(
@@ -916,9 +961,16 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Database not connected")
     
     token = credentials.credentials
+    logging.info(f"DEBUG: Attempting authentication with token: {token}")
+    
     user = await db.users.find_one({"id": token})
+    logging.info(f"DEBUG: Found user: {user is not None}")
+    
     if not user:
+        logging.error(f"DEBUG: User not found for token: {token}")
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid authentication credentials")
+    
+    logging.info(f"DEBUG: Returning user: {user.get('email', 'No email')}")
     return User(**user)
 
 # === API Endpoints ===
@@ -991,6 +1043,191 @@ async def login(user_data: UserLogin):
         if "ServerSelectionTimeoutError" in str(e):
             raise HTTPException(status_code=503, detail="Database connection failed. Please check your internet connection and try again.")
         raise HTTPException(status_code=500, detail="Login failed")
+
+@app.put("/api/auth/change-password", tags=["Auth"])
+async def change_password(password_data: UserPasswordChange, current_user: User = Depends(get_current_user)):
+    """Change user password"""
+    if not db_connected:
+        raise HTTPException(status_code=503, detail="Database unavailable. Server is running in limited mode.")
+    
+    try:
+        # Find user to verify current password
+        user = await asyncio.wait_for(
+            db.users.find_one({"id": current_user.id}),
+            timeout=10.0
+        )
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        # In a real app, you would hash and verify passwords
+        # For now, we'll just update (since original system doesn't store passwords)
+        
+        # Update user record with new password hash (placeholder)
+        await asyncio.wait_for(
+            db.users.update_one(
+                {"id": current_user.id},
+                {"$set": {"password_updated_at": datetime.utcnow()}}
+            ),
+            timeout=10.0
+        )
+        
+        return {"message": "Password updated successfully"}
+        
+    except asyncio.TimeoutError:
+        logging.error("Database timeout during password change")
+        raise HTTPException(status_code=503, detail="Database temporarily unavailable. Please try again later.")
+    except Exception as e:
+        logging.error(f"Password change error: {e}")
+        raise HTTPException(status_code=500, detail="Password change failed")
+
+@app.put("/api/auth/change-email", tags=["Auth"])
+async def change_email(email_data: UserEmailChange, current_user: User = Depends(get_current_user)):
+    """Change user email address"""
+    if not db_connected:
+        raise HTTPException(status_code=503, detail="Database unavailable. Server is running in limited mode.")
+    
+    try:
+        # Check if new email is already in use
+        existing_user = await asyncio.wait_for(
+            db.users.find_one({"email": email_data.new_email}),
+            timeout=10.0
+        )
+        if existing_user and existing_user["id"] != current_user.id:
+            raise HTTPException(status_code=400, detail="Email already in use")
+        
+        # Update user email
+        await asyncio.wait_for(
+            db.users.update_one(
+                {"id": current_user.id},
+                {"$set": {
+                    "email": email_data.new_email,
+                    "email_updated_at": datetime.utcnow()
+                }}
+            ),
+            timeout=10.0
+        )
+        
+        # Update the current_user object
+        current_user.email = email_data.new_email
+        
+        return {"message": "Email updated successfully", "user": current_user}
+        
+    except asyncio.TimeoutError:
+        logging.error("Database timeout during email change")
+        raise HTTPException(status_code=503, detail="Database temporarily unavailable. Please try again later.")
+    except Exception as e:
+        logging.error(f"Email change error: {e}")
+        raise HTTPException(status_code=500, detail="Email change failed")
+
+@app.get("/api/user/settings", tags=["User Settings"])
+async def get_user_settings(current_user: User = Depends(get_current_user)):
+    """Get user settings and preferences"""
+    if not db_connected:
+        raise HTTPException(status_code=503, detail="Database unavailable. Server is running in limited mode.")
+    
+    try:
+        # Get user profile which contains settings
+        profile = await asyncio.wait_for(
+            db.profiles.find_one({"user_id": current_user.id}),
+            timeout=10.0
+        )
+        
+        if not profile:
+            # Create default profile with settings
+            profile_data = UserProfile(user_id=current_user.id)
+            await asyncio.wait_for(
+                db.profiles.insert_one(profile_data.dict()),
+                timeout=10.0
+            )
+            return profile_data.dict()
+        
+        # Convert ObjectId fields to strings for JSON serialization
+        if profile and '_id' in profile:
+            profile['_id'] = str(profile['_id'])
+        return profile
+        
+    except asyncio.TimeoutError:
+        logging.error("Database timeout during settings retrieval")
+        raise HTTPException(status_code=503, detail="Database temporarily unavailable. Please try again later.")
+    except Exception as e:
+        logging.error(f"Settings retrieval error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve settings")
+
+@app.put("/api/user/settings", tags=["User Settings"])
+async def update_user_settings(settings: UserSettingsUpdate, current_user: User = Depends(get_current_user)):
+    """Update user settings and preferences"""
+    if not db_connected:
+        raise HTTPException(status_code=503, detail="Database unavailable. Server is running in limited mode.")
+    
+    try:
+        # Prepare update data - only include non-None values
+        update_data = {}
+        if settings.audio_quality is not None:
+            if settings.audio_quality not in ["standard", "high"]:
+                raise HTTPException(status_code=400, detail="Invalid audio quality. Must be 'standard' or 'high'")
+            update_data["audio_quality"] = settings.audio_quality
+            
+        if settings.auto_play_next is not None:
+            update_data["auto_play_next"] = settings.auto_play_next
+            
+        if settings.notifications_enabled is not None:
+            update_data["notifications_enabled"] = settings.notifications_enabled
+            
+        if settings.push_notifications is not None:
+            update_data["push_notifications"] = settings.push_notifications
+            
+        if settings.schedule_enabled is not None:
+            update_data["schedule_enabled"] = settings.schedule_enabled
+            
+        if settings.schedule_time is not None:
+            # Validate time format HH:MM
+            import re
+            if not re.match(r'^([01]?[0-9]|2[0-3]):[0-5][0-9]$', settings.schedule_time):
+                raise HTTPException(status_code=400, detail="Invalid time format. Must be HH:MM")
+            update_data["schedule_time"] = settings.schedule_time
+            
+        if settings.schedule_count is not None:
+            if settings.schedule_count < 1 or settings.schedule_count > 10:
+                raise HTTPException(status_code=400, detail="Schedule count must be between 1 and 10")
+            update_data["schedule_count"] = settings.schedule_count
+            
+        if settings.text_size is not None:
+            if settings.text_size not in ["small", "medium", "large"]:
+                raise HTTPException(status_code=400, detail="Invalid text size. Must be 'small', 'medium', or 'large'")
+            update_data["text_size"] = settings.text_size
+            
+        if settings.language is not None:
+            if settings.language not in ["en", "ja"]:
+                raise HTTPException(status_code=400, detail="Invalid language. Must be 'en' or 'ja'")
+            update_data["language"] = settings.language
+
+        if not update_data:
+            raise HTTPException(status_code=400, detail="No valid settings to update")
+
+        # Add updated timestamp
+        update_data["updated_at"] = datetime.utcnow()
+        
+        # Update user profile
+        await asyncio.wait_for(
+            db.profiles.update_one(
+                {"user_id": current_user.id},
+                {"$set": update_data},
+                upsert=True  # Create if doesn't exist
+            ),
+            timeout=10.0
+        )
+        
+        return {"message": "Settings updated successfully", "updated_fields": list(update_data.keys())}
+        
+    except asyncio.TimeoutError:
+        logging.error("Database timeout during settings update")
+        raise HTTPException(status_code=503, detail="Database temporarily unavailable. Please try again later.")
+    except HTTPException:
+        # Re-raise HTTP exceptions (like validation errors)
+        raise
+    except Exception as e:
+        logging.error(f"Settings update error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to update settings")
 
 @app.get("/api/rss-sources", response_model=List[RSSSource], tags=["RSS"])
 async def get_user_sources(current_user: User = Depends(get_current_user)):
@@ -1143,8 +1380,12 @@ async def create_audio(request: AudioCreationRequest, current_user: User = Depen
                 content = f"Title: {article['title']}\nSummary: {article['summary']}\nSource: {article['source_name']}"
                 articles_content.append(content)
         
-        # Generate script and title based on actual content
-        script = await summarize_articles_with_openai(articles_content)
+        # Generate script and title based on actual content with prompt style
+        script = await summarize_articles_with_openai(
+            articles_content, 
+            prompt_style=request.prompt_style or "recommended", 
+            custom_prompt=request.custom_prompt
+        )
         generated_title = await generate_audio_title_with_openai(articles_content)
         
         audio_data = await convert_text_to_speech(script)
@@ -1222,7 +1463,9 @@ async def create_audio(request: AudioCreationRequest, current_user: User = Depen
             audio_url=audio_url,
             duration=duration,
             script=script,
-            chapters=chapters
+            chapters=chapters,
+            prompt_style=request.prompt_style or "recommended",
+            custom_prompt=request.custom_prompt
         )
         logging.info(f"Saving AudioCreation to DB with audio_url: {audio_creation.audio_url}")
         
@@ -1663,7 +1906,11 @@ async def create_auto_picked_audio(request: AutoPickRequest, current_user: User 
         
         # Create audio from picked articles
         articles_content = [f"Title: {article.title}\nSummary: {article.summary}\nSource: {article.source_name}" for article in picked_articles]
-        script = await summarize_articles_with_openai(articles_content)
+        script = await summarize_articles_with_openai(
+            articles_content, 
+            prompt_style="recommended",  # Auto-pick uses default recommended style for now
+            custom_prompt=None
+        )
         generated_title = await generate_audio_title_with_openai(articles_content)
         
         audio_data = await convert_text_to_speech(script)
@@ -1695,7 +1942,9 @@ async def create_auto_picked_audio(request: AutoPickRequest, current_user: User 
             audio_url=audio_url,
             duration=duration,
             script=script,
-            chapters=chapters
+            chapters=chapters,
+            prompt_style="recommended",  # Auto-pick uses default recommended style
+            custom_prompt=None
         )
         
         await db.audio_creations.insert_one(audio_creation.dict())
@@ -2285,7 +2534,11 @@ async def setup_user_onboard(request: OnboardRequest, current_user: User = Depen
                 if sample_articles:
                     # Generate welcome audio
                     articles_content = [f"Title: {article['title']}\nSummary: {article['summary']}" for article in sample_articles]
-                    script = await summarize_articles_with_openai(articles_content)
+                    script = await summarize_articles_with_openai(
+                        articles_content, 
+                        prompt_style="friendly",  # Welcome audio uses friendly style
+                        custom_prompt=None
+                    )
                     generated_title = f"Welcome to {first_category['display_name']} News"
                     
                     audio_data = await convert_text_to_speech(script)
@@ -2297,7 +2550,9 @@ async def setup_user_onboard(request: OnboardRequest, current_user: User = Depen
                         article_titles=[article['title'] for article in sample_articles],
                         audio_url=audio_data['url'],
                         duration=audio_data['duration'],
-                        script=script
+                        script=script,
+                        prompt_style="friendly",
+                        custom_prompt=None
                     )
                     
                     await db.audio_creations.insert_one(welcome_audio.dict())

@@ -51,6 +51,8 @@ export default function FeedScreen() {
   // Removed: showSelectedModal state
   const [uiUpdateTrigger, setUiUpdateTrigger] = useState(0); // Force UI updates
   const [selectionMode, setSelectionMode] = useState(false); // Pattern B selection mode
+  const [tempPromptStyle, setTempPromptStyle] = useState<string>('recommended'); // Temporary prompt override
+  const [showPromptModal, setShowPromptModal] = useState(false); // Prompt selection modal
   const [fabRotation] = useState(new Animated.Value(0)); // FAB animation
   const [feedLikedArticles, setFeedLikedArticles] = useState<Set<string>>(new Set());
   const [feedDislikedArticles, setFeedDislikedArticles] = useState<Set<string>>(new Set());
@@ -58,6 +60,13 @@ export default function FeedScreen() {
   const genres = [
     'All', 'Technology', 'Finance', 'Sports', 'Politics', 'Health',
     'Entertainment', 'Science', 'Environment', 'Education', 'Travel', 'General'
+  ];
+
+  const promptStyles = [
+    { id: 'strict', name: '厳格', description: '正確で事実に基づく', icon: 'shield-checkmark-outline', color: '#EF4444' },
+    { id: 'recommended', name: '標準', description: '専門的でクリア', icon: 'checkmark-circle-outline', color: theme.primary },
+    { id: 'friendly', name: '優しめ', description: '分かりやすく説明', icon: 'happy-outline', color: '#10B981' },
+    { id: 'insight', name: 'インサイト', description: '深い考察を提供', icon: 'bulb-outline', color: '#F59E0B' }
   ];
 
   useFocusEffect(
@@ -454,9 +463,15 @@ export default function FeedScreen() {
   };
 
   // Toggle Selection Mode (Pattern B)
-  const toggleSelectionMode = () => {
+  const toggleSelectionMode = async () => {
     const newMode = !selectionMode;
     setSelectionMode(newMode);
+    
+    // Load current prompt setting when entering selection mode
+    if (newMode) {
+      const currentPromptStyle = await AsyncStorage.getItem('prompt_style') || 'recommended';
+      setTempPromptStyle(currentPromptStyle);
+    }
     
     // Animate FAB rotation
     Animated.timing(fabRotation, {
@@ -480,19 +495,24 @@ export default function FeedScreen() {
 
     setCreatingAudio(true);
     try {
+      // Load prompt settings - use temporary style if in manual mode, otherwise use saved settings
+      const savedPromptStyle = selectionMode ? tempPromptStyle : (await AsyncStorage.getItem('prompt_style') || 'recommended');
+      const savedCustomPrompt = await AsyncStorage.getItem('custom_prompt') || '';
+      
       // Get selected articles using normalized IDs
       const selectedArticles = getSelectedArticles();
       const articleIds = selectedArticles.map((article) => article.id);
       const articleTitles = selectedArticles.map((article) => article.title);
       const articleUrls = selectedArticles.map((article) => article.link);
 
-
       const response = await axios.post(
         `${API}/audio/create`,
         {
           article_ids: articleIds,
           article_titles: articleTitles,
-          article_urls: articleUrls
+          article_urls: articleUrls,
+          prompt_style: savedPromptStyle,
+          custom_prompt: savedCustomPrompt
         },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -616,12 +636,18 @@ export default function FeedScreen() {
       const articleUrls = selectedArticles.map((article: Article) => article.link);
 
 
+      // Load prompt settings from AsyncStorage
+      const savedPromptStyle = await AsyncStorage.getItem('prompt_style') || 'recommended';
+      const savedCustomPrompt = await AsyncStorage.getItem('custom_prompt') || '';
+
       const response = await axios.post(
         `${API}/audio/create`,
         {
           article_ids: articleIds,
           article_titles: articleTitles,
-          article_urls: articleUrls
+          article_urls: articleUrls,
+          prompt_style: savedPromptStyle,
+          custom_prompt: savedCustomPrompt
         },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -940,6 +966,34 @@ export default function FeedScreen() {
             Manual Pick
           </Text>
         </TouchableOpacity>
+        
+        {/* Prompt Style Button - Show in selection mode */}
+        {selectionMode && (
+          <TouchableOpacity
+            style={[
+              styles.promptStyleButton,
+              { backgroundColor: theme.accent, borderColor: theme.primary }
+            ]}
+            onPress={() => setShowPromptModal(true)}
+            disabled={creatingAudio}
+            accessibilityRole="button"
+            accessibilityLabel="Change prompt style for this session"
+            accessibilityHint="Tap to temporarily change the AI prompt style for audio creation"
+          >
+            <Ionicons 
+              name={promptStyles.find(style => style.id === tempPromptStyle)?.icon || 'checkmark-circle-outline'} 
+              size={16} 
+              color={promptStyles.find(style => style.id === tempPromptStyle)?.color || theme.primary}
+              style={{ marginRight: 6 }} 
+            />
+            <Text style={[
+              styles.promptStyleButtonText, 
+              { color: theme.primary }
+            ]}>
+              {promptStyles.find(style => style.id === tempPromptStyle)?.name || '標準'}
+            </Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       {/* Removed: Unnecessary article count info */}
@@ -1163,6 +1217,82 @@ export default function FeedScreen() {
           setTimeout(() => clearAllSelections(), 100);
         }}
       />
+      
+      {/* Prompt Style Selection Modal */}
+      <Modal
+        visible={showPromptModal}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setShowPromptModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.promptModal, { backgroundColor: theme.surface }]}>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: theme.text }]}>
+                プロンプトスタイル選択
+              </Text>
+              <TouchableOpacity
+                onPress={() => setShowPromptModal(false)}
+                style={styles.modalCloseButton}
+              >
+                <Ionicons name="close" size={24} color={theme.textMuted} />
+              </TouchableOpacity>
+            </View>
+            
+            <Text style={[styles.modalSubtitle, { color: theme.textSecondary }]}>
+              この音声作成セッションでのみ適用されます
+            </Text>
+            
+            <View style={styles.promptStylesContainer}>
+              {promptStyles.map((style) => (
+                <TouchableOpacity
+                  key={style.id}
+                  style={[
+                    styles.promptStyleOption,
+                    {
+                      backgroundColor: tempPromptStyle === style.id ? style.color + '20' : theme.accent,
+                      borderColor: tempPromptStyle === style.id ? style.color : 'transparent',
+                      borderWidth: tempPromptStyle === style.id ? 2 : 0,
+                    }
+                  ]}
+                  onPress={() => {
+                    setTempPromptStyle(style.id);
+                    setShowPromptModal(false);
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Select ${style.name} prompt style`}
+                  accessibilityState={{ selected: tempPromptStyle === style.id }}
+                >
+                  <View style={styles.promptStyleOptionContent}>
+                    <Ionicons
+                      name={style.icon}
+                      size={24}
+                      color={style.color}
+                      style={styles.promptStyleIcon}
+                    />
+                    <View style={styles.promptStyleTextContainer}>
+                      <Text style={[styles.promptStyleName, { color: theme.text }]}>
+                        {style.name}
+                      </Text>
+                      <Text style={[styles.promptStyleDescription, { color: theme.textSecondary }]}>
+                        {style.description}
+                      </Text>
+                    </View>
+                    {tempPromptStyle === style.id && (
+                      <Ionicons
+                        name="checkmark-circle"
+                        size={20}
+                        color={style.color}
+                        style={styles.promptStyleCheckmark}
+                      />
+                    )}
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -1502,4 +1632,83 @@ const styles = StyleSheet.create({
   // Removed: Complex selection UI styles
   // Removed: Modal and complex selection UI styles
   // Removed: selectAllContainer, filterInfo, selectAllButton, selectAllButtonText
+  
+  // Prompt style button styles
+  promptStyleButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+    borderWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 8,
+  },
+  promptStyleButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  
+  // Prompt modal styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
+  promptModal: {
+    width: '100%',
+    maxWidth: 400,
+    borderRadius: 16,
+    padding: 24,
+    maxHeight: '80%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+  modalCloseButton: {
+    padding: 4,
+  },
+  modalSubtitle: {
+    fontSize: 14,
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  promptStylesContainer: {
+    gap: 12,
+  },
+  promptStyleOption: {
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 2,
+  },
+  promptStyleOptionContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  promptStyleIcon: {
+    marginRight: 12,
+  },
+  promptStyleTextContainer: {
+    flex: 1,
+  },
+  promptStyleName: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 2,
+  },
+  promptStyleDescription: {
+    fontSize: 14,
+  },
+  promptStyleCheckmark: {
+    marginLeft: 12,
+  },
 });

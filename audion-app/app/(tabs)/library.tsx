@@ -17,6 +17,7 @@ interface AudioItem {
   duration: number; // in seconds
   created_at: string;
   script?: string; // Added script field
+  prompt_style?: 'strict' | 'recommended' | 'friendly' | 'insight' | 'custom'; // Added prompt style field
 }
 
 interface Playlist {
@@ -84,6 +85,39 @@ export default function LibraryScreen() {
   const [newAlbumDescription, setNewAlbumDescription] = useState('');
 
   const API = process.env.EXPO_PUBLIC_BACKEND_URL ? `${process.env.EXPO_PUBLIC_BACKEND_URL}/api` : 'http://localhost:8000/api';
+
+  // Prompt style mapping function
+  const getPromptStyleInfo = (promptStyle?: string) => {
+    const styles = {
+      strict: { 
+        icon: 'shield-checkmark-outline', 
+        label: '厳格', 
+        color: '#EF4444' 
+      },
+      recommended: { 
+        icon: 'checkmark-circle-outline', 
+        label: '標準', 
+        color: theme.primary 
+      },
+      friendly: { 
+        icon: 'heart-outline', 
+        label: '優しめ', 
+        color: '#10B981' 
+      },
+      insight: { 
+        icon: 'bulb-outline', 
+        label: 'インサイト', 
+        color: '#F59E0B' 
+      },
+      custom: { 
+        icon: 'create-outline', 
+        label: 'カスタム', 
+        color: '#8B5CF6' 
+      }
+    };
+    
+    return styles[promptStyle as keyof typeof styles] || styles.recommended;
+  };
 
   useFocusEffect(
     React.useCallback(() => {
@@ -678,7 +712,21 @@ export default function LibraryScreen() {
                             />
                           </View>
                           <View style={styles.itemInfo}>
-                            <Text style={[styles.itemTitle, { color: theme.text }]}>{audio.title}</Text>
+                            <View style={styles.titleContainer}>
+                              <Text style={[styles.itemTitle, { color: theme.text }]}>{audio.title}</Text>
+                              {audio.prompt_style && (
+                                <View style={[styles.promptBadge, { backgroundColor: getPromptStyleInfo(audio.prompt_style).color + '20' }]}>
+                                  <Ionicons 
+                                    name={getPromptStyleInfo(audio.prompt_style).icon as any} 
+                                    size={12} 
+                                    color={getPromptStyleInfo(audio.prompt_style).color} 
+                                  />
+                                  <Text style={[styles.promptBadgeText, { color: getPromptStyleInfo(audio.prompt_style).color }]}>
+                                    {getPromptStyleInfo(audio.prompt_style).label}
+                                  </Text>
+                                </View>
+                              )}
+                            </View>
                             <Text style={[styles.itemSubtitle, { color: theme.textSecondary }]}>
                               {format(new Date(audio.created_at), 'MMM dd, yyyy')} · {formatDuration(audio.duration)}
                               {downloadedAudioIds.has(audio.id) && ' · Downloaded'}
@@ -1146,5 +1194,25 @@ const styles = StyleSheet.create({
   },
   selectionCheckbox: {
     marginRight: 12,
+  },
+  // Prompt style badge styles
+  titleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+    flexWrap: 'wrap',
+  },
+  promptBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 12,
+    marginLeft: 8,
+    gap: 4,
+  },
+  promptBadgeText: {
+    fontSize: 10,
+    fontWeight: '600',
   },
 });

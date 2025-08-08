@@ -38,13 +38,24 @@ npm run reset-project        # Reset to blank project
 ```
 
 ### Backend Development
+
+**🚨 IMPORTANT: Check SERVER_PORTS.md before starting servers!**
+
+#### User Development Server (Main)
 ```bash
 # From project root
 python -m venv venv           # Create virtual environment
 source venv/bin/activate      # Activate virtual environment (macOS/Linux)
 pip install -r backend/requirements.txt  # Install dependencies
 cd backend
-uvicorn server:app --reload --port 8003   # Start development server (Claude AI testing)
+uvicorn server:app --reload --port 8003   # Start development server (User - port 8003)
+```
+
+#### Claude AI Debug Server (Separate)
+```bash
+# For Claude AI debugging only
+cd backend
+uvicorn server:app --reload --port 8002   # Start development server (Claude - port 8002)
 ```
 
 ### Testing
