@@ -42,7 +42,7 @@ export default function InfiniteFeed({ onCreateAudio, onRefresh }: InfiniteFeedP
   const [audioCards, setAudioCards] = useState<AudioCard[]>([]);
   const [loading, setLoading] = useState(false);
 
-  const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:8002';
+  const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:8003';
   const API = `${BACKEND_URL}/api`;
 
   useEffect(() => {

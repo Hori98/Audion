@@ -7,7 +7,7 @@ import axios from 'axios';
 import InfiniteFeed from '../../components/InfiniteFeed';
 import LoadingIndicator from '../../components/LoadingIndicator';
 
-const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:8002';
+const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:8003';
 const API = `${BACKEND_URL}/api`;
 
 export default function FeedScreen() {

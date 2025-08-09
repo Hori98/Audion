@@ -25,7 +25,7 @@ export default function RecentScreen() {
   const [recentAudio, setRecentAudio] = useState<RecentAudioItem[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const API = process.env.EXPO_PUBLIC_BACKEND_URL ? `${process.env.EXPO_PUBLIC_BACKEND_URL}/api` : 'http://localhost:8002/api';
+  const API = process.env.EXPO_PUBLIC_BACKEND_URL ? `${process.env.EXPO_PUBLIC_BACKEND_URL}/api` : 'http://localhost:8003/api';
 
   useFocusEffect(
     React.useCallback(() => {
