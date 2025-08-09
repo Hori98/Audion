@@ -175,6 +175,7 @@ export default function InfiniteFeed({ onCreateAudio, onRefresh }: InfiniteFeedP
           duration: card.duration
         });
       } catch (error) {
+        console.error('Audio playback error:', error);
         Alert.alert('エラー', '音声の再生に失敗しました');
       }
     }

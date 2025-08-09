@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 // import axios from 'axios'; // Not used in current implementation
 import { useAuth } from '../../context/AuthContext';
-import { useAudio } from '../../context/AudioContext';
+// import { useAudio } from '../../context/AudioContext'; // Not used in current implementation
 import { useTheme } from '../../context/ThemeContext';
 import { useFocusEffect } from '@react-navigation/native';
 import { format } from 'date-fns';
