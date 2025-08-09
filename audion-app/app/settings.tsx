@@ -7,22 +7,17 @@ import {
   TouchableOpacity,
   SafeAreaView,
   Alert,
-  ActivityIndicator,
-  Image,
+  Switch,
   Modal,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
-import { useScrollPosition } from '../hooks/useScrollPosition';
 import DebugMenu from '../components/DebugMenu';
 import DebugService from '../services/DebugService';
-import SubscriptionService from '../services/SubscriptionService';
-import axios from 'axios';
-import * as ImagePicker from 'expo-image-picker';
 
-interface SettingItem {
+interface QuickSettingItem {
   id: string;
   title: string;
   subtitle?: string;
@@ -31,245 +26,25 @@ interface SettingItem {
   value?: boolean;
   onPress?: () => void;
   onToggle?: (value: boolean) => void;
-  badge?: string;
 }
 
-interface SettingSection {
-  title: string;
-  items: SettingItem[];
-}
-
-interface DeletedAudio {
-  id: string;
-  title: string;
-  deleted_at: string;
-  permanent_delete_at: string;
-}
-
-export default function SettingsScreen() {
+export default function QuickSettingsScreen() {
   const router = useRouter();
-  const { logout, user, token, handleAuthError } = useAuth();
+  const { logout, user } = useAuth();
   const { theme, themeMode, setThemeMode } = useTheme();
-  const { scrollViewRef, handleScroll, scrollEventThrottle } = useScrollPosition({ 
-    screenKey: 'settings',
-    // Prevent scroll restoration when modals are open
-    shouldRestoreScroll: () => !debugMenuVisible && !profileModalVisible && !themeModalVisible
-  });
   
-  const [deletedAudio, setDeletedAudio] = useState<DeletedAudio[]>([]);
-  const [loadingDeleted, setLoadingDeleted] = useState(false);
-  const [profileImage, setProfileImage] = useState<string | null>(null);
-  const [profileModalVisible, setProfileModalVisible] = useState(false);
-  const [themeModalVisible, setThemeModalVisible] = useState(false);
-  const [uploadingImage, setUploadingImage] = useState(false);
   const [debugMenuVisible, setDebugMenuVisible] = useState(false);
-  const [subscriptionTier, setSubscriptionTier] = useState(SubscriptionService.getCurrentTier());
-  
-  const API = process.env.EXPO_PUBLIC_BACKEND_URL ? `${process.env.EXPO_PUBLIC_BACKEND_URL}/api` : 'http://localhost:8000/api';
-  
-  useEffect(() => {
-    if (token) {
-      fetchDeletedAudio();
-      fetchUserProfile();
-    }
-    loadDebugSettings();
-  }, [token]);
-
-  const loadDebugSettings = async () => {
-    try {
-      await DebugService.loadDebugSettings();
-      const tier = await SubscriptionService.getEffectiveTier();
-      setSubscriptionTier(tier);
-    } catch (error) {
-      console.error('Error loading debug settings:', error);
-    }
-  };
-
-  const fetchUserProfile = async () => {
-    try {
-      const response = await axios.get(`${API}/user/profile`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (response.data.profile_image) {
-        setProfileImage(response.data.profile_image);
-      }
-    } catch (error: any) {
-      console.error('Error fetching user profile:', error);
-      if (error.response?.status === 401) {
-        handleAuthError();
-        return;
-      }
-      // Profile endpoint might not exist yet, ignore other errors
-    }
-  };
-
-  const handlePickImage = async () => {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permission Required', 'We need camera roll permissions to upload your profile image.');
-      return;
-    }
-
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.8,
-      base64: true,
-    });
-
-    if (!result.canceled && result.assets[0]) {
-      const asset = result.assets[0];
-      setUploadingImage(true);
-      
-      try {
-        const response = await axios.post(
-          `${API}/user/profile-image`,
-          {
-            image_data: `data:image/jpeg;base64,${asset.base64}`,
-            filename: asset.fileName || 'profile.jpg',
-          },
-          {
-            headers: { Authorization: `Bearer ${token}` },
-          }
-        );
-        
-        setProfileImage(response.data.profile_image_url);
-        Alert.alert('Success', 'Profile image updated successfully!');
-      } catch (error: any) {
-        console.error('Error uploading profile image:', error);
-        Alert.alert('Upload Failed', error.response?.data?.detail || 'Failed to upload profile image.');
-      } finally {
-        setUploadingImage(false);
-      }
-    }
-  };
-
-  const handleTakePhoto = async () => {
-    const { status } = await ImagePicker.requestCameraPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permission Required', 'We need camera permissions to take your profile photo.');
-      return;
-    }
-
-    const result = await ImagePicker.launchCameraAsync({
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.8,
-      base64: true,
-    });
-
-    if (!result.canceled && result.assets[0]) {
-      const asset = result.assets[0];
-      setUploadingImage(true);
-      
-      try {
-        const response = await axios.post(
-          `${API}/user/profile-image`,
-          {
-            image_data: `data:image/jpeg;base64,${asset.base64}`,
-            filename: 'profile.jpg',
-          },
-          {
-            headers: { Authorization: `Bearer ${token}` },
-          }
-        );
-        
-        setProfileImage(response.data.profile_image_url);
-        Alert.alert('Success', 'Profile image updated successfully!');
-      } catch (error: any) {
-        console.error('Error uploading profile image:', error);
-        Alert.alert('Upload Failed', error.response?.data?.detail || 'Failed to upload profile image.');
-      } finally {
-        setUploadingImage(false);
-      }
-    }
-  };
-
-  const handleRemoveProfileImage = async () => {
-    Alert.alert(
-      'Remove Profile Image',
-      'Are you sure you want to remove your profile image?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Remove',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await axios.delete(`${API}/user/profile-image`, {
-                headers: { Authorization: `Bearer ${token}` },
-              });
-              setProfileImage(null);
-              Alert.alert('Success', 'Profile image removed successfully!');
-            } catch (error: any) {
-              console.error('Error removing profile image:', error);
-              Alert.alert('Error', error.response?.data?.detail || 'Failed to remove profile image.');
-            }
-          }
-        }
-      ]
-    );
-  };
-
-  const fetchDeletedAudio = async () => {
-    setLoadingDeleted(true);
-    try {
-      const response = await axios.get(`${API}/audio/deleted`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      setDeletedAudio(response.data || []);
-    } catch (error: any) {
-      console.error('Error fetching deleted audio:', error);
-      if (error.response?.status === 401) {
-        handleAuthError();
-        return;
-      }
-      // Don't show error alert for missing endpoint during development
-    } finally {
-      setLoadingDeleted(false);
-    }
-  };
-
-  const handleClearAllDeleted = async () => {
-    if (deletedAudio.length === 0) {
-      Alert.alert('No Deleted Items', 'There are no deleted audio files to clear.');
-      return;
-    }
-
-    Alert.alert(
-      'Clear All Deleted Audio',
-      `Permanently delete all ${deletedAudio.length} deleted audio files? This action cannot be undone.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Clear All',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await axios.delete(`${API}/audio/deleted/clear-all`, {
-                headers: { Authorization: `Bearer ${token}` },
-              });
-              Alert.alert('Success', 'All deleted audio files have been permanently removed.');
-              fetchDeletedAudio(); // Refresh the list
-            } catch (error: any) {
-              console.error('Error clearing all deleted audio:', error);
-              Alert.alert('Error', error.response?.data?.detail || 'Failed to clear deleted audio.');
-            }
-          }
-        }
-      ]
-    );
-  };
+  const [themeModalVisible, setThemeModalVisible] = useState(false);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
 
   const handleLogout = () => {
     Alert.alert(
-      'Logout',
-      'Are you sure you want to logout?',
+      'ログアウト',
+      'ログアウトしますか？',
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: 'キャンセル', style: 'cancel' },
         { 
-          text: 'Logout', 
+          text: 'ログアウト', 
           style: 'destructive',
           onPress: () => {
             logout();
@@ -280,356 +55,47 @@ export default function SettingsScreen() {
     );
   };
 
-  const handleDeleteAccount = () => {
-    Alert.alert(
-      'Delete Account',
-      'This will permanently delete your account and all your data including:\n\n• All RSS sources\n• All created audio files\n• User profile and preferences\n• All downloads and history\n\nThis action cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete Account',
-          style: 'destructive',
-          onPress: () => {
-            Alert.alert(
-              'Final Confirmation',
-              'Are you absolutely sure you want to delete your account? This action is irreversible.',
-              [
-                { text: 'Cancel', style: 'cancel' },
-                {
-                  text: 'Delete Forever',
-                  style: 'destructive',
-                  onPress: async () => {
-                    try {
-                      await axios.delete(`${API}/user/account`, {
-                        headers: { Authorization: `Bearer ${token}` },
-                      });
-                      Alert.alert(
-                        'Account Deleted',
-                        'Your account has been permanently deleted.',
-                        [
-                          {
-                            text: 'OK',
-                            onPress: () => {
-                              logout();
-                              router.replace('/');
-                            }
-                          }
-                        ]
-                      );
-                    } catch (error: any) {
-                      console.error('Error deleting account:', error);
-                      Alert.alert('Error', error.response?.data?.detail || 'Failed to delete account.');
-                    }
-                  }
-                }
-              ]
-            );
-          }
-        }
-      ]
-    );
-  };
-
-  const settingSections: SettingSection[] = [
+  const quickSettings: QuickSettingItem[] = [
     {
-      title: 'User & Account',
-      items: [
-        {
-          id: 'profile',
-          title: 'Profile & Identity',
-          subtitle: 'Profile image, display name, bio',
-          icon: 'person-outline',
-          type: 'navigation',
-          onPress: () => setProfileModalVisible(true)
-        },
-        {
-          id: 'account',
-          title: 'Authentication & Security',
-          subtitle: 'Password, email, two-factor authentication',
-          icon: 'shield-checkmark-outline',
-          type: 'navigation',
-          onPress: () => {
-            Alert.alert('Coming Soon', 'Account settings will be available soon');
-          }
-        },
-        {
-          id: 'subscription',
-          title: 'Subscription & Billing',
-          subtitle: 'Plan details, payment methods',
-          icon: 'card-outline',
-          type: 'navigation',
-          onPress: () => {
-            Alert.alert('Coming Soon', 'Subscription management will be available soon');
-          }
-        }
-      ]
+      id: 'theme',
+      title: 'テーマ',
+      subtitle: `現在: ${themeMode === 'system' ? 'システム' : themeMode === 'dark' ? 'ダーク' : 'ライト'}`,
+      icon: 'contrast-outline',
+      type: 'navigation',
+      onPress: () => setThemeModalVisible(true)
     },
     {
-      title: 'Content & Sources',
-      items: [
-        {
-          id: 'feed-autopick-settings',
-          title: 'Feed & Auto-Pick Settings',
-          subtitle: 'Comprehensive content management and automation',
-          icon: 'sparkles-outline',
-          type: 'navigation',
-          onPress: () => {
-            router.push('/feed-autopick-settings');
-          }
-        }
-      ]
+      id: 'notifications',
+      title: 'プッシュ通知',
+      subtitle: '新着音声の通知',
+      icon: 'notifications-outline',
+      type: 'toggle',
+      value: notificationsEnabled,
+      onToggle: setNotificationsEnabled
     },
     {
-      title: 'Audio & Playback',
-      items: [
-        {
-          id: 'audio-quality',
-          title: 'Audio Quality & Performance',
-          subtitle: 'Bitrate, compression, streaming quality',
-          icon: 'musical-notes-outline',
-          type: 'navigation',
-          onPress: () => {
-            Alert.alert('Coming Soon', 'Audio quality settings will be available soon');
-          }
-        },
-        {
-          id: 'playback-controls',
-          title: 'Playback Controls',
-          subtitle: 'Auto-play, skip behavior, gestures',
-          icon: 'play-circle-outline',
-          type: 'navigation',
-          onPress: () => router.push('/playback-controls')
-        },
-        {
-          id: 'downloads',
-          title: 'Downloads & Offline',
-          subtitle: 'Offline playback, storage management',
-          icon: 'download-outline',
-          type: 'navigation',
-          onPress: () => {
-            Alert.alert('Coming Soon', 'Download settings will be available soon');
-          }
-        }
-      ]
+      id: 'account',
+      title: 'アカウント',
+      subtitle: user?.email || 'ユーザー情報',
+      icon: 'person-outline',
+      type: 'navigation',
+      onPress: () => Alert.alert('開発中', 'アカウント設定は開発中です')
     },
     {
-      title: 'Privacy & Data',
-      items: [
-        {
-          id: 'data-collection',
-          title: 'Data Collection & Analytics',
-          subtitle: 'Usage analytics, crash reports',
-          icon: 'analytics-outline',
-          type: 'navigation',
-          onPress: () => {
-            Alert.alert('Coming Soon', 'Data collection settings will be available soon');
-          }
-        },
-        {
-          id: 'export-backup',
-          title: 'Export & Backup',
-          subtitle: 'Download data, backup settings',
-          icon: 'cloud-download-outline',
-          type: 'navigation',
-          onPress: () => router.push('/export-backup')
-        },
-        {
-          id: 'storage-management',
-          title: 'Storage Management',
-          subtitle: 'Cache, deleted items, storage usage',
-          icon: 'server-outline',
-          type: 'navigation',
-          badge: deletedAudio.length > 0 ? deletedAudio.length.toString() : undefined,
-          onPress: () => {
-            if (deletedAudio.length === 0) {
-              Alert.alert('No Deleted Audio', 'There are no deleted audio files to recover.');
-              return;
-            }
-            
-            const audioList = deletedAudio.map((audio: any) => 
-              `• ${audio.title} (${audio.days_remaining || 'N/A'} days remaining)`
-            ).join('\n');
-            
-            Alert.alert(
-              'Deleted Audio Files',
-              `Recoverable audio files:\n\n${audioList}\n\nThese files will be permanently deleted after 14 days.`,
-              [
-                { text: 'Clear All', style: 'destructive', onPress: handleClearAllDeleted },
-                { text: 'OK', style: 'cancel' }
-              ]
-            );
-          }
-        }
-      ]
+      id: 'developer',
+      title: '開発者オプション',
+      subtitle: DebugService.isDebugModeEnabled() ? 'デバッグモード有効' : 'デバッグモード無効',
+      icon: 'code-outline',
+      type: 'navigation',
+      onPress: () => setDebugMenuVisible(true)
     },
     {
-      title: 'Appearance & Accessibility',
-      items: [
-        {
-          id: 'theme',
-          title: 'Themes & Display',
-          subtitle: `Current: ${themeMode === 'system' ? 'System' : themeMode === 'dark' ? 'Dark' : 'Light'}`,
-          icon: 'contrast-outline',
-          type: 'navigation',
-          onPress: () => {
-            setThemeModalVisible(true);
-          }
-        },
-        {
-          id: 'text-settings',
-          title: 'Text & Font Settings',
-          subtitle: 'Font size, line spacing, reading mode',
-          icon: 'text-outline',
-          type: 'navigation',
-          onPress: () => router.push('/text-font-settings')
-        },
-        {
-          id: 'accessibility',
-          title: 'Accessibility Features',
-          subtitle: 'Voice guidance, color contrast, magnification',
-          icon: 'accessibility-outline',
-          type: 'navigation',
-          onPress: () => {
-            Alert.alert('Coming Soon', 'Accessibility features will be available soon');
-          }
-        },
-        {
-          id: 'language',
-          title: 'Language & Region',
-          subtitle: 'English (US), date format, units',
-          icon: 'language-outline',
-          type: 'navigation',
-          onPress: () => {
-            Alert.alert('Coming Soon', 'Language settings will be available soon');
-          }
-        }
-      ]
-    },
-    {
-      title: 'System & Advanced',
-      items: [
-        {
-          id: 'performance',
-          title: 'Performance Settings',
-          subtitle: 'Memory usage, cache size, optimization',
-          icon: 'speedometer-outline',
-          type: 'navigation',
-          onPress: () => {
-            Alert.alert('Coming Soon', 'Performance settings will be available soon');
-          }
-        },
-        {
-          id: 'integrations',
-          title: 'Integration Settings',
-          subtitle: 'Third-party services, API connections',
-          icon: 'link-outline',
-          type: 'navigation',
-          onPress: () => {
-            Alert.alert('Coming Soon', 'Integration settings will be available soon');
-          }
-        },
-        {
-          id: 'developer',
-          title: 'Developer Options',
-          subtitle: DebugService.isDebugModeEnabled() 
-            ? `Debug Mode Active • ${subscriptionTier.toUpperCase()} tier`
-            : 'Debug mode, advanced configurations',
-          icon: 'code-outline',
-          type: 'navigation',
-          onPress: () => {
-            // Always show debug menu in development
-            if (DebugService.isDebugModeEnabled() || __DEV__) {
-              setDebugMenuVisible(true);
-            } else {
-              Alert.alert('🧪 Debug Mode', 'Debug mode is not currently active. Tap About Audion 7 times to access debug features.');
-            }
-          }
-        }
-      ]
-    },
-    {
-      title: 'Support & Legal',
-      items: [
-        {
-          id: 'help',
-          title: 'Help & Documentation',
-          subtitle: 'User guide, FAQs, tutorials, about app',
-          icon: 'help-circle-outline',
-          type: 'navigation',
-          onPress: () => {
-            Alert.alert(
-              'Help & About Audion',
-              'Audion v1.0.0 (MVP)\nAI-powered news audio platform\n\nFeatures:\n• RSS news aggregation\n• AI-powered summarization\n• Text-to-speech audio generation\n• Personalized recommendations\n• Spotify-like audio interface\n\nMore detailed help documentation will be available soon.'
-            );
-          }
-        },
-        {
-          id: 'feedback',
-          title: 'Feedback & Support',
-          subtitle: 'Send feedback, report issues',
-          icon: 'chatbubble-outline',
-          type: 'navigation',
-          onPress: () => {
-            Alert.alert('Coming Soon', 'Feedback system will be available soon');
-          }
-        },
-        {
-          id: 'about',
-          title: 'About Audion',
-          subtitle: DebugService.isDebugModeEnabled() 
-            ? `Version 1.0.0 (MVP) • 🧪 Debug Active`
-            : 'Version 1.0.0 (MVP)',
-          icon: 'information-circle-outline',
-          type: 'navigation',
-          onPress: () => {
-            Alert.alert(
-              'About Audion',
-              `Audion v1.0.0 (MVP)
-AI-powered news audio platform
-
-Features:
-• RSS news aggregation
-• AI-powered summarization
-• Text-to-speech audio generation
-• Personalized recommendations
-• Spotify-like audio interface
-
-For developer options, check System & Advanced settings.`
-            );
-          }
-        },
-        {
-          id: 'legal',
-          title: 'Terms & Privacy',
-          subtitle: 'Terms of service, privacy policy, and legal information',
-          icon: 'document-text-outline',
-          type: 'navigation',
-          onPress: () => {
-            Alert.alert('Coming Soon', 'Legal documentation will be available soon');
-          }
-        }
-      ]
-    },
-    {
-      title: 'Account Actions',
-      items: [
-        {
-          id: 'logout',
-          title: 'Logout',
-          subtitle: 'Sign out of your account',
-          icon: 'log-out-outline',
-          type: 'action',
-          onPress: handleLogout
-        },
-        {
-          id: 'delete-account',
-          title: 'Delete Account',
-          subtitle: 'Permanently delete your account and all data',
-          icon: 'trash-outline',
-          type: 'action',
-          onPress: handleDeleteAccount
-        }
-      ]
+      id: 'logout',
+      title: 'ログアウト',
+      subtitle: 'アカウントからサインアウト',
+      icon: 'log-out-outline',
+      type: 'action',
+      onPress: handleLogout
     }
   ];
 
@@ -645,138 +111,80 @@ For developer options, check System & Advanced settings.`
         >
           <Ionicons name="arrow-back" size={24} color={theme.text} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Settings</Text>
+        <Text style={styles.headerTitle}>設定</Text>
         <View style={styles.placeholder} />
       </View>
 
-      <ScrollView 
-        ref={scrollViewRef}
-        style={styles.content} 
-        showsVerticalScrollIndicator={false}
-        onScroll={handleScroll}
-        scrollEventThrottle={scrollEventThrottle}
-      >
-        {settingSections.map((section, sectionIndex) => (
-          <View key={sectionIndex} style={styles.section}>
-            <Text style={styles.sectionTitle}>{section.title}</Text>
-            
-            {section.items.map((item, itemIndex) => (
-              <TouchableOpacity
-                key={item.id}
-                style={[
-                  styles.settingItem,
-                  { backgroundColor: theme.card }
-                ]}
-                onPress={item.onPress}
-                disabled={!item.onPress}
-              >
-                <View style={styles.settingLeft}>
-                  <View style={[styles.iconContainer, { backgroundColor: theme.accent }]}>
-                    <Ionicons 
-                      name={item.icon as any} 
-                      size={20} 
-                      color={theme.primary} 
-                    />
-                  </View>
-                  <View style={styles.settingText}>
-                    <Text style={[styles.settingTitle, { color: theme.text }]}>
-                      {item.title}
-                    </Text>
-                    {item.subtitle && (
-                      <Text style={[styles.settingSubtitle, { color: theme.textSecondary }]}>
-                        {item.subtitle}
-                      </Text>
-                    )}
-                  </View>
-                </View>
-                
-                <View style={styles.settingRight}>
-                  {item.badge && (
-                    <View style={[styles.badge, { backgroundColor: theme.primary }]}>
-                      <Text style={styles.badgeText}>{item.badge}</Text>
-                    </View>
-                  )}
-                  <Ionicons name="chevron-forward" size={20} color={theme.textMuted} />
-                </View>
-              </TouchableOpacity>
-            ))}
+      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        {/* Option A Info Card */}
+        <View style={[styles.infoCard, { backgroundColor: theme.primary + '20' }]}>
+          <Ionicons name="flash-outline" size={24} color={theme.primary} />
+          <View style={styles.infoContent}>
+            <Text style={[styles.infoTitle, { color: theme.primary }]}>
+              即消費体験に最適化
+            </Text>
+            <Text style={[styles.infoText, { color: theme.text }]}>
+              複雑な設定を排除し、すぐに音声を楽しめる設計にしました。
+              必要な設定のみを厳選しています。
+            </Text>
           </View>
-        ))}
-      </ScrollView>
+        </View>
 
-      {/* Profile Modal */}
-      <Modal
-        animationType="slide"
-        transparent={false}
-        visible={profileModalVisible}
-        onRequestClose={() => setProfileModalVisible(false)}
-      >
-        <SafeAreaView style={[styles.modalContainer, { backgroundColor: theme.background }]}>
-          <View style={styles.modalHeader}>
+        {/* Quick Settings */}
+        <View style={styles.settingsContainer}>
+          {quickSettings.map((setting) => (
             <TouchableOpacity
-              onPress={() => setProfileModalVisible(false)}
-              style={styles.modalBackButton}
+              key={setting.id}
+              style={[styles.settingItem, { backgroundColor: theme.card }]}
+              onPress={setting.onPress}
+              disabled={!setting.onPress && setting.type !== 'toggle'}
             >
-              <Ionicons name="arrow-back" size={24} color={theme.text} />
-            </TouchableOpacity>
-            <Text style={[styles.modalTitle, { color: theme.text }]}>Profile Settings</Text>
-            <View style={styles.placeholder} />
-          </View>
-
-          <ScrollView style={styles.modalContent}>
-            <View style={styles.profileSection}>
-              <Text style={[styles.sectionTitle, { color: theme.text }]}>Profile Image</Text>
+              <View style={styles.settingLeft}>
+                <View style={[styles.iconContainer, { backgroundColor: theme.accent }]}>
+                  <Ionicons 
+                    name={setting.icon as any} 
+                    size={20} 
+                    color={theme.primary} 
+                  />
+                </View>
+                <View style={styles.settingText}>
+                  <Text style={[styles.settingTitle, { color: theme.text }]}>
+                    {setting.title}
+                  </Text>
+                  {setting.subtitle && (
+                    <Text style={[styles.settingSubtitle, { color: theme.textSecondary }]}>
+                      {setting.subtitle}
+                    </Text>
+                  )}
+                </View>
+              </View>
               
-              <View style={styles.profileImageContainer}>
-                {profileImage ? (
-                  <Image source={{ uri: profileImage }} style={styles.profileImage} />
+              <View style={styles.settingRight}>
+                {setting.type === 'toggle' && setting.onToggle ? (
+                  <Switch
+                    value={setting.value}
+                    onValueChange={setting.onToggle}
+                    trackColor={{ false: theme.textMuted, true: theme.primary + '40' }}
+                    thumbColor={setting.value ? theme.primary : '#f4f3f4'}
+                  />
                 ) : (
-                  <View style={[styles.profileImagePlaceholder, { backgroundColor: theme.accent }]}>
-                    <Ionicons name="person" size={50} color={theme.textMuted} />
-                  </View>
-                )}
-                
-                {uploadingImage && (
-                  <View style={styles.uploadingOverlay}>
-                    <ActivityIndicator size="small" color={theme.primary} />
-                  </View>
+                  <Ionicons name="chevron-forward" size={20} color={theme.textMuted} />
                 )}
               </View>
+            </TouchableOpacity>
+          ))}
+        </View>
 
-              <View style={styles.profileButtons}>
-                <TouchableOpacity
-                  style={[styles.profileButton, { backgroundColor: theme.primary }]}
-                  onPress={handlePickImage}
-                  disabled={uploadingImage}
-                >
-                  <Ionicons name="images" size={20} color="#FFFFFF" />
-                  <Text style={styles.profileButtonText}>Choose Photo</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[styles.profileButton, { backgroundColor: theme.secondary }]}
-                  onPress={handleTakePhoto}
-                  disabled={uploadingImage}
-                >
-                  <Ionicons name="camera" size={20} color="#FFFFFF" />
-                  <Text style={styles.profileButtonText}>Take Photo</Text>
-                </TouchableOpacity>
-
-                {profileImage && (
-                  <TouchableOpacity
-                    style={[styles.profileButton, { backgroundColor: theme.error }]}
-                    onPress={handleRemoveProfileImage}
-                    disabled={uploadingImage}
-                  >
-                    <Ionicons name="trash" size={20} color="#FFFFFF" />
-                    <Text style={styles.profileButtonText}>Remove</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-            </View>
-          </ScrollView>
-        </SafeAreaView>
-      </Modal>
+        {/* App Info */}
+        <View style={styles.appInfo}>
+          <Text style={[styles.appVersion, { color: theme.textMuted }]}>
+            Audion v1.0 Option A
+          </Text>
+          <Text style={[styles.appDescription, { color: theme.textSecondary }]}>
+            AI-powered instant news consumption
+          </Text>
+        </View>
+      </ScrollView>
 
       {/* Theme Modal */}
       <Modal
@@ -793,15 +201,15 @@ For developer options, check System & Advanced settings.`
             >
               <Ionicons name="arrow-back" size={24} color={theme.text} />
             </TouchableOpacity>
-            <Text style={[styles.modalTitle, { color: theme.text }]}>Choose Theme</Text>
+            <Text style={[styles.modalTitle, { color: theme.text }]}>テーマ選択</Text>
             <View style={styles.placeholder} />
           </View>
 
           <ScrollView style={styles.modalContent}>
             {[
-              { key: 'light', name: 'Light', icon: 'sunny-outline' },
-              { key: 'dark', name: 'Dark', icon: 'moon-outline' },
-              { key: 'system', name: 'System', icon: 'phone-portrait-outline' }
+              { key: 'light', name: 'ライト', icon: 'sunny-outline' },
+              { key: 'dark', name: 'ダーク', icon: 'moon-outline' },
+              { key: 'system', name: 'システム', icon: 'phone-portrait-outline' }
             ].map((themeOption) => (
               <TouchableOpacity
                 key={themeOption.key}
@@ -838,11 +246,7 @@ For developer options, check System & Advanced settings.`
       {/* Debug Menu Modal */}
       <DebugMenu
         visible={debugMenuVisible}
-        onClose={() => {
-          setDebugMenuVisible(false);
-          // Refresh subscription tier after debug menu closes
-          loadDebugSettings();
-        }}
+        onClose={() => setDebugMenuVisible(false)}
       />
     </SafeAreaView>
   );
@@ -877,14 +281,29 @@ const createStyles = (theme: any) => StyleSheet.create({
     flex: 1,
     paddingHorizontal: 20,
   },
-  section: {
-    marginTop: 32,
+  infoCard: {
+    flexDirection: 'row',
+    borderRadius: 12,
+    padding: 16,
+    marginTop: 20,
+    marginBottom: 24,
+    alignItems: 'flex-start',
+    gap: 12,
   },
-  sectionTitle: {
-    fontSize: 18,
+  infoContent: {
+    flex: 1,
+  },
+  infoTitle: {
+    fontSize: 16,
     fontWeight: '600',
-    color: theme.text,
-    marginBottom: 16,
+    marginBottom: 4,
+  },
+  infoText: {
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  settingsContainer: {
+    gap: 8,
   },
   settingItem: {
     flexDirection: 'row',
@@ -892,7 +311,6 @@ const createStyles = (theme: any) => StyleSheet.create({
     justifyContent: 'space-between',
     padding: 16,
     borderRadius: 12,
-    marginBottom: 8,
   },
   settingLeft: {
     flexDirection: 'row',
@@ -923,19 +341,17 @@ const createStyles = (theme: any) => StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
-  badge: {
-    minWidth: 24,
-    height: 24,
-    borderRadius: 12,
-    justifyContent: 'center',
+  appInfo: {
     alignItems: 'center',
-    marginRight: 8,
-    paddingHorizontal: 8,
+    paddingVertical: 32,
   },
-  badgeText: {
-    color: '#FFFFFF',
+  appVersion: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  appDescription: {
     fontSize: 12,
-    fontWeight: 'bold',
   },
   // Modal Styles
   modalContainer: {
@@ -958,65 +374,11 @@ const createStyles = (theme: any) => StyleSheet.create({
     fontSize: 18,
     fontWeight: '600',
   },
-  placeholder: {
-    width: 40,
-  },
   modalContent: {
     flex: 1,
     paddingHorizontal: 20,
     paddingTop: 20,
   },
-  // Profile Modal Styles
-  profileSection: {
-    alignItems: 'center',
-  },
-  profileImageContainer: {
-    position: 'relative',
-    marginVertical: 20,
-  },
-  profileImage: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-  },
-  profileImagePlaceholder: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  uploadingOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    borderRadius: 60,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  profileButtons: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'center',
-    gap: 12,
-  },
-  profileButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 8,
-    gap: 8,
-  },
-  profileButtonText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  // Theme Modal Styles
   themeOption: {
     flexDirection: 'row',
     alignItems: 'center',

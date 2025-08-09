@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Modal, TextInput } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native';
 import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
 import { useAudio } from '../../context/AudioContext';
@@ -8,1211 +8,260 @@ import { useFocusEffect } from '@react-navigation/native';
 import { format } from 'date-fns';
 import { Ionicons } from '@expo/vector-icons';
 import LoadingIndicator from '../../components/LoadingIndicator';
-import { ErrorHandlingService } from '../../services/ErrorHandlingService';
 
-interface AudioItem {
+interface RecentAudioItem {
   id: string;
   title: string;
   audio_url: string;
-  duration: number; // in seconds
+  duration: number;
   created_at: string;
-  script?: string; // Added script field
-  prompt_style?: 'strict' | 'recommended' | 'friendly' | 'insight' | 'custom'; // Added prompt style field
 }
 
-interface Playlist {
-  id: string;
-  name: string;
-  description: string;
-  audio_ids: string[];
-  created_at: string;
-  updated_at: string;
-  is_public: boolean;
-}
-
-interface Album {
-  id: string;
-  name: string;
-  description: string;
-  audio_ids: string[];
-  created_at: string;
-  updated_at: string;
-  is_public: boolean;
-  tags: string[];
-}
-
-interface DownloadItem {
-  download_info: {
-    id: string;
-    downloaded_at: string;
-    auto_downloaded: boolean;
-  };
-  audio_data: AudioItem;
-}
-
-export default function LibraryScreen() {
+export default function RecentScreen() {
   const { token } = useAuth();
-  const { playAudio, cleanupAudio, currentAudio, isPlaying, pauseAudio, resumeAudio, setShowFullScreenPlayer } = useAudio();
+  const { playAudio, currentAudio, isPlaying, pauseAudio, resumeAudio } = useAudio();
   const { theme } = useTheme();
   
-  // Current view state
-  const [currentView, setCurrentView] = useState<'playlists' | 'albums' | 'mylist'>('playlists');
-  
-  // Data states
-  const [audioItems, setAudioItems] = useState<AudioItem[]>([]);
-  const [playlists, setPlaylists] = useState<Playlist[]>([]);
-  const [albums, setAlbums] = useState<Album[]>([]);
-  const [downloads, setDownloads] = useState<DownloadItem[]>([]);
-  const [mylistAudioItems, setMylistAudioItems] = useState<AudioItem[]>([]);
-  const [downloadedAudioIds, setDownloadedAudioIds] = useState<Set<string>>(new Set());
-  
-  // Mylist filter state
-  const [showDownloadedOnly, setShowDownloadedOnly] = useState(false);
-  
-  // UI states
+  const [recentAudio, setRecentAudio] = useState<RecentAudioItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [isEditingMyList, setIsEditingMyList] = useState(false);
-  const [selectedAudioIds, setSelectedAudioIds] = useState<string[]>([]);
-  const [scriptModalVisible, setScriptModalVisible] = useState(false);
-  const [currentScript, setCurrentScript] = useState('');
-  
-  // Create modals
-  const [createPlaylistModalVisible, setCreatePlaylistModalVisible] = useState(false);
-  const [createAlbumModalVisible, setCreateAlbumModalVisible] = useState(false);
-  const [newPlaylistName, setNewPlaylistName] = useState('');
-  const [newPlaylistDescription, setNewPlaylistDescription] = useState('');
-  const [newAlbumName, setNewAlbumName] = useState('');
-  const [newAlbumDescription, setNewAlbumDescription] = useState('');
 
   const API = process.env.EXPO_PUBLIC_BACKEND_URL ? `${process.env.EXPO_PUBLIC_BACKEND_URL}/api` : 'http://localhost:8000/api';
 
-  // Prompt style mapping function
-  const getPromptStyleInfo = (promptStyle?: string) => {
-    const styles = {
-      strict: { 
-        icon: 'shield-checkmark-outline', 
-        label: '厳格', 
-        color: '#EF4444' 
-      },
-      recommended: { 
-        icon: 'checkmark-circle-outline', 
-        label: '標準', 
-        color: theme.primary 
-      },
-      friendly: { 
-        icon: 'heart-outline', 
-        label: '優しめ', 
-        color: '#10B981' 
-      },
-      insight: { 
-        icon: 'bulb-outline', 
-        label: 'インサイト', 
-        color: '#F59E0B' 
-      },
-      custom: { 
-        icon: 'create-outline', 
-        label: 'カスタム', 
-        color: '#8B5CF6' 
-      }
-    };
-    
-    return styles[promptStyle as keyof typeof styles] || styles.recommended;
-  };
-
   useFocusEffect(
     React.useCallback(() => {
-      if (token) {
-        fetchLibraryData();
-      }
-      return () => {
-        // Reset editing state when leaving screen
-        setIsEditingMyList(false);
-        setSelectedAudioIds([]);
-        setShowDownloadedOnly(false);
-      };
-    }, [token, currentView])
+      fetchRecentAudio();
+    }, [])
   );
 
-  const fetchLibraryData = async () => {
-    setLoading(true);
-    try {
-      switch (currentView) {
-        case 'playlists':
-          const playlistsResponse = await axios.get(`${API}/playlists`, {
-            headers: { Authorization: `Bearer ${token}` },
-          });
-          setPlaylists(playlistsResponse.data);
-          break;
-        case 'albums':
-          const albumsResponse = await axios.get(`${API}/albums`, {
-            headers: { Authorization: `Bearer ${token}` },
-          });
-          setAlbums(albumsResponse.data);
-          break;
-        case 'mylist':
-          // Fetch all audio items
-          const audioResponse = await axios.get(`${API}/audio/library`, {
-            headers: { Authorization: `Bearer ${token}` },
-          });
-          setMylistAudioItems(audioResponse.data);
-          
-          // Fetch downloads to identify downloaded items
-          const downloadsResponse = await axios.get(`${API}/downloads`, {
-            headers: { Authorization: `Bearer ${token}` },
-          });
-          setDownloads(downloadsResponse.data);
-          
-          // Create set of downloaded audio IDs for quick lookup
-          const downloadedIds = new Set<string>(downloadsResponse.data.map((item: DownloadItem) => item.audio_data.id));
-          setDownloadedAudioIds(downloadedIds);
-          break;
-      }
-    } catch (error: any) {
-      console.error(`Error fetching ${currentView}:`, error);
-      ErrorHandlingService.showError(error, { 
-        action: `fetch_${currentView}`,
-        source: 'Library Screen' 
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchAudioLibrary = async () => {
+  const fetchRecentAudio = async () => {
+    if (!token) return;
+    
     setLoading(true);
     try {
       const response = await axios.get(`${API}/audio/library`, {
         headers: { Authorization: `Bearer ${token}` },
+        params: { limit: 3 } // Only get recent 3 items
       });
-      setAudioItems(response.data);
-    } catch (error: any) {
-      console.error('Error fetching audio library:', error);
-      ErrorHandlingService.showError(error, { 
-        action: 'fetch_audio_library',
-        source: 'Library Screen' 
-      });
+      setRecentAudio(response.data || []);
+    } catch (error) {
+      console.error('Error fetching recent audio:', error);
     } finally {
       setLoading(false);
     }
   };
 
-  const handlePlayAudio = useCallback((audioItem: AudioItem) => {
-    // Check if the same audio is currently loaded
-    if (currentAudio && currentAudio.id === audioItem.id) {
-      // Same audio: toggle play/pause
-      if (isPlaying) {
-        pauseAudio();
-      } else {
-        resumeAudio();
-      }
-    } else {
-      // Different audio or no audio loaded: play the new audio
-      playAudio(audioItem);
-    }
-  }, [currentAudio, isPlaying, pauseAudio, resumeAudio, playAudio]);
-
-  const toggleAudioSelection = useCallback((audioId: string) => {
-    setSelectedAudioIds((prevSelected) =>
-      prevSelected.includes(audioId)
-        ? prevSelected.filter((id) => id !== audioId)
-        : [...prevSelected, audioId]
-    );
-  }, []);
-
-  const handleDeleteSelectedFromMyList = async () => {
-    console.log('handleDeleteSelectedFromMyList called');
-    console.log('selectedAudioIds:', selectedAudioIds);
-    console.log('showDownloadedOnly:', showDownloadedOnly);
-    console.log('token:', token);
-    console.log('API URL:', API);
-
-    if (selectedAudioIds.length === 0) {
-      Alert.alert('No items selected', 'Please select items to remove from My List.');
-      return;
-    }
-
-    console.log('Starting deletion process - removing audio files completely from both tabs...');
+  const handlePlayAudio = async (audio: RecentAudioItem) => {
     try {
-      // Always delete audio files completely (removes from both All and Downloaded tabs)
-      for (const id of selectedAudioIds) {
-        console.log(`Deleting audio file completely for ID: ${id}`);
-        try {
-          const response = await axios.delete(`${API}/audio/${id}`, {
-            headers: { Authorization: `Bearer ${token}` },
-          });
-          console.log(`Successfully deleted audio file ${id}:`, response.data);
-          
-          // Cleanup audio player if this audio is currently playing
-          cleanupAudio(id);
-        } catch (deleteError: any) {
-          console.error(`Error deleting audio file ${id}:`, deleteError);
-          console.error('Delete error response:', deleteError.response?.data);
-          throw deleteError;
+      await playAudio({
+        id: audio.id,
+        title: audio.title,
+        url: audio.audio_url,
+        duration: audio.duration
+      });
+    } catch (error) {
+      console.error('Error playing audio:', error);
+      Alert.alert('エラー', '音声の再生に失敗しました');
+    }
+  };
+
+  const handleDeleteAudio = async (audioId: string) => {
+    Alert.alert(
+      '削除確認',
+      'この音声を削除しますか？',
+      [
+        { text: 'キャンセル', style: 'cancel' },
+        {
+          text: '削除',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await axios.delete(`${API}/audio/${audioId}`, {
+                headers: { Authorization: `Bearer ${token}` },
+              });
+              fetchRecentAudio();
+            } catch (error) {
+              console.error('Error deleting audio:', error);
+              Alert.alert('エラー', '削除に失敗しました');
+            }
+          }
         }
-      }
-      
-      // Update downloaded audio IDs to reflect removal
-      setDownloadedAudioIds(prev => {
-        const newSet = new Set(prev);
-        selectedAudioIds.forEach(id => newSet.delete(id));
-        return newSet;
-      });
-      
-      Alert.alert('Success', 'Audio files deleted from My List.');
-      
-      console.log('All deletions completed successfully');
-      setSelectedAudioIds([]);
-      setIsEditingMyList(false);
-      fetchLibraryData(); // Re-fetch the list after deletion
-    } catch (error: any) {
-      console.error('Error removing items from My List:', error);
-      console.error('Error response data:', error.response?.data);
-      console.error('Error status:', error.response?.status);
-      console.error('Error headers:', error.response?.headers);
-      ErrorHandlingService.showError(error, { 
-        action: 'delete_audio',
-        source: 'Library Screen',
-        details: { itemCount: selectedAudioIds.length }
-      });
-    }
+      ]
+    );
   };
 
-  const formatDuration = useCallback((seconds: number) => {
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = seconds % 60;
-    return `${minutes}:${remainingSeconds < 10 ? '0' : ''}${remainingSeconds}`;
-  }, []);
-
-  // Memoize filtered audio to prevent unnecessary recalculations
-  const filteredMylistAudio = useMemo(() => {
-    return showDownloadedOnly 
-      ? mylistAudioItems.filter(audio => downloadedAudioIds.has(audio.id))
-      : mylistAudioItems;
-  }, [showDownloadedOnly, mylistAudioItems, downloadedAudioIds]);
-
-  const handleViewScript = (scriptContent: string | undefined, audioUrl: string) => {
-    setCurrentScript(scriptContent || 'No script available.');
-    setScriptModalVisible(true);
-    console.log('Viewing script for audio URL:', audioUrl); // Added log
+  const formatDuration = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-
-  const closeScriptModal = () => {
-    setScriptModalVisible(false);
-    setCurrentScript('');
-  };
-
-  const createPlaylist = async () => {
-    if (!newPlaylistName.trim()) {
-      Alert.alert('Error', 'Please enter a playlist name');
-      return;
-    }
-
-    try {
-      await axios.post(`${API}/playlists`, {
-        name: newPlaylistName.trim(),
-        description: newPlaylistDescription.trim(),
-        is_public: false
-      }, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-
-      setCreatePlaylistModalVisible(false);
-      setNewPlaylistName('');
-      setNewPlaylistDescription('');
-      fetchLibraryData();
-      Alert.alert('Success', 'Playlist created successfully');
-    } catch (error: any) {
-      console.error('Error creating playlist:', error);
-      Alert.alert('Error', error.response?.data?.detail || 'Failed to create playlist');
-    }
-  };
-
-  const createAlbum = async () => {
-    if (!newAlbumName.trim()) {
-      Alert.alert('Error', 'Please enter an album name');
-      return;
-    }
-
-    try {
-      await axios.post(`${API}/albums`, {
-        name: newAlbumName.trim(),
-        description: newAlbumDescription.trim(),
-        is_public: false,
-        tags: []
-      }, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-
-      setCreateAlbumModalVisible(false);
-      setNewAlbumName('');
-      setNewAlbumDescription('');
-      fetchLibraryData();
-      Alert.alert('Success', 'Album created successfully');
-    } catch (error: any) {
-      console.error('Error creating album:', error);
-      Alert.alert('Error', error.response?.data?.detail || 'Failed to create album');
-    }
-  };
-
-  const handleDownloadAudio = async (audioId: string) => {
-    try {
-      await axios.post(`${API}/downloads/${audioId}`, {}, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      
-      // Update downloaded audio IDs
-      setDownloadedAudioIds(prev => new Set([...prev, audioId]));
-      Alert.alert('Success', 'Audio downloaded successfully');
-    } catch (error: any) {
-      console.error('Error downloading audio:', error);
-      if (error.response?.status === 400 && error.response?.data?.detail?.includes('already downloaded')) {
-        Alert.alert('Info', 'Audio is already downloaded');
-      } else {
-        Alert.alert('Error', error.response?.data?.detail || 'Failed to download audio');
-      }
-    }
-  };
-
-  const handleRemoveDownload = async (audioId: string) => {
-    try {
-      await axios.delete(`${API}/downloads/${audioId}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      
-      // Update downloaded audio IDs
-      setDownloadedAudioIds(prev => {
-        const newSet = new Set(prev);
-        newSet.delete(audioId);
-        return newSet;
-      });
-      Alert.alert('Success', 'Download removed successfully');
-    } catch (error: any) {
-      console.error('Error removing download:', error);
-      Alert.alert('Error', error.response?.data?.detail || 'Failed to remove download');
-    }
-  };
+  const styles = createStyles(theme);
 
   if (loading) {
-    return (
-      <LoadingIndicator 
-        variant="fullscreen"
-        text="Loading your audio library..."
-        testID="library-loading"
-      />
-    );
+    return <LoadingIndicator />;
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.background }]}>
-      {/* Header */}
-      <View style={[styles.header, { backgroundColor: theme.surface, borderBottomColor: theme.border }]}>
-        <Text style={[styles.title, { color: theme.text }]}>Library</Text>
-        {currentView === 'mylist' ? (
-          <TouchableOpacity 
-            onPress={() => {
-              if (isEditingMyList) {
-                setIsEditingMyList(false);
-                setSelectedAudioIds([]);
-              } else {
-                setIsEditingMyList(true);
-              }
-            }}
-            accessibilityRole="button"
-            accessibilityLabel={isEditingMyList ? "Finish editing" : "Edit my list"}
-            accessibilityHint={isEditingMyList ? "Tap to finish editing and save changes" : "Tap to select and remove items from your library"}
-          >
-            <Ionicons 
-              name={isEditingMyList ? "checkmark" : "create-outline"} 
-              size={24} 
-              color={isEditingMyList ? theme.success : theme.primary} 
-            />
-          </TouchableOpacity>
+    <View style={styles.container}>
+      <ScrollView style={styles.content}>
+        <View style={styles.header}>
+          <Ionicons name="time-outline" size={24} color={theme.primary} />
+          <Text style={styles.headerTitle}>最近の音声</Text>
+          <Text style={styles.headerSubtitle}>最新3件のみ表示</Text>
+        </View>
+
+        {recentAudio.length === 0 ? (
+          <View style={styles.emptyState}>
+            <Ionicons name="musical-notes-outline" size={48} color={theme.textMuted} />
+            <Text style={styles.emptyText}>
+              まだ音声がありません{'\n'}
+              フィードから音声を作成してみましょう
+            </Text>
+          </View>
         ) : (
-          <TouchableOpacity 
-            onPress={() => {
-              if (currentView === 'playlists') {
-                setCreatePlaylistModalVisible(true);
-              } else if (currentView === 'albums') {
-                setCreateAlbumModalVisible(true);
-              }
-            }}
-            accessibilityRole="button"
-            accessibilityLabel={`Create new ${currentView.slice(0, -1)}`}
-            accessibilityHint={`Tap to create a new ${currentView.slice(0, -1)}`}
-          >
-            <Ionicons name="add" size={24} color={theme.primary} />
-          </TouchableOpacity>
-        )}
-      </View>
-
-      {/* Category Selection Bar */}
-      <ScrollView 
-        horizontal 
-        showsHorizontalScrollIndicator={false} 
-        style={[styles.categoryBar, { backgroundColor: theme.surface, borderBottomColor: theme.border }]}
-        contentContainerStyle={styles.categoryBarContent}
-        accessibilityRole="tablist"
-        accessibilityLabel="Library category selection"
-      >
-        <TouchableOpacity
-          style={[styles.categoryButton, { backgroundColor: currentView === 'playlists' ? theme.primary : theme.accent }]}
-          onPress={() => setCurrentView('playlists')}
-          accessibilityRole="tab"
-          accessibilityLabel="View playlists"
-          accessibilityHint="Tap to view your music playlists"
-          accessibilityState={{ selected: currentView === 'playlists' }}
-        >
-          <Text style={[styles.categoryButtonText, { color: currentView === 'playlists' ? '#ffffff' : theme.textSecondary }]}>
-            Playlists
-          </Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity
-          style={[styles.categoryButton, { backgroundColor: currentView === 'albums' ? theme.primary : theme.accent }]}
-          onPress={() => setCurrentView('albums')}
-          accessibilityRole="tab"
-          accessibilityLabel="View albums"
-          accessibilityHint="Tap to view your music albums"
-          accessibilityState={{ selected: currentView === 'albums' }}
-        >
-          <Text style={[styles.categoryButtonText, { color: currentView === 'albums' ? '#ffffff' : theme.textSecondary }]}>
-            Albums
-          </Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity
-          style={[styles.categoryButton, { backgroundColor: currentView === 'mylist' ? theme.primary : theme.accent }]}
-          onPress={() => setCurrentView('mylist')}
-          accessibilityRole="tab"
-          accessibilityLabel="View my list"
-          accessibilityHint="Tap to view your personal audio library"
-          accessibilityState={{ selected: currentView === 'mylist' }}
-        >
-          <Text style={[styles.categoryButtonText, { color: currentView === 'mylist' ? '#ffffff' : theme.textSecondary }]}>
-            My List
-          </Text>
-        </TouchableOpacity>
-      </ScrollView>
-
-      {/* Main Content */}
-      <ScrollView 
-        style={styles.contentContainer}
-        accessibilityRole="list"
-        accessibilityLabel={`${currentView} content list`}
-      >
-        {!loading && (
-          <>
-            {/* Playlists View */}
-            {currentView === 'playlists' && (
-              <>
-                {playlists.length === 0 ? (
-                  <Text style={styles.emptyText}>No playlists yet. Create your first playlist!</Text>
-                ) : (
-                  playlists.map((playlist) => (
-                    <TouchableOpacity 
-                      key={playlist.id} 
-                      style={[styles.listItem, { backgroundColor: theme.surface }]}
-                      accessibilityRole="button"
-                      accessibilityLabel={`Playlist: ${playlist.name}`}
-                      accessibilityHint={`Tap to open playlist with ${playlist.audio_ids.length} songs`}
-                    >
-                      <View style={[styles.itemIcon, { backgroundColor: theme.accent }]}>
-                        <Ionicons name="musical-notes" size={24} color={theme.primary} />
-                      </View>
-                      <View style={styles.itemInfo}>
-                        <Text style={[styles.itemTitle, { color: theme.text }]}>{playlist.name}</Text>
-                        <Text style={[styles.itemSubtitle, { color: theme.textSecondary }]}>
-                          {playlist.audio_ids.length} songs · {format(new Date(playlist.updated_at), 'MMM dd, yyyy')}
-                        </Text>
-                      </View>
-                      <TouchableOpacity 
-                        style={styles.itemAction}
-                        accessibilityRole="button"
-                        accessibilityLabel="Open playlist"
-                        accessibilityHint="Tap to view playlist details"
-                      >
-                        <Ionicons name="chevron-forward" size={20} color={theme.textMuted} />
-                      </TouchableOpacity>
-                    </TouchableOpacity>
-                  ))
-                )}
-              </>
-            )}
-
-            {/* Albums View */}
-            {currentView === 'albums' && (
-              <>
-                {albums.length === 0 ? (
-                  <Text style={styles.emptyText}>No albums yet. Create your first album!</Text>
-                ) : (
-                  albums.map((album) => (
-                    <TouchableOpacity 
-                      key={album.id} 
-                      style={[styles.listItem, { backgroundColor: theme.surface }]}
-                      accessibilityRole="button"
-                      accessibilityLabel={`Album: ${album.name}`}
-                      accessibilityHint={`Tap to open album with ${album.audio_ids.length} songs`}
-                    >
-                      <View style={[styles.itemIcon, { backgroundColor: theme.accent }]}>
-                        <Ionicons name="albums" size={24} color={theme.primary} />
-                      </View>
-                      <View style={styles.itemInfo}>
-                        <Text style={[styles.itemTitle, { color: theme.text }]}>{album.name}</Text>
-                        <Text style={[styles.itemSubtitle, { color: theme.textSecondary }]}>
-                          {album.audio_ids.length} songs · {format(new Date(album.updated_at), 'MMM dd, yyyy')}
-                        </Text>
-                      </View>
-                      <TouchableOpacity 
-                        style={styles.itemAction}
-                        accessibilityRole="button"
-                        accessibilityLabel="Open album"
-                        accessibilityHint="Tap to view album details"
-                      >
-                        <Ionicons name="chevron-forward" size={20} color={theme.textMuted} />
-                      </TouchableOpacity>
-                    </TouchableOpacity>
-                  ))
-                )}
-              </>
-            )}
-
-            {/* My List View */}
-            {currentView === 'mylist' && (
-              <>
-                {/* Filter Toggle */}
-                <View style={[styles.filterContainer, { backgroundColor: theme.background }]}>
-                  <TouchableOpacity
-                    style={[
-                      styles.filterButton, 
-                      { backgroundColor: !showDownloadedOnly ? theme.primary : theme.surface, borderColor: theme.border },
-                      !showDownloadedOnly && styles.filterButtonActive
-                    ]}
-                    onPress={() => setShowDownloadedOnly(false)}
-                    accessibilityRole="tab"
-                    accessibilityLabel={`Show all audio files (${mylistAudioItems.length} items)`}
-                    accessibilityHint="Tap to view all audio files in your library"
-                    accessibilityState={{ selected: !showDownloadedOnly }}
-                  >
-                    <Text style={[
-                      styles.filterButtonText, 
-                      { color: !showDownloadedOnly ? '#ffffff' : theme.textSecondary },
-                      !showDownloadedOnly && styles.filterButtonTextActive
-                    ]}>
-                      All ({mylistAudioItems.length})
+          <View style={styles.audioList}>
+            {recentAudio.map((audio) => (
+              <View key={audio.id} style={styles.audioItem}>
+                <TouchableOpacity
+                  style={styles.audioContent}
+                  onPress={() => handlePlayAudio(audio)}
+                >
+                  <View style={styles.audioInfo}>
+                    <Text style={styles.audioTitle} numberOfLines={2}>
+                      {audio.title}
                     </Text>
-                  </TouchableOpacity>
-                  
-                  <TouchableOpacity
-                    style={[
-                      styles.filterButton, 
-                      { backgroundColor: showDownloadedOnly ? theme.primary : theme.surface, borderColor: theme.border },
-                      showDownloadedOnly && styles.filterButtonActive
-                    ]}
-                    onPress={() => setShowDownloadedOnly(true)}
-                    accessibilityRole="tab"
-                    accessibilityLabel={`Show downloaded audio files (${downloadedAudioIds.size} items)`}
-                    accessibilityHint="Tap to view only downloaded audio files"
-                    accessibilityState={{ selected: showDownloadedOnly }}
-                  >
-                    <Text style={[
-                      styles.filterButtonText, 
-                      { color: showDownloadedOnly ? '#ffffff' : theme.textSecondary },
-                      showDownloadedOnly && styles.filterButtonTextActive
-                    ]}>
-                      Downloaded ({downloadedAudioIds.size})
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-
-                {/* Edit Mode Instructions */}
-                {isEditingMyList && (
-                  <View style={[styles.editInstructions, { backgroundColor: theme.accent }]}>
-                    <Text style={[styles.editInstructionsText, { color: theme.textSecondary }]}>
-                      Select items to remove from My List
-                    </Text>
-                    {selectedAudioIds.length > 0 && (
-                      <TouchableOpacity 
-                        style={[styles.deleteSelectedButton, { backgroundColor: theme.error }]}
-                        onPress={() => {
-                          console.log('Delete button pressed');
-                          handleDeleteSelectedFromMyList();
-                        }}
-                        accessibilityRole="button"
-                        accessibilityLabel={`Remove ${selectedAudioIds.length} selected items`}
-                        accessibilityHint="Tap to permanently delete the selected audio files from your library"
-                      >
-                        <Ionicons name="trash-outline" size={16} color="#fff" />
-                        <Text style={styles.deleteSelectedButtonText}>
-                          Remove ({selectedAudioIds.length})
-                        </Text>
-                      </TouchableOpacity>
-                    )}
+                    <View style={styles.audioMeta}>
+                      <Text style={styles.audioDuration}>
+                        {formatDuration(audio.duration)}
+                      </Text>
+                      <Text style={styles.audioDate}>
+                        {format(new Date(audio.created_at), 'MM/dd HH:mm')}
+                      </Text>
+                    </View>
                   </View>
-                )}
-
-                {/* Audio List */}
-                {filteredMylistAudio.length === 0 ? (
-                  <Text style={styles.emptyText}>
-                    {showDownloadedOnly ? 'No downloaded audio yet.' : 'No audio created yet.'}
-                  </Text>
-                ) : (
-                  filteredMylistAudio.map((audio) => (
-                      <TouchableOpacity
-                        key={audio.id}
-                        style={[
-                          styles.audioCard,
-                          { backgroundColor: theme.surface },
-                          isEditingMyList && selectedAudioIds.includes(audio.id) && [styles.audioCardSelected, { borderColor: theme.error }]
-                        ]}
-                        onPress={() => {
-                          if (isEditingMyList) {
-                            toggleAudioSelection(audio.id);
-                          } else {
-                            // Load audio and open full screen player
-                            playAudio(audio);
-                            setShowFullScreenPlayer(true);
-                          }
-                        }}
-                        accessibilityRole={isEditingMyList ? "checkbox" : "button"}
-                        accessibilityLabel={isEditingMyList ? 
-                          `${selectedAudioIds.includes(audio.id) ? 'Remove' : 'Select'} ${audio.title} for deletion` :
-                          `Audio: ${audio.title}`
-                        }
-                        accessibilityHint={isEditingMyList ?
-                          "Tap to toggle selection for deletion" :
-                          "Tap to play this audio file"
-                        }
-                        accessibilityState={isEditingMyList ? 
-                          { checked: selectedAudioIds.includes(audio.id) } :
-                          { disabled: false }
-                        }
-                      >
-                        <View style={styles.audioCardLeft}>
-                          {isEditingMyList && (
-                            <TouchableOpacity 
-                              style={styles.selectionCheckbox}
-                              onPress={() => toggleAudioSelection(audio.id)}
-                              accessibilityRole="checkbox"
-                              accessibilityLabel={`${selectedAudioIds.includes(audio.id) ? 'Unselect' : 'Select'} ${audio.title}`}
-                              accessibilityState={{ checked: selectedAudioIds.includes(audio.id) }}
-                            >
-                              <Ionicons 
-                                name={selectedAudioIds.includes(audio.id) ? "checkmark-circle" : "ellipse-outline"} 
-                                size={24} 
-                                color={selectedAudioIds.includes(audio.id) ? theme.error : theme.textMuted} 
-                              />
-                            </TouchableOpacity>
-                          )}
-                          <View style={[styles.itemIcon, { backgroundColor: theme.accent }]}>
-                            <Ionicons 
-                              name={downloadedAudioIds.has(audio.id) ? "download" : "musical-notes"} 
-                              size={24} 
-                              color={downloadedAudioIds.has(audio.id) ? theme.success : theme.primary} 
-                            />
-                          </View>
-                          <View style={styles.itemInfo}>
-                            <View style={styles.titleContainer}>
-                              <Text style={[styles.itemTitle, { color: theme.text }]}>{audio.title}</Text>
-                              {audio.prompt_style && (
-                                <View style={[styles.promptBadge, { backgroundColor: getPromptStyleInfo(audio.prompt_style).color + '20' }]}>
-                                  <Ionicons 
-                                    name={getPromptStyleInfo(audio.prompt_style).icon as any} 
-                                    size={12} 
-                                    color={getPromptStyleInfo(audio.prompt_style).color} 
-                                  />
-                                  <Text style={[styles.promptBadgeText, { color: getPromptStyleInfo(audio.prompt_style).color }]}>
-                                    {getPromptStyleInfo(audio.prompt_style).label}
-                                  </Text>
-                                </View>
-                              )}
-                            </View>
-                            <Text style={[styles.itemSubtitle, { color: theme.textSecondary }]}>
-                              {format(new Date(audio.created_at), 'MMM dd, yyyy')} · {formatDuration(audio.duration)}
-                              {downloadedAudioIds.has(audio.id) && ' · Downloaded'}
-                            </Text>
-                          </View>
-                        </View>
-                        
-                        {!isEditingMyList && (
-                          <View style={styles.audioCardActions}>
-                            {/* Play/Pause Button */}
-                            <TouchableOpacity 
-                              style={styles.playButton}
-                              onPress={() => handlePlayAudio(audio)}
-                              accessibilityRole="button"
-                              accessibilityLabel={currentAudio && currentAudio.id === audio.id && isPlaying ? `Pause ${audio.title}` : `Play ${audio.title}`}
-                              accessibilityHint="Tap to play or pause this audio file"
-                            >
-                              <Ionicons 
-                                name={
-                                  currentAudio && currentAudio.id === audio.id && isPlaying 
-                                    ? "pause" 
-                                    : "play"
-                                } 
-                                size={16} 
-                                color="#fff" 
-                              />
-                            </TouchableOpacity>
-                            
-                            {/* Download/Remove Button */}
-                            {downloadedAudioIds.has(audio.id) ? (
-                              <TouchableOpacity 
-                                style={styles.downloadedButton}
-                                onPress={() => handleRemoveDownload(audio.id)}
-                                accessibilityRole="button"
-                                accessibilityLabel={`Remove download for ${audio.title}`}
-                                accessibilityHint="Tap to remove this audio file from downloads"
-                              >
-                                <Ionicons name="checkmark-circle" size={20} color={theme.success} />
-                              </TouchableOpacity>
-                            ) : (
-                              <TouchableOpacity 
-                                style={styles.downloadButton}
-                                onPress={() => handleDownloadAudio(audio.id)}
-                                accessibilityRole="button"
-                                accessibilityLabel={`Download ${audio.title}`}
-                                accessibilityHint="Tap to download this audio file for offline listening"
-                              >
-                                <Ionicons name="download-outline" size={20} color={theme.textMuted} />
-                              </TouchableOpacity>
-                            )}
-                          </View>
-                        )}
-                      </TouchableOpacity>
-                    ))
-                )}
-              </>
-            )}
-          </>
+                  <View style={styles.playButton}>
+                    <Ionicons
+                      name={currentAudio?.id === audio.id && isPlaying ? "pause" : "play"}
+                      size={24}
+                      color={theme.primary}
+                    />
+                  </View>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.deleteButton}
+                  onPress={() => handleDeleteAudio(audio.id)}
+                >
+                  <Ionicons name="trash-outline" size={20} color={theme.error} />
+                </TouchableOpacity>
+              </View>
+            ))}
+          </View>
         )}
+
+        <View style={styles.infoCard}>
+          <Ionicons name="information-circle-outline" size={20} color={theme.primary} />
+          <Text style={styles.infoText}>
+            Option A設計：即消費体験に集中するため、長期保存機能は最小限に。{'\n'}
+            日常使いでは「最新の音声をすぐ聞く」ことが重要です。
+          </Text>
+        </View>
       </ScrollView>
-
-      {/* Create Playlist Modal */}
-      <Modal
-        animationType="slide"
-        transparent={true}
-        visible={createPlaylistModalVisible}
-        onRequestClose={() => setCreatePlaylistModalVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.createModalContainer, { backgroundColor: theme.surface }]}>
-            <Text style={[styles.createModalTitle, { color: theme.text }]}>Create Playlist</Text>
-            
-            <TextInput
-              style={[styles.textInput, { backgroundColor: theme.background, color: theme.text, borderColor: theme.border }]}
-              placeholder="Playlist name"
-              placeholderTextColor={theme.textMuted}
-              value={newPlaylistName}
-              onChangeText={setNewPlaylistName}
-              maxLength={50}
-            />
-            
-            <TextInput
-              style={[styles.textInput, styles.textInputMultiline, { backgroundColor: theme.background, color: theme.text, borderColor: theme.border }]}
-              placeholder="Description (optional)"
-              placeholderTextColor={theme.textMuted}
-              value={newPlaylistDescription}
-              onChangeText={setNewPlaylistDescription}
-              multiline
-              numberOfLines={3}
-              maxLength={200}
-            />
-            
-            <View style={styles.modalButtons}>
-              <TouchableOpacity 
-                style={[styles.cancelButton, { backgroundColor: theme.background, borderColor: theme.border }]}
-                onPress={() => {
-                  setCreatePlaylistModalVisible(false);
-                  setNewPlaylistName('');
-                  setNewPlaylistDescription('');
-                }}
-                accessibilityRole="button"
-                accessibilityLabel="Cancel playlist creation"
-                accessibilityHint="Tap to cancel and close the create playlist dialog"
-              >
-                <Text style={[styles.cancelButtonText, { color: theme.textSecondary }]}>Cancel</Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity 
-                style={[styles.createButton, { backgroundColor: theme.primary }]}
-                onPress={createPlaylist}
-                accessibilityRole="button"
-                accessibilityLabel="Create playlist"
-                accessibilityHint="Tap to create the new playlist with the entered name and description"
-              >
-                <Text style={styles.createButtonText}>Create</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
-
-      {/* Create Album Modal */}
-      <Modal
-        animationType="slide"
-        transparent={true}
-        visible={createAlbumModalVisible}
-        onRequestClose={() => setCreateAlbumModalVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.createModalContainer, { backgroundColor: theme.surface }]}>
-            <Text style={[styles.createModalTitle, { color: theme.text }]}>Create Album</Text>
-            
-            <TextInput
-              style={[styles.textInput, { backgroundColor: theme.background, color: theme.text, borderColor: theme.border }]}
-              placeholder="Album name"
-              placeholderTextColor={theme.textMuted}
-              value={newAlbumName}
-              onChangeText={setNewAlbumName}
-              maxLength={50}
-            />
-            
-            <TextInput
-              style={[styles.textInput, styles.textInputMultiline, { backgroundColor: theme.background, color: theme.text, borderColor: theme.border }]}
-              placeholder="Description (optional)"
-              placeholderTextColor={theme.textMuted}
-              value={newAlbumDescription}
-              onChangeText={setNewAlbumDescription}
-              multiline
-              numberOfLines={3}
-              maxLength={200}
-            />
-            
-            <View style={styles.modalButtons}>
-              <TouchableOpacity 
-                style={[styles.cancelButton, { backgroundColor: theme.background, borderColor: theme.border }]}
-                onPress={() => {
-                  setCreateAlbumModalVisible(false);
-                  setNewAlbumName('');
-                  setNewAlbumDescription('');
-                }}
-                accessibilityRole="button"
-                accessibilityLabel="Cancel album creation"
-                accessibilityHint="Tap to cancel and close the create album dialog"
-              >
-                <Text style={[styles.cancelButtonText, { color: theme.textSecondary }]}>Cancel</Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity 
-                style={[styles.createButton, { backgroundColor: theme.primary }]}
-                onPress={createAlbum}
-                accessibilityRole="button"
-                accessibilityLabel="Create album"
-                accessibilityHint="Tap to create the new album with the entered name and description"
-              >
-                <Text style={styles.createButtonText}>Create</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme: any) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f9fafb',
+    backgroundColor: theme.background,
+  },
+  content: {
+    flex: 1,
+    paddingHorizontal: 20,
   },
   header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 15,
-    backgroundColor: '#ffffff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
+    paddingVertical: 24,
   },
-  title: {
-    fontSize: 28,
+  headerTitle: {
+    fontSize: 24,
     fontWeight: 'bold',
-    color: '#1f2937',
-  },
-  categoryBar: {
-    backgroundColor: '#ffffff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
-    maxHeight: 50,
-  },
-  categoryBarContent: {
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    alignItems: 'center',
-  },
-  categoryButton: {
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 20,
-    backgroundColor: '#f3f4f6',
-    marginRight: 12,
-  },
-  categoryButtonActive: {
-    backgroundColor: '#4f46e5',
-  },
-  categoryButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#6b7280',
-  },
-  categoryButtonTextActive: {
-    color: '#ffffff',
-  },
-  contentContainer: {
-    flex: 1,
-    paddingHorizontal: 20,
-    paddingTop: 20,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingTop: 100,
-  },
-  emptyText: {
-    textAlign: 'center',
-    fontSize: 16,
-    color: '#6b7280',
-    marginTop: 60,
-    lineHeight: 24,
-  },
-  listItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#ffffff',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  itemIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 8,
-    backgroundColor: '#f3f4f6',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 16,
-  },
-  itemInfo: {
-    flex: 1,
-  },
-  itemTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1f2937',
-    marginBottom: 4,
-  },
-  itemSubtitle: {
-    fontSize: 14,
-    color: '#6b7280',
-  },
-  itemAction: {
-    padding: 8,
-  },
-  playButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#4f46e5',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  createModalContainer: {
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
-    padding: 24,
-    width: '90%',
-    maxWidth: 400,
-  },
-  createModalTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#1f2937',
-    marginBottom: 20,
-    textAlign: 'center',
-  },
-  textInput: {
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 16,
-    marginBottom: 16,
-    backgroundColor: '#f9fafb',
-  },
-  textInputMultiline: {
-    height: 80,
-    textAlignVertical: 'top',
-  },
-  modalButtons: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    color: theme.text,
     marginTop: 8,
   },
-  cancelButton: {
-    flex: 1,
-    paddingVertical: 12,
-    marginRight: 8,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    alignItems: 'center',
-  },
-  cancelButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#6b7280',
-  },
-  createButton: {
-    flex: 1,
-    paddingVertical: 12,
-    marginLeft: 8,
-    borderRadius: 8,
-    backgroundColor: '#4f46e5',
-    alignItems: 'center',
-  },
-  createButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#ffffff',
-  },
-  // Mylist specific styles
-  filterContainer: {
-    flexDirection: 'row',
-    marginBottom: 20,
-    backgroundColor: '#f3f4f6',
-    borderRadius: 8,
-    padding: 4,
-  },
-  filterButton: {
-    flex: 1,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 6,
-    alignItems: 'center',
-  },
-  filterButtonActive: {
-    backgroundColor: '#ffffff',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 1,
-  },
-  filterButtonText: {
+  headerSubtitle: {
     fontSize: 14,
-    fontWeight: '600',
-    color: '#6b7280',
+    color: theme.textSecondary,
+    marginTop: 4,
   },
-  filterButtonTextActive: {
-    color: '#1f2937',
-  },
-  audioCard: {
-    flexDirection: 'row',
+  emptyState: {
     alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#ffffff',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    paddingVertical: 60,
   },
-  audioCardLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
+  emptyText: {
+    fontSize: 16,
+    color: theme.textMuted,
+    textAlign: 'center',
+    marginTop: 16,
+    lineHeight: 24,
   },
-  audioCardActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  audioList: {
     gap: 12,
   },
-  downloadButton: {
-    padding: 8,
-    borderRadius: 20,
-    backgroundColor: '#f3f4f6',
-  },
-  downloadedButton: {
-    padding: 8,
-    borderRadius: 20,
-    backgroundColor: '#f0fdf4',
-  },
-  // Edit mode specific styles
-  editInstructions: {
+  audioItem: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    backgroundColor: theme.card,
+    borderRadius: 12,
+    padding: 16,
     alignItems: 'center',
-    backgroundColor: '#fff3cd',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 16,
-    borderLeftWidth: 4,
-    borderLeftColor: '#ffc107',
   },
-  editInstructionsText: {
-    fontSize: 14,
-    color: '#856404',
-    fontWeight: '500',
+  audioContent: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  audioInfo: {
     flex: 1,
   },
-  deleteSelectedButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#ef4444',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 6,
-    gap: 4,
+  audioTitle: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: theme.text,
+    marginBottom: 6,
   },
-  deleteSelectedButtonText: {
-    color: '#ffffff',
-    fontSize: 14,
+  audioMeta: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  audioDuration: {
+    fontSize: 12,
+    color: theme.primary,
     fontWeight: '600',
   },
-  audioCardSelected: {
-    borderColor: '#ef4444',
-    borderWidth: 2,
-    backgroundColor: '#fef2f2',
+  audioDate: {
+    fontSize: 12,
+    color: theme.textSecondary,
   },
-  selectionCheckbox: {
-    marginRight: 12,
+  playButton: {
+    padding: 8,
   },
-  // Prompt style badge styles
-  titleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 4,
-    flexWrap: 'wrap',
-  },
-  promptBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 12,
+  deleteButton: {
+    padding: 8,
     marginLeft: 8,
-    gap: 4,
   },
-  promptBadgeText: {
-    fontSize: 10,
-    fontWeight: '600',
+  infoCard: {
+    flexDirection: 'row',
+    backgroundColor: theme.accent,
+    borderRadius: 8,
+    padding: 16,
+    marginTop: 24,
+    marginBottom: 32,
+    gap: 12,
+  },
+  infoText: {
+    flex: 1,
+    fontSize: 12,
+    color: theme.textSecondary,
+    lineHeight: 16,
   },
 });

@@ -172,8 +172,8 @@ export default function AppLayout() {
       <Tabs.Screen
         name="library"
         options={{
-          tabBarLabel: 'Library',
-          tabBarIcon: ({ color, size }) => <Library color={color} size={size} />,
+          tabBarLabel: 'Recent',
+          tabBarIcon: ({ color, size }) => <Ionicons name="time-outline" color={color} size={size} />,
         }}
       />
     </Tabs>
