@@ -46,12 +46,38 @@ export default function FeedScreen() {
 
   const handleCreateAudio = async (articles: any[]): Promise<string> => {
     try {
+      // Generate a more meaningful title based on articles
+      const today = new Date();
+      const timeStr = today.toLocaleString('ja-JP', { 
+        month: 'short', 
+        day: 'numeric', 
+        hour: '2-digit', 
+        minute: '2-digit' 
+      });
+      
+      let titlePrefix = '今日のニュース';
+      if (articles.length > 0) {
+        const categories = articles.map(a => a.category || 'General').filter(Boolean);
+        const uniqueCategories = [...new Set(categories)];
+        if (uniqueCategories.length === 1) {
+          const categoryMap: {[key: string]: string} = {
+            'Technology': 'テクノロジー',
+            'Finance': '経済',
+            'Politics': '政治',
+            'Sports': 'スポーツ',
+            'Health': '健康',
+            'Entertainment': 'エンタメ'
+          };
+          titlePrefix = categoryMap[uniqueCategories[0]] || uniqueCategories[0];
+        }
+      }
+      
       const response = await axios.post(
         `${API}/audio/create`,
         {
           articles: articles,
           prompt_style: 'standard',
-          title: `Generated Audio ${new Date().toLocaleTimeString()}`,
+          title: `${titlePrefix} (${timeStr})`,
         },
         {
           headers: { Authorization: `Bearer ${token}` },

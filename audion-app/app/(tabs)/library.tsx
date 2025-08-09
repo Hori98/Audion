@@ -15,6 +15,8 @@ interface RecentAudioItem {
   audio_url: string;
   duration: number;
   created_at: string;
+  summary?: string;
+  articles?: any[];
 }
 
 export default function RecentScreen() {
@@ -142,13 +144,32 @@ export default function RecentScreen() {
                     <Text style={styles.audioTitle} numberOfLines={2}>
                       {audio.title}
                     </Text>
+                    {audio.summary && (
+                      <Text style={[styles.audioSummary, { color: theme.textSecondary }]} numberOfLines={2}>
+                        {audio.summary}
+                      </Text>
+                    )}
                     <View style={styles.audioMeta}>
-                      <Text style={styles.audioDuration}>
-                        {formatDuration(audio.duration)}
-                      </Text>
-                      <Text style={styles.audioDate}>
-                        {format(new Date(audio.created_at), 'MM/dd HH:mm')}
-                      </Text>
+                      <View style={styles.metaRow}>
+                        <Ionicons name="time-outline" size={12} color={theme.primary} />
+                        <Text style={styles.audioDuration}>
+                          {formatDuration(audio.duration)}
+                        </Text>
+                      </View>
+                      <View style={styles.metaRow}>
+                        <Ionicons name="calendar-outline" size={12} color={theme.textSecondary} />
+                        <Text style={styles.audioDate}>
+                          {format(new Date(audio.created_at), 'MM/dd HH:mm')}
+                        </Text>
+                      </View>
+                      {audio.articles && audio.articles.length > 0 && (
+                        <View style={styles.metaRow}>
+                          <Ionicons name="newspaper-outline" size={12} color={theme.textSecondary} />
+                          <Text style={[styles.audioDate, { color: theme.textSecondary }]}>
+                            {audio.articles.length}記事
+                          </Text>
+                        </View>
+                      )}
                     </View>
                   </View>
                   <View style={styles.playButton}>
@@ -241,9 +262,20 @@ const createStyles = (theme: any) => StyleSheet.create({
     color: theme.text,
     marginBottom: 6,
   },
+  audioSummary: {
+    fontSize: 13,
+    lineHeight: 18,
+    marginBottom: 8,
+  },
   audioMeta: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 12,
+  },
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
   },
   audioDuration: {
     fontSize: 12,
