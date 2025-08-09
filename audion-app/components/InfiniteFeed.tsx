@@ -1,13 +1,12 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   Dimensions,
   TouchableOpacity,
-  PanGestureHandler,
-  Animated,
   Alert,
+  ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
@@ -40,9 +39,6 @@ export default function InfiniteFeed({ onCreateAudio, onRefresh }: InfiniteFeedP
   const [currentIndex, setCurrentIndex] = useState(0);
   const [audioCards, setAudioCards] = useState<AudioCard[]>([]);
   const [loading, setLoading] = useState(false);
-  
-  const translateY = useRef(new Animated.Value(0)).current;
-  const panRef = useRef<any>(null);
 
   useEffect(() => {
     loadInitialContent();
@@ -51,7 +47,6 @@ export default function InfiniteFeed({ onCreateAudio, onRefresh }: InfiniteFeedP
   const loadInitialContent = async () => {
     setLoading(true);
     try {
-      // Simulate initial content loading
       const mockCards: AudioCard[] = [
         {
           id: '1',
@@ -87,18 +82,16 @@ export default function InfiniteFeed({ onCreateAudio, onRefresh }: InfiniteFeedP
     }
   };
 
-  const handleSwipeUp = async () => {
+  const handleNext = async () => {
     if (currentIndex < audioCards.length - 1) {
-      // Record skip interaction if moving away from current content
+      // Record skip interaction
       const currentCard = audioCards[currentIndex];
       if (currentCard) {
         await PersonalizationService.recordInteraction({
           action: 'skip',
           contentId: currentCard.id,
           contentType: 'audio',
-          category: currentCard.title.includes('AI') ? 'Technology' : 
-                   currentCard.title.includes('経済') ? 'Finance' : 
-                   currentCard.title.includes('国際') ? 'Politics' : 'General',
+          category: getCategoryFromTitle(currentCard.title),
           timestamp: Date.now(),
         });
       }
@@ -112,7 +105,7 @@ export default function InfiniteFeed({ onCreateAudio, onRefresh }: InfiniteFeedP
     }
   };
 
-  const handleSwipeDown = () => {
+  const handlePrevious = () => {
     if (currentIndex > 0) {
       setCurrentIndex(currentIndex - 1);
     }
@@ -120,7 +113,6 @@ export default function InfiniteFeed({ onCreateAudio, onRefresh }: InfiniteFeedP
 
   const loadMoreContent = async () => {
     try {
-      // Simulate generating new content
       const newCard: AudioCard = {
         id: `generated_${Date.now()}`,
         title: 'AIが新しいコンテンツを生成中...',
@@ -152,8 +144,24 @@ export default function InfiniteFeed({ onCreateAudio, onRefresh }: InfiniteFeedP
     }
   };
 
+  const getCategoryFromTitle = (title: string): string => {
+    if (title.includes('AI') || title.includes('技術')) return 'Technology';
+    if (title.includes('経済') || title.includes('市場')) return 'Finance';
+    if (title.includes('国際') || title.includes('政治')) return 'Politics';
+    return 'General';
+  };
+
   const handlePlay = async (card: AudioCard) => {
     if (card.isGenerating) return;
+    
+    // Record play interaction
+    await PersonalizationService.recordInteraction({
+      action: 'play',
+      contentId: card.id,
+      contentType: 'audio',
+      category: getCategoryFromTitle(card.title),
+      timestamp: Date.now(),
+    });
     
     if (currentAudio?.id === card.id && isPlaying) {
       pauseAudio();
@@ -177,7 +185,6 @@ export default function InfiniteFeed({ onCreateAudio, onRefresh }: InfiniteFeedP
     Alert.alert('シェア', `「${card.title}」をシェアしますか？`, [
       { text: 'キャンセル', style: 'cancel' },
       { text: 'シェア', onPress: () => {
-        // Share functionality would be implemented here
         Alert.alert('シェア完了', 'コンテンツをシェアしました');
       }}
     ]);
@@ -185,14 +192,11 @@ export default function InfiniteFeed({ onCreateAudio, onRefresh }: InfiniteFeedP
 
   const handleLike = async (card: AudioCard) => {
     try {
-      // Record like interaction for personalization
       await PersonalizationService.recordInteraction({
         action: 'like',
         contentId: card.id,
         contentType: 'audio',
-        category: card.title.includes('AI') ? 'Technology' : 
-                 card.title.includes('経済') ? 'Finance' : 
-                 card.title.includes('国際') ? 'Politics' : 'General',
+        category: getCategoryFromTitle(card.title),
         timestamp: Date.now(),
       });
       
@@ -241,107 +245,95 @@ export default function InfiniteFeed({ onCreateAudio, onRefresh }: InfiniteFeedP
 
   return (
     <View style={styles.container}>
-      {/* Swipe Indicators */}
+      {/* Navigation Indicators */}
       <View style={styles.indicators}>
         {currentIndex > 0 && (
-          <TouchableOpacity style={styles.upIndicator} onPress={handleSwipeDown}>
+          <TouchableOpacity style={styles.upIndicator} onPress={handlePrevious}>
             <Ionicons name="chevron-up" size={24} color={theme.textMuted} />
+            <Text style={[styles.indicatorText, { color: theme.textMuted }]}>前へ</Text>
           </TouchableOpacity>
         )}
         {currentIndex < audioCards.length - 1 && (
-          <TouchableOpacity style={styles.downIndicator} onPress={handleSwipeUp}>
+          <TouchableOpacity style={styles.downIndicator} onPress={handleNext}>
+            <Text style={[styles.indicatorText, { color: theme.textMuted }]}>次へ</Text>
             <Ionicons name="chevron-down" size={24} color={theme.textMuted} />
           </TouchableOpacity>
         )}
       </View>
 
       {/* Main Content */}
-      <PanGestureHandler
-        ref={panRef}
-        onGestureEvent={(event) => {
-          const { translationY } = event.nativeEvent;
-          if (Math.abs(translationY) > 50) {
-            if (translationY < -50) {
-              handleSwipeUp();
-            } else if (translationY > 50) {
-              handleSwipeDown();
-            }
-          }
-        }}
-      >
-        <Animated.View style={styles.cardContainer}>
-          <View style={[styles.audioCard, { backgroundColor: theme.card }]}>
-            {/* Content */}
-            <View style={styles.cardContent}>
-              <Text style={[styles.cardTitle, { color: theme.text }]} numberOfLines={3}>
-                {currentCard.title}
-              </Text>
-              
-              <Text style={[styles.cardSummary, { color: theme.textSecondary }]} numberOfLines={6}>
-                {currentCard.summary}
-              </Text>
-              
-              {!currentCard.isGenerating && (
-                <View style={styles.cardMeta}>
-                  <View style={styles.metaItem}>
-                    <Ionicons name="time-outline" size={16} color={theme.primary} />
-                    <Text style={[styles.metaText, { color: theme.primary }]}>
-                      {formatDuration(currentCard.duration)}
-                    </Text>
-                  </View>
-                  <View style={styles.metaItem}>
-                    <Ionicons name="calendar-outline" size={16} color={theme.textSecondary} />
-                    <Text style={[styles.metaText, { color: theme.textSecondary }]}>
-                      今日
-                    </Text>
-                  </View>
-                </View>
-              )}
-            </View>
-
-            {/* Actions */}
-            <View style={styles.actions}>
-              {currentCard.isGenerating ? (
-                <View style={styles.generatingAction}>
-                  <LoadingButton loading={true} size="large" />
-                  <Text style={[styles.generatingText, { color: theme.textSecondary }]}>
-                    生成中...
+      <View style={styles.cardContainer}>
+        <View style={[styles.audioCard, { backgroundColor: theme.card }]}>
+          {/* Content */}
+          <View style={styles.cardContent}>
+            <Text style={[styles.cardTitle, { color: theme.text }]} numberOfLines={3}>
+              {currentCard.title}
+            </Text>
+            
+            <Text style={[styles.cardSummary, { color: theme.textSecondary }]} numberOfLines={6}>
+              {currentCard.summary}
+            </Text>
+            
+            {!currentCard.isGenerating && (
+              <View style={styles.cardMeta}>
+                <View style={styles.metaItem}>
+                  <Ionicons name="time-outline" size={16} color={theme.primary} />
+                  <Text style={[styles.metaText, { color: theme.primary }]}>
+                    {formatDuration(currentCard.duration)}
                   </Text>
                 </View>
-              ) : (
-                <>
+                <View style={styles.metaItem}>
+                  <Ionicons name="calendar-outline" size={16} color={theme.textSecondary} />
+                  <Text style={[styles.metaText, { color: theme.textSecondary }]}>
+                    今日
+                  </Text>
+                </View>
+              </View>
+            )}
+          </View>
+
+          {/* Actions */}
+          <View style={styles.actions}>
+            {currentCard.isGenerating ? (
+              <View style={styles.generatingAction}>
+                <LoadingButton loading={true} size="large" />
+                <Text style={[styles.generatingText, { color: theme.textSecondary }]}>
+                  生成中...
+                </Text>
+              </View>
+            ) : (
+              <>
+                <TouchableOpacity
+                  style={[styles.playButton, { backgroundColor: theme.primary }]}
+                  onPress={() => handlePlay(currentCard)}
+                >
+                  <Ionicons
+                    name={currentAudio?.id === currentCard.id && isPlaying ? "pause" : "play"}
+                    size={32}
+                    color="#FFFFFF"
+                  />
+                </TouchableOpacity>
+                
+                <View style={styles.sideActions}>
                   <TouchableOpacity
-                    style={[styles.playButton, { backgroundColor: theme.primary }]}
-                    onPress={() => handlePlay(currentCard)}
+                    style={styles.sideAction}
+                    onPress={() => handleLike(currentCard)}
                   >
-                    <Ionicons
-                      name={currentAudio?.id === currentCard.id && isPlaying ? "pause" : "play"}
-                      size={32}
-                      color="#FFFFFF"
-                    />
+                    <Ionicons name="heart-outline" size={24} color={theme.text} />
                   </TouchableOpacity>
                   
-                  <View style={styles.sideActions}>
-                    <TouchableOpacity
-                      style={styles.sideAction}
-                      onPress={() => handleLike(currentCard)}
-                    >
-                      <Ionicons name="heart-outline" size={24} color={theme.text} />
-                    </TouchableOpacity>
-                    
-                    <TouchableOpacity
-                      style={styles.sideAction}
-                      onPress={() => handleShare(currentCard)}
-                    >
-                      <Ionicons name="share-outline" size={24} color={theme.text} />
-                    </TouchableOpacity>
-                  </View>
-                </>
-              )}
-            </View>
+                  <TouchableOpacity
+                    style={styles.sideAction}
+                    onPress={() => handleShare(currentCard)}
+                  >
+                    <Ionicons name="share-outline" size={24} color={theme.text} />
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
           </View>
-        </Animated.View>
-      </PanGestureHandler>
+        </View>
+      </View>
 
       {/* Progress Indicator */}
       <View style={styles.progressContainer}>
@@ -404,13 +396,20 @@ const createStyles = (theme: any) => StyleSheet.create({
     right: 20,
     top: '50%',
     zIndex: 10,
-    gap: 20,
+    gap: 40,
+    alignItems: 'center',
   },
   upIndicator: {
+    alignItems: 'center',
     padding: 8,
   },
   downIndicator: {
+    alignItems: 'center',
     padding: 8,
+  },
+  indicatorText: {
+    fontSize: 12,
+    fontWeight: '500',
   },
   cardContainer: {
     flex: 1,
