@@ -16,8 +16,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
+import { useScrollPosition } from '../hooks/useScrollPosition';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import SubscriptionService, { SubscriptionTier } from '../services/SubscriptionService';
 
 interface SettingItem {
   id: string;
@@ -40,6 +42,9 @@ export default function FeedAutoPickSettingsScreen() {
   const router = useRouter();
   const { theme } = useTheme();
   const { token } = useAuth();
+  const { scrollViewRef, handleScroll, scrollEventThrottle } = useScrollPosition({ 
+    screenKey: 'feed-autopick-settings' 
+  });
   
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -68,6 +73,8 @@ export default function FeedAutoPickSettingsScreen() {
   const [customPromptModalVisible, setCustomPromptModalVisible] = useState(false);
   const [customPromptText, setCustomPromptText] = useState('');
   const [editingCustomPromptId, setEditingCustomPromptId] = useState<string | null>(null);
+  const [currentSubscriptionTier, setCurrentSubscriptionTier] = useState<SubscriptionTier>(SubscriptionTier.FREE);
+  const [autoPickArticleCount, setAutoPickArticleCount] = useState(3); // For manual auto-pick operations
   
   // Get enabled schedules for display
   const enabledSchedules = schedules.filter(s => s.enabled);
@@ -77,7 +84,18 @@ export default function FeedAutoPickSettingsScreen() {
 
   useEffect(() => {
     loadSettings();
+    loadSubscription();
   }, []);
+
+  const loadSubscription = async () => {
+    try {
+      const tier = await SubscriptionService.loadUserSubscription();
+      setCurrentSubscriptionTier(tier);
+    } catch (error) {
+      console.error('Error loading subscription:', error);
+      setCurrentSubscriptionTier(SubscriptionTier.FREE);
+    }
+  };
 
   const loadSettings = async () => {
     try {
@@ -96,6 +114,7 @@ export default function FeedAutoPickSettingsScreen() {
         }
         
         setScheduleCount(parsed.scheduleCount || 3);
+        setAutoPickArticleCount(parsed.autoPickArticleCount || 3);
         setAutoPlay(parsed.autoPlay !== false);
         setPushNotifications(parsed.pushNotifications !== false);
         setSelectedPrompt(parsed.selectedPrompt || 'standard');
@@ -115,6 +134,7 @@ export default function FeedAutoPickSettingsScreen() {
         scheduleEnabled,
         schedules,
         scheduleCount,
+        autoPickArticleCount,
         autoPlay,
         pushNotifications,
         selectedPrompt,
@@ -284,14 +304,6 @@ export default function FeedAutoPickSettingsScreen() {
           onPress: () => router.push('/sources')
         },
         {
-          id: 'genre-preferences',
-          title: 'Genre Preferences',
-          subtitle: 'Customize content categories and weights',
-          icon: 'heart-outline',
-          type: 'navigation',
-          onPress: () => router.push('/genre-preferences')
-        },
-        {
           id: 'content-filters',
           title: 'Content Filters',
           subtitle: 'Block unwanted topics and keywords',
@@ -303,7 +315,58 @@ export default function FeedAutoPickSettingsScreen() {
     },
     {
       title: 'Auto-Pick Configuration',
-      description: 'Automatic content selection and audio generation',
+      description: 'Settings for all auto-pick operations (manual and feed auto-pick)',
+      items: [
+        {
+          id: 'auto-pick-article-count',
+          title: 'Articles Per Auto-Pick',
+          subtitle: `${autoPickArticleCount} articles selected per manual auto-pick operation (${SubscriptionService.getPlanName(currentSubscriptionTier)})`,
+          icon: 'document-duplicate-outline',
+          type: 'selection',
+          value: autoPickArticleCount,
+          onPress: async () => {
+            const features = await SubscriptionService.getEffectiveFeatures();
+            const availableCounts = features.availableArticleCounts;
+            const currentPlan = SubscriptionService.getPlanName(currentSubscriptionTier);
+            
+            const buttons = availableCounts.map(count => ({
+              text: `${count} Article${count > 1 ? 's' : ''}`,
+              onPress: () => {
+                setAutoPickArticleCount(count);
+                setTimeout(() => saveSettings(), 100);
+              }
+            }));
+            
+            buttons.push({ text: 'Cancel', style: 'cancel' as const });
+            
+            Alert.alert(
+              'Articles Per Auto-Pick',
+              `Select the number of articles for each manual auto-pick operation.\n\nCurrent Plan: ${currentPlan}\nAvailable: ${availableCounts.join(', ')} articles`,
+              buttons
+            );
+          }
+        },
+        {
+          id: 'script-style',
+          title: 'AI Script Style',
+          subtitle: `Current: ${getPromptDisplayName()}`,
+          icon: 'document-text-outline',
+          type: 'navigation',
+          onPress: () => setPromptModalVisible(true)
+        },
+        {
+          id: 'genre-preferences',
+          title: 'Genre Preferences',
+          subtitle: 'Customize content categories and weights',
+          icon: 'heart-outline',
+          type: 'navigation',
+          onPress: () => router.push('/genre-preferences')
+        }
+      ]
+    },
+    {
+      title: 'Scheduled Content Creation',
+      description: 'Automated time-based content creation and scheduling',
       items: [
         {
           id: 'schedule-enabled',
@@ -330,76 +393,42 @@ export default function FeedAutoPickSettingsScreen() {
           onPress: () => setScheduleManagementModalVisible(true)
         },
         {
+          id: 'schedule-content-settings',
+          title: 'Schedule Content Settings',
+          subtitle: 'Configure sources, genres, and style for scheduled content',
+          icon: 'settings-outline',
+          type: 'navigation',
+          onPress: () => {
+            router.push('/schedule-content-settings');
+          }
+        },
+        {
           id: 'article-count',
           title: 'Articles Per Episode',
-          subtitle: `${scheduleCount} articles selected per auto-generated episode`,
+          subtitle: `${scheduleCount} articles selected per auto-generated episode (${SubscriptionService.getPlanName(currentSubscriptionTier)})`,
           icon: 'document-duplicate-outline',
           type: 'selection',
           value: scheduleCount,
-          onPress: () => {
+          onPress: async () => {
+            const features = await SubscriptionService.getEffectiveFeatures();
+            const availableCounts = features.availableArticleCounts;
+            const currentPlan = SubscriptionService.getPlanName(currentSubscriptionTier);
+            
+            const buttons = availableCounts.map(count => ({
+              text: `${count} Article${count > 1 ? 's' : ''}`,
+              onPress: () => {
+                setScheduleCount(count);
+                setTimeout(() => saveSettings(), 100);
+              }
+            }));
+            
+            buttons.push({ text: 'Cancel', style: 'cancel' as const });
+            
             Alert.alert(
               'Articles Per Episode',
-              'How many articles should be included in each auto-generated episode?',
-              [
-                { text: '1 Article', onPress: () => { setScheduleCount(1); setTimeout(() => saveSettings(), 100); } },
-                { text: '3 Articles', onPress: () => { setScheduleCount(3); setTimeout(() => saveSettings(), 100); } },
-                { text: '5 Articles', onPress: () => { setScheduleCount(5); setTimeout(() => saveSettings(), 100); } },
-                { text: '7 Articles', onPress: () => { setScheduleCount(7); setTimeout(() => saveSettings(), 100); } },
-                { text: 'Cancel', style: 'cancel' }
-              ]
+              `Select the number of articles for each auto-generated episode.\n\nCurrent Plan: ${currentPlan}\nAvailable: ${availableCounts.join(', ')} articles`,
+              buttons
             );
-          }
-        },
-        {
-          id: 'script-style',
-          title: 'AI Script Style',
-          subtitle: `Current: ${getPromptDisplayName()}`,
-          icon: 'document-text-outline',
-          type: 'navigation',
-          onPress: () => setPromptModalVisible(true)
-        }
-      ]
-    },
-    {
-      title: 'Scheduled Content Creation',
-      description: 'Custom content creation for specific times with personalized preferences',
-      items: [
-        {
-          id: 'schedule-sources',
-          title: 'Custom News Sources',
-          subtitle: 'Select specific RSS sources for scheduled content',
-          icon: 'newspaper-outline',
-          type: 'navigation',
-          onPress: () => {
-            Alert.alert('Coming Soon', 'Custom source selection for schedules will be available soon');
-          }
-        },
-        {
-          id: 'schedule-genres',
-          title: 'Custom Genre Preferences',
-          subtitle: 'Set specific content categories for each schedule',
-          icon: 'library-outline',
-          type: 'navigation',
-          onPress: () => {
-            Alert.alert('Coming Soon', 'Custom genre preferences for schedules will be available soon');
-          }
-        },
-        {
-          id: 'schedule-prompts',
-          title: 'Script Style',
-          subtitle: `Current: ${getPromptDisplayName()}`,
-          icon: 'create-outline',
-          type: 'navigation',
-          onPress: () => setPromptModalVisible(true)
-        },
-        {
-          id: 'schedule-templates',
-          title: 'Content Templates',
-          subtitle: 'Pre-configured templates for different use cases',
-          icon: 'copy-outline',
-          type: 'navigation',
-          onPress: () => {
-            Alert.alert('Coming Soon', 'Content templates will be available soon');
           }
         }
       ]
@@ -557,7 +586,13 @@ export default function FeedAutoPickSettingsScreen() {
         <View style={styles.placeholder} />
       </View>
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView 
+        ref={scrollViewRef}
+        style={styles.content} 
+        showsVerticalScrollIndicator={false}
+        onScroll={handleScroll}
+        scrollEventThrottle={scrollEventThrottle}
+      >
         
         {/* Overview Card */}
         <View style={styles.section}>

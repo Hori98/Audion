@@ -15,6 +15,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
+import { useScrollPosition } from '../hooks/useScrollPosition';
+import DebugMenu from '../components/DebugMenu';
+import DebugService from '../services/DebugService';
+import SubscriptionService from '../services/SubscriptionService';
 import axios from 'axios';
 import * as ImagePicker from 'expo-image-picker';
 
@@ -46,6 +50,11 @@ export default function SettingsScreen() {
   const router = useRouter();
   const { logout, user, token, handleAuthError } = useAuth();
   const { theme, themeMode, setThemeMode } = useTheme();
+  const { scrollViewRef, handleScroll, scrollEventThrottle } = useScrollPosition({ 
+    screenKey: 'settings',
+    // Prevent scroll restoration when modals are open
+    shouldRestoreScroll: () => !debugMenuVisible && !profileModalVisible && !themeModalVisible
+  });
   
   const [deletedAudio, setDeletedAudio] = useState<DeletedAudio[]>([]);
   const [loadingDeleted, setLoadingDeleted] = useState(false);
@@ -53,6 +62,8 @@ export default function SettingsScreen() {
   const [profileModalVisible, setProfileModalVisible] = useState(false);
   const [themeModalVisible, setThemeModalVisible] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
+  const [debugMenuVisible, setDebugMenuVisible] = useState(false);
+  const [subscriptionTier, setSubscriptionTier] = useState(SubscriptionService.getCurrentTier());
   
   const API = process.env.EXPO_PUBLIC_BACKEND_URL ? `${process.env.EXPO_PUBLIC_BACKEND_URL}/api` : 'http://localhost:8000/api';
   
@@ -61,7 +72,18 @@ export default function SettingsScreen() {
       fetchDeletedAudio();
       fetchUserProfile();
     }
+    loadDebugSettings();
   }, [token]);
+
+  const loadDebugSettings = async () => {
+    try {
+      await DebugService.loadDebugSettings();
+      const tier = await SubscriptionService.getEffectiveTier();
+      setSubscriptionTier(tier);
+    } catch (error) {
+      console.error('Error loading debug settings:', error);
+    }
+  };
 
   const fetchUserProfile = async () => {
     try {
@@ -509,11 +531,18 @@ export default function SettingsScreen() {
         {
           id: 'developer',
           title: 'Developer Options',
-          subtitle: 'Debug mode, advanced configurations',
+          subtitle: DebugService.isDebugModeEnabled() 
+            ? `Debug Mode Active • ${subscriptionTier.toUpperCase()} tier`
+            : 'Debug mode, advanced configurations',
           icon: 'code-outline',
           type: 'navigation',
           onPress: () => {
-            Alert.alert('Coming Soon', 'Developer options will be available soon');
+            // Always show debug menu in development
+            if (DebugService.isDebugModeEnabled() || __DEV__) {
+              setDebugMenuVisible(true);
+            } else {
+              Alert.alert('🧪 Debug Mode', 'Debug mode is not currently active. Tap About Audion 7 times to access debug features.');
+            }
           }
         }
       ]
@@ -524,11 +553,14 @@ export default function SettingsScreen() {
         {
           id: 'help',
           title: 'Help & Documentation',
-          subtitle: 'User guide, FAQs, tutorials',
+          subtitle: 'User guide, FAQs, tutorials, about app',
           icon: 'help-circle-outline',
           type: 'navigation',
           onPress: () => {
-            Alert.alert('Coming Soon', 'Help documentation will be available soon');
+            Alert.alert(
+              'Help & About Audion',
+              'Audion v1.0.0 (MVP)\nAI-powered news audio platform\n\nFeatures:\n• RSS news aggregation\n• AI-powered summarization\n• Text-to-speech audio generation\n• Personalized recommendations\n• Spotify-like audio interface\n\nMore detailed help documentation will be available soon.'
+            );
           }
         },
         {
@@ -544,31 +576,36 @@ export default function SettingsScreen() {
         {
           id: 'about',
           title: 'About Audion',
-          subtitle: 'Version 1.0.0 (MVP)',
+          subtitle: DebugService.isDebugModeEnabled() 
+            ? `Version 1.0.0 (MVP) • 🧪 Debug Active`
+            : 'Version 1.0.0 (MVP)',
           icon: 'information-circle-outline',
           type: 'navigation',
           onPress: () => {
-            Alert.alert('About Audion', 'Audion v1.0.0 (MVP)\nAI-powered news audio platform\n\nFeatures:\n• RSS news aggregation\n• AI-powered summarization\n• Text-to-speech audio generation\n• Personalized recommendations\n• Spotify-like audio interface');
+            Alert.alert(
+              'About Audion',
+              `Audion v1.0.0 (MVP)
+AI-powered news audio platform
+
+Features:
+• RSS news aggregation
+• AI-powered summarization
+• Text-to-speech audio generation
+• Personalized recommendations
+• Spotify-like audio interface
+
+For developer options, check System & Advanced settings.`
+            );
           }
         },
         {
-          id: 'terms',
-          title: 'Terms of Service',
-          subtitle: 'View terms and conditions',
-          icon: 'document-outline',
+          id: 'legal',
+          title: 'Terms & Privacy',
+          subtitle: 'Terms of service, privacy policy, and legal information',
+          icon: 'document-text-outline',
           type: 'navigation',
           onPress: () => {
-            Alert.alert('Coming Soon', 'Terms of service will be available soon');
-          }
-        },
-        {
-          id: 'privacy-policy',
-          title: 'Privacy Policy',
-          subtitle: 'How we handle your data',
-          icon: 'lock-closed-outline',
-          type: 'navigation',
-          onPress: () => {
-            Alert.alert('Coming Soon', 'Privacy policy will be available soon');
+            Alert.alert('Coming Soon', 'Legal documentation will be available soon');
           }
         }
       ]
@@ -612,7 +649,13 @@ export default function SettingsScreen() {
         <View style={styles.placeholder} />
       </View>
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView 
+        ref={scrollViewRef}
+        style={styles.content} 
+        showsVerticalScrollIndicator={false}
+        onScroll={handleScroll}
+        scrollEventThrottle={scrollEventThrottle}
+      >
         {settingSections.map((section, sectionIndex) => (
           <View key={sectionIndex} style={styles.section}>
             <Text style={styles.sectionTitle}>{section.title}</Text>
@@ -791,6 +834,16 @@ export default function SettingsScreen() {
           </ScrollView>
         </SafeAreaView>
       </Modal>
+
+      {/* Debug Menu Modal */}
+      <DebugMenu
+        visible={debugMenuVisible}
+        onClose={() => {
+          setDebugMenuVisible(false);
+          // Refresh subscription tier after debug menu closes
+          loadDebugSettings();
+        }}
+      />
     </SafeAreaView>
   );
 }

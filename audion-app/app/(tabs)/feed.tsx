@@ -587,7 +587,7 @@ export default function FeedScreen() {
     
     // Load current prompt setting when entering selection mode
     if (newMode) {
-      const currentPromptStyle = await AsyncStorage.getItem('prompt_style') || 'standard';
+      const currentPromptStyle = await AsyncStorage.getItem('unified_prompt_style') || 'standard';
       setTempPromptStyle(currentPromptStyle);
     }
     
@@ -614,8 +614,8 @@ export default function FeedScreen() {
     setCreatingAudio(true);
     try {
       // Load prompt settings - use temporary style if in manual mode, otherwise use saved settings
-      const savedPromptStyle = selectionMode ? tempPromptStyle : (await AsyncStorage.getItem('prompt_style') || 'standard');
-      const savedCustomPrompt = await AsyncStorage.getItem('custom_prompt') || '';
+      const savedPromptStyle = selectionMode ? tempPromptStyle : (await AsyncStorage.getItem('unified_prompt_style') || 'standard');
+      const savedCustomPrompt = await AsyncStorage.getItem('unified_custom_prompt') || '';
       
       // Get selected articles using normalized IDs
       const selectedArticles = getSelectedArticles();
@@ -754,9 +754,9 @@ export default function FeedScreen() {
       const articleUrls = selectedArticles.map((article: Article) => article.link);
 
 
-      // Load prompt settings from AsyncStorage
-      const savedPromptStyle = await AsyncStorage.getItem('prompt_style') || 'standard';
-      const savedCustomPrompt = await AsyncStorage.getItem('custom_prompt') || '';
+      // Load prompt settings from unified prompt system
+      const savedPromptStyle = await AsyncStorage.getItem('unified_prompt_style') || 'standard';
+      const savedCustomPrompt = await AsyncStorage.getItem('unified_custom_prompt') || '';
 
       const response = await axios.post(
         `${API}/audio/create`,

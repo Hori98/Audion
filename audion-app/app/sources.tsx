@@ -4,6 +4,7 @@ import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { useFocusEffect } from '@react-navigation/native';
+import { useScrollPosition } from '../hooks/useScrollPosition';
 import { Ionicons } from '@expo/vector-icons';
 import LoadingIndicator from '../components/LoadingIndicator';
 import LoadingButton from '../components/LoadingButton';
@@ -26,6 +27,9 @@ export default function SourcesScreen() {
   const { theme } = useTheme();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { scrollViewRef, handleScroll, scrollEventThrottle } = useScrollPosition({ 
+    screenKey: 'sources' 
+  });
   const [sources, setSources] = useState<RSSSource[]>([]);
   const [switchStates, setSwitchStates] = useState<{[key: string]: boolean}>({});
   const [loading, setLoading] = useState(true);
@@ -38,7 +42,7 @@ export default function SourcesScreen() {
   const [deleting, setDeleting] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
-  const API = process.env.EXPO_PUBLIC_BACKEND_URL ? `${process.env.EXPO_PUBLIC_BACKEND_URL}/api` : 'http://localhost:8000/api';
+  const API = process.env.EXPO_PUBLIC_BACKEND_URL ? `${process.env.EXPO_PUBLIC_BACKEND_URL}/api` : 'http://localhost:8003/api';
 
   useFocusEffect(
     React.useCallback(() => {
@@ -292,7 +296,7 @@ export default function SourcesScreen() {
             text: 'Delete',
             style: 'destructive',
             onPress: () => {
-              console.log('Delete confirmed, calling confirmBulkDelete');
+              console.log('Delete button pressed in Alert - confirming deletion');
               confirmBulkDelete();
             }
           }
@@ -309,20 +313,26 @@ export default function SourcesScreen() {
   };
 
   const confirmBulkDelete = async () => {
-    console.log('confirmBulkDelete called');
+    console.log('confirmBulkDelete called - START OF FUNCTION');
+    console.log('Current selectedSources:', selectedSources);
+    console.log('Current API endpoint:', API);
     setDeleting(true);
     
     try {
       // Delete from backend
-      const deletePromises = selectedSources.map(sourceId =>
-        axios.delete(`${API}/rss-sources/${sourceId}`, {
+      const deletePromises = selectedSources.map(sourceId => {
+        const deleteUrl = `${API}/rss-sources/${sourceId}`;
+        console.log('Preparing DELETE request to:', deleteUrl);
+        return axios.delete(deleteUrl, {
           headers: { Authorization: `Bearer ${token}` }
-        })
-      );
+        });
+      });
       
       console.log('Starting backend deletion for sources:', selectedSources);
-      await Promise.all(deletePromises);
-      console.log('Backend deletion completed successfully');
+      console.log('Delete URLs:', selectedSources.map(id => `${API}/rss-sources/${id}`));
+      
+      const deleteResults = await Promise.all(deletePromises);
+      console.log('Backend deletion completed successfully. Results:', deleteResults.map(r => r.status));
       
       // Update local state
       setSources(prevSources => 
@@ -450,9 +460,12 @@ export default function SourcesScreen() {
 
       {/* Sources List */}
       <ScrollView 
+        ref={scrollViewRef}
         style={styles.scrollContainer}
         accessibilityRole="list"
         accessibilityLabel="RSS sources list"
+        onScroll={handleScroll}
+        scrollEventThrottle={scrollEventThrottle}
       >
         {sources.length === 0 ? (
           <View style={styles.emptyContainer}>
