@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   SafeAreaView,
   Alert,
+  Switch,
   ActivityIndicator,
   Image,
   Modal,
@@ -68,16 +69,12 @@ export default function SettingsScreen() {
       const response = await axios.get(`${API}/user/profile`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (response.data.profile_image) {
-        setProfileImage(response.data.profile_image);
+      
+      if (response.data && response.data.profile_image_url) {
+        setProfileImage(response.data.profile_image_url);
       }
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error fetching user profile:', error);
-      if (error.response?.status === 401) {
-        handleAuthError();
-        return;
-      }
-      // Profile endpoint might not exist yet, ignore other errors
     }
   };
 
@@ -96,16 +93,16 @@ export default function SettingsScreen() {
       base64: true,
     });
 
-    if (!result.canceled && result.assets[0]) {
+    if (!result.canceled && result.assets && result.assets[0]) {
       const asset = result.assets[0];
-      setUploadingImage(true);
       
       try {
+        setUploadingImage(true);
         const response = await axios.post(
           `${API}/user/profile-image`,
           {
             image_data: `data:image/jpeg;base64,${asset.base64}`,
-            filename: asset.fileName || 'profile.jpg',
+            filename: `profile_${Date.now()}.jpg`,
           },
           {
             headers: { Authorization: `Bearer ${token}` },
@@ -137,16 +134,16 @@ export default function SettingsScreen() {
       base64: true,
     });
 
-    if (!result.canceled && result.assets[0]) {
+    if (!result.canceled && result.assets && result.assets[0]) {
       const asset = result.assets[0];
-      setUploadingImage(true);
       
       try {
+        setUploadingImage(true);
         const response = await axios.post(
           `${API}/user/profile-image`,
           {
             image_data: `data:image/jpeg;base64,${asset.base64}`,
-            filename: 'profile.jpg',
+            filename: `profile_${Date.now()}.jpg`,
           },
           {
             headers: { Authorization: `Bearer ${token}` },
@@ -191,19 +188,27 @@ export default function SettingsScreen() {
   };
 
   const fetchDeletedAudio = async () => {
-    setLoadingDeleted(true);
     try {
+      setLoadingDeleted(true);
       const response = await axios.get(`${API}/audio/deleted`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      setDeletedAudio(response.data || []);
-    } catch (error: any) {
+      
+      const audioWithDaysRemaining = response.data.map((audio: any) => {
+        const deletedAt = new Date(audio.deleted_at);
+        const permanentDeleteAt = new Date(audio.permanent_delete_at);
+        const now = new Date();
+        const daysRemaining = Math.max(0, Math.ceil((permanentDeleteAt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)));
+        
+        return {
+          ...audio,
+          days_remaining: daysRemaining
+        };
+      });
+      
+      setDeletedAudio(audioWithDaysRemaining);
+    } catch (error) {
       console.error('Error fetching deleted audio:', error);
-      if (error.response?.status === 401) {
-        handleAuthError();
-        return;
-      }
-      // Don't show error alert for missing endpoint during development
     } finally {
       setLoadingDeleted(false);
     }
@@ -214,14 +219,13 @@ export default function SettingsScreen() {
       Alert.alert('No Deleted Items', 'There are no deleted audio files to clear.');
       return;
     }
-
     Alert.alert(
       'Clear All Deleted Audio',
       `Permanently delete all ${deletedAudio.length} deleted audio files? This action cannot be undone.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Clear All',
+          text: 'Delete All',
           style: 'destructive',
           onPress: async () => {
             try {
@@ -246,14 +250,7 @@ export default function SettingsScreen() {
       'Are you sure you want to logout?',
       [
         { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Logout', 
-          style: 'destructive',
-          onPress: () => {
-            logout();
-            router.replace('/');
-          }
-        }
+        { text: 'Logout', onPress: logout }
       ]
     );
   };
@@ -284,15 +281,7 @@ export default function SettingsScreen() {
                       Alert.alert(
                         'Account Deleted',
                         'Your account has been permanently deleted.',
-                        [
-                          {
-                            text: 'OK',
-                            onPress: () => {
-                              logout();
-                              router.replace('/');
-                            }
-                          }
-                        ]
+                        [{ text: 'OK', onPress: logout }]
                       );
                     } catch (error: any) {
                       console.error('Error deleting account:', error);
@@ -327,7 +316,7 @@ export default function SettingsScreen() {
           icon: 'shield-checkmark-outline',
           type: 'navigation',
           onPress: () => {
-            Alert.alert('Coming Soon', 'Account settings will be available soon');
+            router.push('/account-settings');
           }
         },
         {
@@ -367,7 +356,7 @@ export default function SettingsScreen() {
           icon: 'musical-notes-outline',
           type: 'navigation',
           onPress: () => {
-            Alert.alert('Coming Soon', 'Audio quality settings will be available soon');
+            router.push('/audio-quality-settings');
           }
         },
         {
@@ -385,7 +374,7 @@ export default function SettingsScreen() {
           icon: 'download-outline',
           type: 'navigation',
           onPress: () => {
-            Alert.alert('Coming Soon', 'Download settings will be available soon');
+            router.push('/download-settings');
           }
         }
       ]
@@ -400,7 +389,7 @@ export default function SettingsScreen() {
           icon: 'analytics-outline',
           type: 'navigation',
           onPress: () => {
-            Alert.alert('Coming Soon', 'Data collection settings will be available soon');
+            router.push('/data-collection-settings');
           }
         },
         {
@@ -424,8 +413,8 @@ export default function SettingsScreen() {
               return;
             }
             
-            const audioList = deletedAudio.map((audio: any) => 
-              `• ${audio.title} (${audio.days_remaining || 'N/A'} days remaining)`
+            const audioList = deletedAudio.map(audio => 
+              `• ${audio.title} (${audio.days_remaining} days remaining)`
             ).join('\n');
             
             Alert.alert(
@@ -558,7 +547,7 @@ export default function SettingsScreen() {
           icon: 'document-outline',
           type: 'navigation',
           onPress: () => {
-            Alert.alert('Coming Soon', 'Terms of service will be available soon');
+            router.push('/terms-of-service');
           }
         },
         {
@@ -568,7 +557,7 @@ export default function SettingsScreen() {
           icon: 'lock-closed-outline',
           type: 'navigation',
           onPress: () => {
-            Alert.alert('Coming Soon', 'Privacy policy will be available soon');
+            router.push('/privacy-policy');
           }
         }
       ]
@@ -591,6 +580,35 @@ export default function SettingsScreen() {
           icon: 'trash-outline',
           type: 'action',
           onPress: handleDeleteAccount
+        },
+        {
+          id: 'force-logout',
+          title: 'Force Logout (Debug)',
+          subtitle: 'Clear all data and force logout',
+          icon: 'exit-outline',
+          type: 'action',
+          onPress: () => {
+            Alert.alert(
+              'Force Logout',
+              'This will clear all authentication data and return you to login. Continue?',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: 'Force Logout',
+                  style: 'destructive',
+                  onPress: async () => {
+                    try {
+                      await handleAuthError();
+                      logout();
+                    } catch (error) {
+                      console.error('Error during force logout:', error);
+                      Alert.alert('Error', 'Failed to force logout');
+                    }
+                  },
+                },
+              ]
+            );
+          }
         }
       ]
     }
@@ -602,14 +620,7 @@ export default function SettingsScreen() {
     <SafeAreaView style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => router.back()}
-        >
-          <Ionicons name="arrow-back" size={24} color={theme.text} />
-        </TouchableOpacity>
         <Text style={styles.headerTitle}>Settings</Text>
-        <View style={styles.placeholder} />
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
@@ -653,7 +664,9 @@ export default function SettingsScreen() {
                       <Text style={styles.badgeText}>{item.badge}</Text>
                     </View>
                   )}
-                  <Ionicons name="chevron-forward" size={20} color={theme.textMuted} />
+                  {item.type !== 'toggle' && (
+                    <Ionicons name="chevron-forward" size={20} color={theme.textMuted} />
+                  )}
                 </View>
               </TouchableOpacity>
             ))}
@@ -801,24 +814,15 @@ const createStyles = (theme: any) => StyleSheet.create({
     backgroundColor: theme.background,
   },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
     borderBottomWidth: 1,
     borderBottomColor: theme.border,
   },
-  backButton: {
-    padding: 8,
-  },
   headerTitle: {
-    fontSize: 18,
-    fontWeight: '600',
+    fontSize: 24,
+    fontWeight: 'bold',
     color: theme.text,
-  },
-  placeholder: {
-    width: 40,
   },
   content: {
     flex: 1,

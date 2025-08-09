@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert, RefreshControl, Modal, Platform, Animated, Easing } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert, RefreshControl, Modal, Platform, Animated, Easing, TextInput, SafeAreaView } from 'react-native';
 import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
 import { useAudio } from '../../context/AudioContext';
@@ -51,8 +51,11 @@ export default function FeedScreen() {
   // Removed: showSelectedModal state
   const [uiUpdateTrigger, setUiUpdateTrigger] = useState(0); // Force UI updates
   const [selectionMode, setSelectionMode] = useState(false); // Pattern B selection mode
-  const [tempPromptStyle, setTempPromptStyle] = useState<string>('recommended'); // Temporary prompt override
+  const [tempPromptStyle, setTempPromptStyle] = useState<string>('standard'); // Temporary prompt override
   const [showPromptModal, setShowPromptModal] = useState(false); // Prompt selection modal
+  const [customPromptModalVisible, setCustomPromptModalVisible] = useState(false);
+  const [customPromptText, setCustomPromptText] = useState('');
+  const [editingPromptId, setEditingPromptId] = useState<string | null>(null);
   const [fabRotation] = useState(new Animated.Value(0)); // FAB animation
   const [feedLikedArticles, setFeedLikedArticles] = useState<Set<string>>(new Set());
   const [feedDislikedArticles, setFeedDislikedArticles] = useState<Set<string>>(new Set());
@@ -62,17 +65,132 @@ export default function FeedScreen() {
     'Entertainment', 'Science', 'Environment', 'Education', 'Travel', 'General'
   ];
 
-  const promptStyles = [
-    { id: 'strict', name: '厳格', description: '正確で事実に基づく', icon: 'shield-checkmark-outline', color: '#EF4444' },
-    { id: 'recommended', name: '標準', description: '専門的でクリア', icon: 'checkmark-circle-outline', color: theme.primary },
-    { id: 'friendly', name: '優しめ', description: '分かりやすく説明', icon: 'happy-outline', color: '#10B981' },
-    { id: 'insight', name: 'インサイト', description: '深い考察を提供', icon: 'bulb-outline', color: '#F59E0B' }
+  const [customPrompts, setCustomPrompts] = useState<any[]>([]);
+
+  // Built-in prompt options
+  const builtInPrompts = [
+    { id: 'standard', name: 'Standard', description: 'Balanced approach with comprehensive coverage', icon: 'checkmark-circle-outline', color: theme.primary },
+    { id: 'strict', name: 'Strict', description: 'Precise, fact-focused reporting', icon: 'shield-checkmark-outline', color: '#EF4444' },
+    { id: 'gentle', name: 'Gentle', description: 'Accessible, conversational tone', icon: 'happy-outline', color: '#10B981' },
+    { id: 'insightful', name: 'Insightful', description: 'Deep analysis with context and implications', icon: 'bulb-outline', color: '#F59E0B' }
   ];
+
+  // Get all available prompts (built-in + custom)
+  const getAllPrompts = () => {
+    return [...builtInPrompts, ...customPrompts.map(prompt => ({
+      id: prompt.id,
+      name: prompt.name,
+      description: 'Custom prompt',
+      icon: 'create-outline',
+      color: theme.accent,
+      isCustom: true
+    }))];
+  };
+
+  const promptStyles = getAllPrompts();
+
+  // Load custom prompts from storage
+  const loadCustomPrompts = async () => {
+    try {
+      const stored = await AsyncStorage.getItem('custom_prompts');
+      if (stored) {
+        setCustomPrompts(JSON.parse(stored));
+      }
+    } catch (error) {
+      console.error('Error loading custom prompts:', error);
+    }
+  };
+
+  // Save custom prompts to storage
+  const saveCustomPrompts = async (prompts: any[]) => {
+    try {
+      await AsyncStorage.setItem('custom_prompts', JSON.stringify(prompts));
+      setCustomPrompts(prompts);
+    } catch (error) {
+      console.error('Error saving custom prompts:', error);
+    }
+  };
+
+  // Add new custom prompt
+  const addCustomPrompt = async () => {
+    if (!customPromptText.trim()) {
+      Alert.alert('Error', 'Please enter prompt text');
+      return;
+    }
+
+    const newPrompt = {
+      id: `custom_${Date.now()}`,
+      name: `Custom ${customPrompts.length + 1}`,
+      text: customPromptText.trim(),
+      created_at: new Date().toISOString()
+    };
+
+    const updatedPrompts = [...customPrompts, newPrompt];
+    await saveCustomPrompts(updatedPrompts);
+    
+    setCustomPromptText('');
+    setCustomPromptModalVisible(false);
+    Alert.alert('Success', 'Custom prompt created successfully!');
+  };
+
+  // Edit existing custom prompt
+  const editCustomPrompt = async () => {
+    if (!customPromptText.trim() || !editingPromptId) {
+      Alert.alert('Error', 'Please enter prompt text');
+      return;
+    }
+
+    const updatedPrompts = customPrompts.map(prompt =>
+      prompt.id === editingPromptId
+        ? { ...prompt, text: customPromptText.trim(), updated_at: new Date().toISOString() }
+        : prompt
+    );
+
+    await saveCustomPrompts(updatedPrompts);
+    
+    setCustomPromptText('');
+    setEditingPromptId(null);
+    setCustomPromptModalVisible(false);
+    Alert.alert('Success', 'Custom prompt updated successfully!');
+  };
+
+  // Delete custom prompt
+  const deleteCustomPrompt = async (promptId: string) => {
+    Alert.alert(
+      'Delete Custom Prompt',
+      'Are you sure you want to delete this custom prompt?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            const updatedPrompts = customPrompts.filter(prompt => prompt.id !== promptId);
+            await saveCustomPrompts(updatedPrompts);
+            Alert.alert('Success', 'Custom prompt deleted successfully!');
+          }
+        }
+      ]
+    );
+  };
+
+  // Open custom prompt modal for creation or editing
+  const openCustomPromptModal = (prompt?: any) => {
+    if (prompt) {
+      setEditingPromptId(prompt.id);
+      setCustomPromptText(prompt.text);
+    } else {
+      setEditingPromptId(null);
+      setCustomPromptText('');
+    }
+    setCustomPromptModalVisible(true);
+  };
 
   useFocusEffect(
     React.useCallback(() => {
       const initializeData = async () => {
         if (token && token !== '') {
+          await loadCustomPrompts();
           await loadGlobalSelection();
           // Force refresh sources to get latest changes from sources screen
           await fetchSources(true);
@@ -469,7 +587,7 @@ export default function FeedScreen() {
     
     // Load current prompt setting when entering selection mode
     if (newMode) {
-      const currentPromptStyle = await AsyncStorage.getItem('prompt_style') || 'recommended';
+      const currentPromptStyle = await AsyncStorage.getItem('prompt_style') || 'standard';
       setTempPromptStyle(currentPromptStyle);
     }
     
@@ -496,7 +614,7 @@ export default function FeedScreen() {
     setCreatingAudio(true);
     try {
       // Load prompt settings - use temporary style if in manual mode, otherwise use saved settings
-      const savedPromptStyle = selectionMode ? tempPromptStyle : (await AsyncStorage.getItem('prompt_style') || 'recommended');
+      const savedPromptStyle = selectionMode ? tempPromptStyle : (await AsyncStorage.getItem('prompt_style') || 'standard');
       const savedCustomPrompt = await AsyncStorage.getItem('custom_prompt') || '';
       
       // Get selected articles using normalized IDs
@@ -637,7 +755,7 @@ export default function FeedScreen() {
 
 
       // Load prompt settings from AsyncStorage
-      const savedPromptStyle = await AsyncStorage.getItem('prompt_style') || 'recommended';
+      const savedPromptStyle = await AsyncStorage.getItem('prompt_style') || 'standard';
       const savedCustomPrompt = await AsyncStorage.getItem('custom_prompt') || '';
 
       const response = await axios.post(
@@ -990,7 +1108,7 @@ export default function FeedScreen() {
               styles.promptStyleButtonText, 
               { color: theme.primary }
             ]}>
-              {promptStyles.find(style => style.id === tempPromptStyle)?.name || '標準'}
+              {promptStyles.find(style => style.id === tempPromptStyle)?.name || 'Standard'}
             </Text>
           </TouchableOpacity>
         )}
@@ -1278,20 +1396,121 @@ export default function FeedScreen() {
                         {style.description}
                       </Text>
                     </View>
-                    {tempPromptStyle === style.id && (
-                      <Ionicons
-                        name="checkmark-circle"
-                        size={20}
-                        color={style.color}
-                        style={styles.promptStyleCheckmark}
-                      />
-                    )}
+                    <View style={styles.promptStyleRightSection}>
+                      {style.isCustom && (
+                        <View style={styles.promptActions}>
+                          <TouchableOpacity
+                            style={styles.promptActionButton}
+                            onPress={() => {
+                              setShowPromptModal(false);
+                              openCustomPromptModal(customPrompts.find(p => p.id === style.id));
+                            }}
+                          >
+                            <Ionicons name="create-outline" size={16} color={theme.primary} />
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={styles.promptActionButton}
+                            onPress={() => {
+                              setShowPromptModal(false);
+                              deleteCustomPrompt(style.id);
+                            }}
+                          >
+                            <Ionicons name="trash-outline" size={16} color={theme.error} />
+                          </TouchableOpacity>
+                        </View>
+                      )}
+                      {tempPromptStyle === style.id && (
+                        <Ionicons
+                          name="checkmark-circle"
+                          size={20}
+                          color={style.color}
+                          style={styles.promptStyleCheckmark}
+                        />
+                      )}
+                    </View>
                   </View>
                 </TouchableOpacity>
               ))}
+              
+              {/* Create Custom Prompt Button */}
+              <TouchableOpacity
+                style={[styles.addCustomPromptButton, { borderColor: theme.primary }]}
+                onPress={() => {
+                  setShowPromptModal(false);
+                  openCustomPromptModal();
+                }}
+              >
+                <Ionicons name="add-circle-outline" size={20} color={theme.primary} />
+                <Text style={[styles.addCustomPromptText, { color: theme.primary }]}>
+                  Create Custom Prompt
+                </Text>
+              </TouchableOpacity>
             </View>
           </View>
         </View>
+      </Modal>
+
+      {/* Custom Prompt Modal */}
+      <Modal
+        visible={customPromptModalVisible}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setCustomPromptModalVisible(false)}
+      >
+        <SafeAreaView style={[styles.modalContainer, { backgroundColor: theme.background }]}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity
+              onPress={() => setCustomPromptModalVisible(false)}
+              style={styles.modalBackButton}
+            >
+              <Ionicons name="arrow-back" size={24} color={theme.text} />
+            </TouchableOpacity>
+            <Text style={[styles.modalTitle, { color: theme.text }]}>
+              {editingPromptId ? 'Edit Custom Prompt' : 'Create Custom Prompt'}
+            </Text>
+            <TouchableOpacity
+              onPress={editingPromptId ? editCustomPrompt : addCustomPrompt}
+              style={styles.saveButton}
+            >
+              <Text style={[styles.saveButtonText, { color: theme.primary }]}>
+                {editingPromptId ? 'Update' : 'Create'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView style={styles.modalContent}>
+            <View style={styles.customPromptSection}>
+              <Text style={[styles.sectionTitle, { color: theme.text }]}>Prompt Instructions</Text>
+              <Text style={[styles.sectionSubtitle, { color: theme.textSecondary }]}>
+                Write your custom instructions for how the AI should generate and present the news content.
+              </Text>
+              
+              <View style={[styles.textInputContainer, { backgroundColor: theme.card, borderColor: theme.border }]}>
+                <TextInput
+                  style={[styles.customPromptInput, { color: theme.text, borderColor: theme.border }]}
+                  value={customPromptText}
+                  onChangeText={setCustomPromptText}
+                  placeholder="Enter your custom prompt instructions..."
+                  placeholderTextColor={theme.textMuted}
+                  multiline
+                  textAlignVertical="top"
+                  autoCapitalize="sentences"
+                  autoCorrect={true}
+                />
+              </View>
+              
+              <View style={styles.promptExamples}>
+                <Text style={[styles.examplesTitle, { color: theme.text }]}>Example Prompts:</Text>
+                <Text style={[styles.exampleText, { color: theme.textSecondary }]}>
+                  • "Focus on technology and innovation news with detailed technical explanations"{'\n'}
+                  • "Present news in a casual, conversational tone suitable for commuting"{'\n'}
+                  • "Emphasize business implications and market analysis in all stories"{'\n'}
+                  • "Include historical context and background for better understanding"
+                </Text>
+              </View>
+            </View>
+          </ScrollView>
+        </SafeAreaView>
       </Modal>
     </View>
   );
@@ -1710,5 +1929,105 @@ const styles = StyleSheet.create({
   },
   promptStyleCheckmark: {
     marginLeft: 12,
+  },
+  addCustomPromptButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
+    borderRadius: 12,
+    marginTop: 12,
+    borderWidth: 2,
+    borderStyle: 'dashed',
+  },
+  addCustomPromptText: {
+    fontSize: 16,
+    fontWeight: '500',
+    marginLeft: 8,
+  },
+  promptStyleRightSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  promptActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginRight: 8,
+  },
+  promptActionButton: {
+    padding: 4,
+  },
+  modalContainer: {
+    flex: 1,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+  },
+  modalBackButton: {
+    padding: 8,
+    marginLeft: -8,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  saveButton: {
+    padding: 8,
+  },
+  saveButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  modalContent: {
+    flex: 1,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+  },
+  customPromptSection: {
+    marginTop: 20,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  sectionSubtitle: {
+    fontSize: 14,
+    lineHeight: 20,
+    marginBottom: 16,
+  },
+  textInputContainer: {
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderRadius: 12,
+  },
+  customPromptInput: {
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 16,
+    fontSize: 16,
+    lineHeight: 22,
+    textAlignVertical: 'top',
+    minHeight: 120,
+    maxHeight: 200,
+  },
+  promptExamples: {
+    marginTop: 24,
+  },
+  examplesTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 12,
+  },
+  exampleText: {
+    fontSize: 14,
+    lineHeight: 20,
+    fontStyle: 'italic',
   },
 });
