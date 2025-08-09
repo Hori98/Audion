@@ -10,8 +10,10 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { useAudio } from '../context/AudioContext';
+import { useAuth } from '../context/AuthContext';
 import LoadingButton from './LoadingButton';
 import PersonalizationService from '../services/PersonalizationService';
+import axios from 'axios';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -34,48 +36,73 @@ interface InfiniteFeedProps {
 export default function InfiniteFeed({ onCreateAudio, onRefresh }: InfiniteFeedProps) {
   const { theme } = useTheme();
   const { playAudio, currentAudio, isPlaying, pauseAudio, resumeAudio } = useAudio();
+  const { token } = useAuth();
   
   const [currentIndex, setCurrentIndex] = useState(0);
   const [audioCards, setAudioCards] = useState<AudioCard[]>([]);
   const [loading, setLoading] = useState(false);
+
+  const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:8002';
+  const API = `${BACKEND_URL}/api`;
 
   useEffect(() => {
     loadInitialContent();
   }, []);
 
   const loadInitialContent = async () => {
+    if (!token) return;
+    
     setLoading(true);
     try {
-      const mockCards: AudioCard[] = [
-        {
-          id: '1',
-          title: 'AI技術の最新動向',
-          summary: '今日のAI関連ニュースをAIがまとめました。機械学習の新しい発見、企業の投資動向、技術革新について3分で解説します。',
-          duration: 180,
-          articles: [],
-          created_at: new Date().toISOString(),
-        },
-        {
-          id: '2',
-          title: '経済市場アップデート',
-          summary: '株式市場の動向、為替の変化、主要企業の業績について今日の重要ポイントをお伝えします。',
-          duration: 165,
-          articles: [],
-          created_at: new Date().toISOString(),
-        },
-        {
-          id: '3',
-          title: '国際情勢ハイライト',
-          summary: '世界各地の政治・社会情勢の重要な動きを分かりやすく解説。今日知っておくべき国際ニュースです。',
-          duration: 195,
-          articles: [],
-          created_at: new Date().toISOString(),
-        }
-      ];
-      
-      setAudioCards(mockCards);
+      // First, try to load existing audio from library
+      const libraryResponse = await axios.get(`${API}/audio/library`, {
+        headers: { Authorization: `Bearer ${token}` },
+        params: { limit: 10 }
+      });
+
+      if (libraryResponse.data && libraryResponse.data.length > 0) {
+        // Convert library items to AudioCard format
+        const audioCards: AudioCard[] = libraryResponse.data.map((item: any) => ({
+          id: item.id,
+          title: item.title,
+          summary: item.summary || 'AI生成音声コンテンツ',
+          duration: item.duration,
+          audio_url: item.audio_url,
+          articles: item.articles || [],
+          created_at: item.created_at,
+        }));
+        
+        setAudioCards(audioCards);
+      } else {
+        // If no existing audio, show placeholder cards that encourage content creation
+        const placeholderCards: AudioCard[] = [
+          {
+            id: 'placeholder-1',
+            title: '新しい音声を作成しましょう',
+            summary: 'RSSソースから最新記事を取得して、AIが音声コンテンツを生成します。',
+            duration: 0,
+            articles: [],
+            created_at: new Date().toISOString(),
+            isGenerating: false,
+          }
+        ];
+        setAudioCards(placeholderCards);
+      }
     } catch (error) {
       console.error('Error loading initial content:', error);
+      // Fallback to placeholder
+      const placeholderCards: AudioCard[] = [
+        {
+          id: 'placeholder-1',
+          title: '音声を作成してみましょう',
+          summary: 'RSSフィードから記事を選択して音声コンテンツを生成できます。',
+          duration: 0,
+          articles: [],
+          created_at: new Date().toISOString(),
+          isGenerating: false,
+        }
+      ];
+      setAudioCards(placeholderCards);
     } finally {
       setLoading(false);
     }
@@ -153,6 +180,18 @@ export default function InfiniteFeed({ onCreateAudio, onRefresh }: InfiniteFeedP
   const handlePlay = async (card: AudioCard) => {
     if (card.isGenerating) return;
     
+    // If this is a placeholder card, trigger content creation instead
+    if (card.id.startsWith('placeholder')) {
+      await handleCreateNewContent();
+      return;
+    }
+    
+    // Check if audio URL exists
+    if (!card.audio_url) {
+      Alert.alert('エラー', '音声ファイルが見つかりません');
+      return;
+    }
+    
     // Record play interaction
     await PersonalizationService.recordInteraction({
       action: 'play',
@@ -171,13 +210,59 @@ export default function InfiniteFeed({ onCreateAudio, onRefresh }: InfiniteFeedP
         await playAudio({
           id: card.id,
           title: card.title,
-          url: card.audio_url || `mock://audio/${card.id}`,
+          url: card.audio_url,
           duration: card.duration
         });
       } catch (error) {
         console.error('Audio playback error:', error);
         Alert.alert('エラー', '音声の再生に失敗しました');
       }
+    }
+  };
+
+  const handleCreateNewContent = async () => {
+    try {
+      // First, get RSS sources to check if user has any configured
+      const sourcesResponse = await axios.get(`${API}/rss-sources`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (!sourcesResponse.data || sourcesResponse.data.length === 0) {
+        Alert.alert(
+          'RSSソースが必要です',
+          '音声コンテンツを作成するには、まずRSSソースを追加してください。',
+          [
+            { text: 'キャンセル', style: 'cancel' },
+            { text: 'ソース管理', onPress: () => {
+              // Navigate to sources screen
+              Alert.alert('情報', 'ソース管理画面へ移動してください');
+            }}
+          ]
+        );
+        return;
+      }
+
+      // Get articles from RSS sources
+      const articlesResponse = await axios.get(`${API}/articles`, {
+        headers: { Authorization: `Bearer ${token}` },
+        params: { limit: 5 }
+      });
+
+      if (!articlesResponse.data || articlesResponse.data.length === 0) {
+        Alert.alert('記事が見つかりません', 'RSSソースから記事を取得できませんでした。');
+        return;
+      }
+
+      // Create audio from recent articles
+      const articles = articlesResponse.data.slice(0, 3); // Use first 3 articles
+      const audioId = await onCreateAudio(articles);
+      
+      // Refresh the feed to show new content
+      await loadInitialContent();
+      
+    } catch (error) {
+      console.error('Error creating new content:', error);
+      Alert.alert('エラー', '新しいコンテンツの作成に失敗しました');
     }
   };
 

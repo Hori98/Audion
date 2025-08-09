@@ -57,6 +57,14 @@ export default function QuickSettingsScreen() {
 
   const quickSettings: QuickSettingItem[] = [
     {
+      id: 'sources',
+      title: 'RSSソース管理',
+      subtitle: 'ニュースソースの追加・管理',
+      icon: 'newspaper-outline',
+      type: 'navigation',
+      onPress: () => router.push('/sources')
+    },
+    {
       id: 'theme',
       title: 'テーマ',
       subtitle: `現在: ${themeMode === 'system' ? 'システム' : themeMode === 'dark' ? 'ダーク' : 'ライト'}`,
