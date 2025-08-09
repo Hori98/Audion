@@ -11,6 +11,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { useAudio } from '../context/AudioContext';
 import { useAuth } from '../context/AuthContext';
+import { useRouter } from 'expo-router';
 import LoadingButton from './LoadingButton';
 import PersonalizationService from '../services/PersonalizationService';
 import axios from 'axios';
@@ -37,10 +38,12 @@ export default function InfiniteFeed({ onCreateAudio, onRefresh }: InfiniteFeedP
   const { theme } = useTheme();
   const { playAudio, currentAudio, isPlaying, pauseAudio, resumeAudio } = useAudio();
   const { token } = useAuth();
+  const router = useRouter();
   
   const [currentIndex, setCurrentIndex] = useState(0);
   const [audioCards, setAudioCards] = useState<AudioCard[]>([]);
   const [loading, setLoading] = useState(false);
+  const [creatingContent, setCreatingContent] = useState(false);
 
   const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:8003';
   const API = `${BACKEND_URL}/api`;
@@ -221,6 +224,8 @@ export default function InfiniteFeed({ onCreateAudio, onRefresh }: InfiniteFeedP
   };
 
   const handleCreateNewContent = async () => {
+    setCreatingContent(true);
+    
     try {
       // First, get RSS sources to check if user has any configured
       const sourcesResponse = await axios.get(`${API}/rss-sources`, {
@@ -234,8 +239,7 @@ export default function InfiniteFeed({ onCreateAudio, onRefresh }: InfiniteFeedP
           [
             { text: 'キャンセル', style: 'cancel' },
             { text: 'ソース管理', onPress: () => {
-              // Navigate to sources screen
-              Alert.alert('情報', 'ソース管理画面へ移動してください');
+              router.push('/sources');
             }}
           ]
         );
@@ -243,26 +247,66 @@ export default function InfiniteFeed({ onCreateAudio, onRefresh }: InfiniteFeedP
       }
 
       // Get articles from RSS sources
+      console.log('Fetching articles from RSS sources...');
       const articlesResponse = await axios.get(`${API}/articles`, {
         headers: { Authorization: `Bearer ${token}` },
         params: { limit: 5 }
       });
 
+      console.log('Articles response:', articlesResponse.data);
+
       if (!articlesResponse.data || articlesResponse.data.length === 0) {
-        Alert.alert('記事が見つかりません', 'RSSソースから記事を取得できませんでした。');
+        Alert.alert(
+          '記事が見つかりません', 
+          'RSSソースから記事を取得できませんでした。ソースを確認するか、記事の更新をお待ちください。',
+          [
+            { text: 'OK', style: 'cancel' },
+            { text: 'ソース確認', onPress: () => router.push('/sources') }
+          ]
+        );
         return;
       }
 
+      // Show loading feedback
+      Alert.alert('音声作成中', '記事から音声を生成しています...しばらくお待ちください');
+
       // Create audio from recent articles
       const articles = articlesResponse.data.slice(0, 3); // Use first 3 articles
+      console.log('Creating audio from articles:', articles.map(a => a.title));
+      
       const audioId = await onCreateAudio(articles);
+      console.log('Created audio with ID:', audioId);
       
       // Refresh the feed to show new content
       await loadInitialContent();
       
-    } catch (error) {
+      Alert.alert(
+        '作成完了！', 
+        '新しい音声コンテンツが作成されました。Recentタブでも確認できます。',
+        [
+          { text: 'OK', style: 'default' },
+          { text: 'Recentへ', onPress: () => {
+            // This would ideally switch to the Recent tab
+            console.log('Navigate to Recent tab');
+          }}
+        ]
+      );
+      
+    } catch (error: any) {
       console.error('Error creating new content:', error);
-      Alert.alert('エラー', '新しいコンテンツの作成に失敗しました');
+      
+      let errorMessage = '新しいコンテンツの作成に失敗しました';
+      if (error.response?.status === 429) {
+        errorMessage = '音声生成の上限に達しました。しばらくお待ちください。';
+      } else if (error.response?.status === 402) {
+        errorMessage = 'この機能を使用するにはアップグレードが必要です。';
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
+      Alert.alert('エラー', errorMessage);
+    } finally {
+      setCreatingContent(false);
     }
   };
 
@@ -379,13 +423,43 @@ export default function InfiniteFeed({ onCreateAudio, onRefresh }: InfiniteFeedP
 
           {/* Actions */}
           <View style={styles.actions}>
-            {currentCard.isGenerating ? (
+            {currentCard.isGenerating || creatingContent ? (
               <View style={styles.generatingAction}>
                 <LoadingButton loading={true} size="large" />
                 <Text style={[styles.generatingText, { color: theme.textSecondary }]}>
-                  生成中...
+                  {creatingContent ? '音声作成中...' : '生成中...'}
                 </Text>
               </View>
+            ) : currentCard.id.startsWith('placeholder') ? (
+              <>
+                <TouchableOpacity
+                  style={[styles.createButton, { backgroundColor: theme.primary }]}
+                  onPress={() => handlePlay(currentCard)}
+                  disabled={creatingContent}
+                >
+                  <Ionicons
+                    name="add-circle"
+                    size={32}
+                    color="#FFFFFF"
+                  />
+                </TouchableOpacity>
+                
+                <View style={styles.sideActions}>
+                  <TouchableOpacity
+                    style={styles.sideAction}
+                    onPress={() => router.push('/sources')}
+                  >
+                    <Ionicons name="settings-outline" size={24} color={theme.text} />
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity
+                    style={styles.sideAction}
+                    onPress={onRefresh}
+                  >
+                    <Ionicons name="refresh-outline" size={24} color={theme.text} />
+                  </TouchableOpacity>
+                </View>
+              </>
             ) : (
               <>
                 <TouchableOpacity
@@ -541,6 +615,13 @@ const createStyles = (theme: any) => StyleSheet.create({
     marginTop: 24,
   },
   playButton: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  createButton: {
     width: 80,
     height: 80,
     borderRadius: 40,

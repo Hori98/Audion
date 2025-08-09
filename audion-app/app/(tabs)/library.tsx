@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, RefreshControl } from 'react-native';
 import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
 import { useAudio } from '../../context/AudioContext';
@@ -24,6 +24,7 @@ export default function RecentScreen() {
   
   const [recentAudio, setRecentAudio] = useState<RecentAudioItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
   const API = process.env.EXPO_PUBLIC_BACKEND_URL ? `${process.env.EXPO_PUBLIC_BACKEND_URL}/api` : 'http://localhost:8003/api';
 
@@ -40,14 +41,20 @@ export default function RecentScreen() {
     try {
       const response = await axios.get(`${API}/audio/library`, {
         headers: { Authorization: `Bearer ${token}` },
-        params: { limit: 3 } // Only get recent 3 items
+        params: { limit: 10 } // Get more items for better experience
       });
       setRecentAudio(response.data || []);
     } catch (error) {
       console.error('Error fetching recent audio:', error);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
+  };
+
+  const handleRefresh = () => {
+    setRefreshing(true);
+    fetchRecentAudio();
   };
 
   const handlePlayAudio = async (audio: RecentAudioItem) => {
@@ -103,11 +110,16 @@ export default function RecentScreen() {
 
   return (
     <View style={styles.container}>
-      <ScrollView style={styles.content}>
+      <ScrollView 
+        style={styles.content}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
+        }
+      >
         <View style={styles.header}>
           <Ionicons name="time-outline" size={24} color={theme.primary} />
           <Text style={styles.headerTitle}>最近の音声</Text>
-          <Text style={styles.headerSubtitle}>最新3件のみ表示</Text>
+          <Text style={styles.headerSubtitle}>最新10件表示・引き下げで更新</Text>
         </View>
 
         {recentAudio.length === 0 ? (
