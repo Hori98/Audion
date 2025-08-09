@@ -163,10 +163,10 @@ export default function AppLayout() {
         }}
       />
       <Tabs.Screen
-        name="auto-pick"
+        name="discover"
         options={{
-          tabBarLabel: 'Auto-Pick',
-          tabBarIcon: ({ color, size }) => <Sparkles color={color} size={size} />,
+          tabBarLabel: 'Discover',
+          tabBarIcon: ({ color, size }) => <Ionicons name="compass-outline" color={color} size={size} />,
         }}
       />
       <Tabs.Screen
