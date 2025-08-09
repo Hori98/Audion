@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { 
   View, 
   Text, 
@@ -8,7 +8,7 @@ import {
   Alert,
   RefreshControl,
 } from 'react-native';
-import axios from 'axios';
+// import axios from 'axios'; // Not used in current implementation
 import { useAuth } from '../../context/AuthContext';
 import { useAudio } from '../../context/AudioContext';
 import { useTheme } from '../../context/ThemeContext';
@@ -18,8 +18,8 @@ import { Ionicons } from '@expo/vector-icons';
 import LoadingIndicator from '../../components/LoadingIndicator';
 import LoadingButton from '../../components/LoadingButton';
 
-const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:8000';
-const API = `${BACKEND_URL}/api`;
+// const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+// const API = `${BACKEND_URL}/api`; // Not used in current implementation
 
 interface TrendingTopic {
   id: string;
@@ -40,7 +40,7 @@ interface DailyRecommendation {
 
 export default function DiscoverScreen() {
   const { token } = useAuth();
-  const { playAudio } = useAudio();
+  // const { playAudio } = useAudio(); // Not used in current implementation
   const { theme } = useTheme();
   
   const [loading, setLoading] = useState(true);
@@ -52,7 +52,7 @@ export default function DiscoverScreen() {
   useFocusEffect(
     React.useCallback(() => {
       loadDiscoverContent();
-    }, [])
+    }, []) // loadDiscoverContent is defined inline and stable
   );
 
   const loadDiscoverContent = async () => {

@@ -1,5 +1,5 @@
 import { Tabs } from 'expo-router';
-import { Home, Library, Sparkles, Settings } from 'lucide-react-native';
+import { Home } from 'lucide-react-native';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { TouchableOpacity, View, Image, Text, Platform } from 'react-native';
@@ -17,7 +17,7 @@ import axios from 'axios';
 
 // Custom Header Component
 const CustomHeader = () => {
-  const { user, token } = useAuth();
+  const { token } = useAuth();
   const { theme } = useTheme();
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -40,7 +40,7 @@ const CustomHeader = () => {
     if (token) {
       fetchUserProfile();
     }
-  }, [token]);
+  }, [token]); // fetchUserProfile is defined inline, so it's safe to omit
 
   const fetchUserProfile = async () => {
     try {
@@ -128,19 +128,7 @@ const CustomHeader = () => {
 };
 
 export default function AppLayout() {
-  const { logout } = useAuth();
   const { theme } = useTheme();
-  const router = useRouter();
-  
-  const handleSettingsPress = () => {
-    console.log('Settings icon pressed - navigating to settings');
-    try {
-      router.push('/settings');
-      console.log('Successfully navigated to settings');
-    } catch (error) {
-      console.error('Error navigating to settings:', error);
-    }
-  };
   
   return (
     <Tabs
