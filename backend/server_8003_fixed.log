@@ -1,0 +1,34 @@
+INFO:     Will watch for changes in these directories: ['/Users/hori/Desktop/audion_project_final/Audion_Emergent.AI_Demo/backend']
+INFO:     Uvicorn running on http://127.0.0.1:8003 (Press CTRL+C to quit)
+INFO:     Started reloader process [77553] using StatReload
+INFO:     Started server process [77561]
+INFO:     Waiting for application startup.
+2025-08-08 14:14:31,657 - INFO - Connected to MongoDB successfully
+2025-08-08 14:14:32,696 - INFO - Database indexes created successfully
+2025-08-08 14:14:32,761 - INFO - Found 5 existing preset categories
+2025-08-08 14:14:32,761 - INFO - Preset categories initialized successfully
+2025-08-08 14:14:32,761 - INFO - Cleanup tasks completed
+INFO:     Application startup complete.
+INFO:     127.0.0.1:50418 - "GET /api/health HTTP/1.1" 200 OK
+2025-08-08 14:15:04,841 - INFO - DEBUG: Attempting authentication with token: 8135236f-38cd-4cd8-b67f-2972db82ef94
+2025-08-08 14:15:04,959 - INFO - DEBUG: Found user: True
+2025-08-08 14:15:04,959 - INFO - DEBUG: Returning user: 2003sohei@gmail.com
+INFO:     127.0.0.1:50423 - "GET /api/user/settings HTTP/1.1" 200 OK
+2025-08-08 14:15:36,030 - INFO - DEBUG: Attempting authentication with token: 8135236f-38cd-4cd8-b67f-2972db82ef94
+2025-08-08 14:15:36,108 - INFO - DEBUG: Found user: True
+2025-08-08 14:15:36,108 - INFO - DEBUG: Returning user: 2003sohei@gmail.com
+INFO:     127.0.0.1:50473 - "PUT /api/user/settings HTTP/1.1" 200 OK
+2025-08-08 14:15:44,527 - INFO - DEBUG: Attempting authentication with token: 8135236f-38cd-4cd8-b67f-2972db82ef94
+2025-08-08 14:15:44,596 - INFO - DEBUG: Found user: True
+2025-08-08 14:15:44,596 - INFO - DEBUG: Returning user: 2003sohei@gmail.com
+INFO:     127.0.0.1:50498 - "GET /api/user/settings HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50536 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50582 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50702 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50792 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+2025-08-08 14:19:32,138 - INFO - Disconnected from MongoDB
+INFO:     Application shutdown complete.
+INFO:     Finished server process [77561]
+INFO:     Stopping reloader process [77553]

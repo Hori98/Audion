@@ -1,0 +1,16 @@
+{
+  "dev-backend": {
+    "port": 8001,
+    "pid": 29944,
+    "env": "dev",
+    "type": "backend",
+    "startTime": "2025-08-07T04:39:04.549Z"
+  },
+  "dev-frontend": {
+    "port": 8081,
+    "pid": 29965,
+    "env": "dev",
+    "type": "frontend",
+    "startTime": "2025-08-07T04:39:07.578Z"
+  }
+}

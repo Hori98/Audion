@@ -1,0 +1,597 @@
+INFO:     Will watch for changes in these directories: ['/Users/hori/Desktop/audion_project_final/Audion_Emergent.AI_Demo/backend']
+INFO:     Uvicorn running on http://127.0.0.1:8003 (Press CTRL+C to quit)
+INFO:     Started reloader process [85081] using StatReload
+INFO:     Started server process [85093]
+INFO:     Waiting for application startup.
+2025-08-08 19:36:07,701 - INFO - Connected to MongoDB successfully
+2025-08-08 19:36:09,603 - INFO - Database indexes created successfully
+2025-08-08 19:36:09,788 - INFO - Found 5 existing preset categories
+2025-08-08 19:36:09,788 - INFO - Preset categories initialized successfully
+2025-08-08 19:36:09,788 - INFO - Cleanup tasks completed
+INFO:     Application startup complete.
+INFO:     127.0.0.1:53156 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53281 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53281 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53286 - "GET /health HTTP/1.1" 200 OK
+2025-08-08 19:38:43,813 - INFO - DEBUG: Attempting authentication with token: 8135236f-38cd-4cd8-b67f-2972db82ef94
+2025-08-08 19:38:43,875 - INFO - DEBUG: Found user: True
+2025-08-08 19:38:43,875 - INFO - DEBUG: Returning user: 2003sohei@gmail.com
+INFO:     127.0.0.1:53281 - "GET /api/rss-sources HTTP/1.1" 200 OK
+2025-08-08 19:38:44,026 - INFO - DEBUG: Attempting authentication with token: 8135236f-38cd-4cd8-b67f-2972db82ef94
+2025-08-08 19:38:44,057 - INFO - DEBUG: Attempting authentication with token: 8135236f-38cd-4cd8-b67f-2972db82ef94
+2025-08-08 19:38:44,060 - INFO - DEBUG: Attempting authentication with token: 8135236f-38cd-4cd8-b67f-2972db82ef94
+2025-08-08 19:38:44,101 - INFO - DEBUG: Found user: True
+2025-08-08 19:38:44,101 - INFO - DEBUG: Returning user: 2003sohei@gmail.com
+2025-08-08 19:38:44,153 - INFO - DEBUG: Found user: True
+2025-08-08 19:38:44,153 - INFO - DEBUG: Returning user: 2003sohei@gmail.com
+INFO:     127.0.0.1:53286 - "GET /api/rss-sources HTTP/1.1" 200 OK
+2025-08-08 19:38:44,272 - INFO - DEBUG: Attempting authentication with token: 8135236f-38cd-4cd8-b67f-2972db82ef94
+INFO:     127.0.0.1:53281 - "GET /api/user/profile HTTP/1.1" 200 OK
+2025-08-08 19:38:44,355 - INFO - DEBUG: Found user: True
+2025-08-08 19:38:44,355 - INFO - DEBUG: Returning user: 2003sohei@gmail.com
+2025-08-08 19:38:44,851 - INFO - Fetched new feed for Reuters Business
+2025-08-08 19:38:46,553 - INFO - Fetched new feed for Bloomberg
+2025-08-08 19:38:46,553 - INFO - Enhanced Classification: "Trump Eases Way for Lower Rates as Stagflation Tal..." -> Finance (scores: Finance: 3.5)
+2025-08-08 19:38:46,553 - INFO - Enhanced Classification: "Rolls-Royce Nears Deal to Offload £4 Billion UK Pe..." -> Technology (scores: Technology: 6.0, Politics: 3.0, Finance: 1.8)
+2025-08-08 19:38:46,553 - INFO - Enhanced Classification: "US to Cut Car Levies, End Tariff Stacking, Japan S..." -> Technology (scores: Technology: 6.0, Environment: 3.0, Entertainment: 1.8)
+2025-08-08 19:38:46,554 - INFO - Enhanced Classification: "US Sparks Fresh Turmoil in Gold With Surprise Impo..." -> Technology (scores: Technology: 3.0, Finance: 1.8)
+2025-08-08 19:38:46,554 - INFO - Enhanced Classification: "Russia’s Urals Touted to China Refiners as Oil Flo..." -> Technology (scores: Technology: 6.0, Politics: 3.5, Finance: 1.8)
+2025-08-08 19:38:46,554 - INFO - Enhanced Classification: "Portes: Waller Would be an 'Excellent' Fed Chair, ..." -> Education (scores: Education: 7.0, Finance: 6.9, Technology: 6.0)
+2025-08-08 19:38:46,554 - INFO - Enhanced Classification: "Israel Prepares for Gaza City Military Takeover, V..." -> Education (scores: Education: 8.5, Technology: 7.5, Politics: 5.6)
+2025-08-08 19:38:46,554 - INFO - Enhanced Classification: "Emerging-Market Asset Rally Stalls as Trade Tensio..." -> Technology (scores: Technology: 3.0, Finance: 2.6, Science: 0.9)
+2025-08-08 19:38:46,554 - INFO - Enhanced Classification: "BofA’s Hartnett Says Stocks Hit by Outflows as Ral..." -> Finance (scores: Finance: 9.5, Technology: 6.0, Entertainment: 1.5)
+2025-08-08 19:38:46,554 - INFO - Enhanced Classification: "Gold Roiled by Tariffs, US Equity Futures Advance:..." -> Finance (scores: Finance: 3.3, Technology: 3.0, Environment: 3.0)
+2025-08-08 19:38:47,617 - INFO - Fetched new feed for Fortune
+2025-08-08 19:38:47,618 - INFO - Enhanced Classification: "The 5 things you need to ‘really create magic’ wit..." -> Technology (scores: Technology: 3.5, Environment: 3.0)
+2025-08-08 19:38:47,618 - INFO - Enhanced Classification: "Yum China’s sales keep growing, but a fierce food ..." -> Finance (scores: Finance: 4.1, Technology: 3.0, Environment: 3.0)
+2025-08-08 19:38:47,618 - INFO - Enhanced Classification: "The pirate flag from anime ‘One Piece’ is Indonesi..." -> Technology (scores: Technology: 6.0, Politics: 3.5, Education: 1.5)
+2025-08-08 19:38:47,619 - INFO - Enhanced Classification: "What can Northvolt’s failure teach us about Europe..." -> Technology (scores: Technology: 7.8, Education: 4.8, Science: 3.5)
+2025-08-08 19:38:47,619 - INFO - Enhanced Classification: "As Europe pushes towards its €1.5 trillion renewab..." -> Technology (scores: Technology: 6.0, Environment: 0.9, Finance: 0.8)
+2025-08-08 19:38:47,619 - INFO - Enhanced Classification: "“Decarbonization is not just a climate plan, it is..." -> Technology (scores: Technology: 6.0, Entertainment: 3.2, Finance: 2.6)
+2025-08-08 19:38:47,619 - INFO - Enhanced Classification: "TSMC secrets leak puts Japan’s Tokyo Electron on h..." -> Technology (scores: Technology: 3.0, Politics: 1.5)
+2025-08-08 19:38:47,619 - INFO - Enhanced Classification: "Intel CEO dogged by decades of China chip bets, bo..." -> Technology (scores: Technology: 3.0)
+2025-08-08 19:38:47,620 - INFO - Enhanced Classification: "AI-driven layoffs are shrinking the job market for..." -> Technology (scores: Technology: 10.0, Finance: 1.8, Science: 0.9)
+2025-08-08 19:38:47,620 - INFO - Enhanced Classification: "Can Allbirds get its groove back? Once the go-to s..." -> Technology (scores: Technology: 4.8, Entertainment: 1.8, Finance: 1.5)
+2025-08-08 19:38:48,023 - INFO - Fetched new feed for BBC World
+2025-08-08 19:38:48,023 - INFO - Enhanced Classification: "Netanyahu divides Israelis and allies with plan fo..." -> Technology (scores: Technology: 3.0)
+2025-08-08 19:38:48,023 - INFO - Enhanced Classification: "Why Trump-Putin talks unlikely to bring rapid end ..." -> Technology (scores: Technology: 6.0, Environment: 3.8)
+2025-08-08 19:38:48,023 - INFO - Enhanced Classification: "Mushroom murderer tried to kill husband with pasta..." -> General (scores: )
+2025-08-08 19:38:48,023 - INFO - Enhanced Classification: "US offers $50m reward for arrest of Venezuelan lea..." -> Technology (scores: Technology: 3.0, Health: 1.8)
+2025-08-08 19:38:48,023 - INFO - Enhanced Classification: "Ghana investigators find 'black boxes' of helicopt..." -> Politics (scores: Politics: 5.0, Finance: 0.9)
+2025-08-08 19:38:48,023 - INFO - Enhanced Classification: "Cacio e pepe: Good Food pasta recipe sparks fury i..." -> Technology (scores: Technology: 6.0, Environment: 3.0)
+2025-08-08 19:38:48,023 - INFO - Enhanced Classification: "Heartbreaking search for missing children after In..." -> Technology (scores: Technology: 3.0, Environment: 3.0, Entertainment: 1.5)
+2025-08-08 19:38:48,023 - INFO - Enhanced Classification: "South African court rules that Zambia can repatria..." -> Politics (scores: Politics: 5.2, Technology: 3.0)
+2025-08-08 19:38:48,023 - INFO - Enhanced Classification: "Trump calls for Intel boss to resign immediately, ..." -> General (scores: )
+2025-08-08 19:38:48,023 - INFO - Enhanced Classification: "Convicted rapist quits Australian parliament after..." -> Politics (scores: Politics: 3.5, Technology: 3.0)
+2025-08-08 19:38:48,975 - INFO - Fetched new feed for CNN International
+2025-08-08 19:38:48,975 - INFO - Enhanced Classification: "Trump pleads not guilty to 34 felony counts..." -> Technology (scores: Technology: 6.0, Sports: 0.8)
+2025-08-08 19:38:48,975 - INFO - Enhanced Classification: "Haberman reveals why Trump attacked judge and his ..." -> Technology (scores: Technology: 6.0, Travel: 3.5, Environment: 3.0)
+2025-08-08 19:38:48,975 - INFO - Enhanced Classification: "What to know about the Trump indictment on the eve..." -> Technology (scores: Technology: 7.5, Environment: 3.0, Sports: 0.8)
+2025-08-08 19:38:48,976 - INFO - Enhanced Classification: "READ: Trump indictment related to hush money payme..." -> Technology (scores: Technology: 6.0, Sports: 0.8)
+2025-08-08 19:38:48,976 - INFO - Enhanced Classification: "Russian authorities detain suspect over St. Peters..." -> Technology (scores: Technology: 6.0, Sports: 0.8)
+2025-08-08 19:38:48,976 - INFO - Enhanced Classification: "Video shows moment of deadly explosion at cafe in ..." -> Technology (scores: Technology: 6.0, Entertainment: 1.5)
+2025-08-08 19:38:48,976 - INFO - Enhanced Classification: "Wall Street Journal reporter Evan Gershkovich appe..." -> Technology (scores: Technology: 7.5, Science: 3.5, Environment: 3.0)
+2025-08-08 19:38:48,976 - INFO - Enhanced Classification: "Suspected Chinese spy balloon was able to transmit..." -> Technology (scores: Technology: 3.0)
+2025-08-08 19:38:48,976 - INFO - Enhanced Classification: "Beijing promised to 'fight back' over Taiwan leade..." -> Politics (scores: Politics: 7.0, Technology: 6.0, Environment: 3.0)
+2025-08-08 19:38:48,976 - INFO - Enhanced Classification: "'Scary, cold, hungry and lonely': Volunteer soldie..." -> Health (scores: Health: 3.2, Technology: 3.0, Finance: 1.5)
+2025-08-08 19:38:48,983 - INFO - Fetched new feed for Reuters World
+2025-08-08 19:38:49,225 - INFO - Fetched new feed for TechCrunch
+2025-08-08 19:38:49,225 - INFO - Enhanced Classification: "xAI’s legal chief steps down after whirlwind year..." -> Technology (scores: Technology: 6.0, Education: 0.8)
+2025-08-08 19:38:49,226 - INFO - Enhanced Classification: "Tesla shuts down Dojo, the AI training supercomput..." -> Technology (scores: Technology: 8.2, Entertainment: 1.5, Science: 0.9)
+2025-08-08 19:38:49,226 - INFO - Enhanced Classification: "Rocket Lab eyes big defense opportunities with new..." -> Science (scores: Science: 3.5, Finance: 0.9)
+2025-08-08 19:38:49,226 - INFO - Enhanced Classification: "High costs and thin margins threatening AI coding ..." -> Technology (scores: Technology: 7.3, Finance: 2.3, Entertainment: 1.5)
+2025-08-08 19:38:49,226 - INFO - Enhanced Classification: "How to use Instagram Map and set your location-sha..." -> Technology (scores: Technology: 3.0)
+2025-08-08 19:38:49,226 - INFO - Enhanced Classification: "IPO hopeful Brex scored major win to sell in the E..." -> Technology (scores: Technology: 6.9, Sports: 1.5)
+2025-08-08 19:38:49,226 - INFO - Enhanced Classification: "SpaceX is building a water pipeline to Starbase — ..." -> Technology (scores: Technology: 4.8, Science: 1.5, Education: 1.5)
+2025-08-08 19:38:49,227 - INFO - Enhanced Classification: "OpenAI’s GPT-5 is here..." -> Technology (scores: Technology: 6.5)
+2025-08-08 19:38:49,227 - INFO - Enhanced Classification: "AI agents aren’t the ‘new Google,’ says Airbnb CEO..." -> Technology (scores: Technology: 8.2, Travel: 4.3, Finance: 0.9)
+2025-08-08 19:38:49,227 - INFO - Enhanced Classification: "The backlash against Duolingo going ‘AI-first’ did..." -> Technology (scores: Technology: 8.2, Environment: 3.8, Finance: 1.5)
+2025-08-08 19:38:49,227 - INFO - Fetched 50 articles before filtering.
+INFO:     127.0.0.1:53286 - "GET /api/articles HTTP/1.1" 200 OK
+2025-08-08 19:38:49,227 - INFO - DEBUG: Found user: True
+2025-08-08 19:38:49,227 - INFO - DEBUG: Returning user: 2003sohei@gmail.com
+INFO:     127.0.0.1:53288 - "GET /api/rss-sources HTTP/1.1" 200 OK
+2025-08-08 19:38:54,843 - INFO - DEBUG: Attempting authentication with token: 8135236f-38cd-4cd8-b67f-2972db82ef94
+2025-08-08 19:38:54,845 - INFO - DEBUG: Attempting authentication with token: 8135236f-38cd-4cd8-b67f-2972db82ef94
+2025-08-08 19:38:54,932 - INFO - DEBUG: Found user: True
+2025-08-08 19:38:54,932 - INFO - DEBUG: Returning user: 2003sohei@gmail.com
+2025-08-08 19:38:54,937 - INFO - DEBUG: Found user: True
+2025-08-08 19:38:54,937 - INFO - DEBUG: Returning user: 2003sohei@gmail.com
+INFO:     127.0.0.1:53299 - "GET /api/audio/deleted HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53300 - "GET /api/user/profile HTTP/1.1" 200 OK
+2025-08-08 19:39:06,990 - INFO - DEBUG: Attempting authentication with token: 8135236f-38cd-4cd8-b67f-2972db82ef94
+2025-08-08 19:39:07,071 - INFO - DEBUG: Found user: True
+2025-08-08 19:39:07,071 - INFO - DEBUG: Returning user: 2003sohei@gmail.com
+INFO:     127.0.0.1:53302 - "GET /api/user/profile HTTP/1.1" 200 OK
+2025-08-08 19:39:07,226 - INFO - DEBUG: Attempting authentication with token: 8135236f-38cd-4cd8-b67f-2972db82ef94
+2025-08-08 19:39:07,277 - INFO - DEBUG: Found user: True
+2025-08-08 19:39:07,277 - INFO - DEBUG: Returning user: 2003sohei@gmail.com
+2025-08-08 19:39:07,306 - ERROR - Database error during get user profile: Database not connected
+2025-08-08 19:39:07,307 - ERROR - Error getting/creating user profile: 500: Internal server error: get user profile failed
+2025-08-08 19:39:07,307 - ERROR - Database error during get/create user profile: 500: Internal server error: get user profile failed
+2025-08-08 19:39:07,307 - ERROR - Error getting user insights: 500: Internal server error: get/create user profile failed
+2025-08-08 19:39:07,307 - ERROR - Error during get user insights: 500: Internal server error: get/create user profile failed
+2025-08-08 19:39:07,307 - ERROR - Error fetching user insights: 500: Internal server error: get user insights failed
+INFO:     127.0.0.1:53302 - "GET /api/user/insights HTTP/1.1" 200 OK
+2025-08-08 19:39:09,160 - INFO - DEBUG: Attempting authentication with token: 8135236f-38cd-4cd8-b67f-2972db82ef94
+2025-08-08 19:39:09,271 - INFO - DEBUG: Found user: True
+2025-08-08 19:39:09,271 - INFO - DEBUG: Returning user: 2003sohei@gmail.com
+2025-08-08 19:39:09,272 - ERROR - Error updating user profile: Database objects do not implement truth value testing or bool(). Please compare with None instead: database is not None
+INFO:     127.0.0.1:53302 - "PUT /api/user/profile HTTP/1.1" 500 Internal Server Error
+2025-08-08 19:39:17,315 - INFO - DEBUG: Attempting authentication with token: 8135236f-38cd-4cd8-b67f-2972db82ef94
+2025-08-08 19:39:17,371 - INFO - DEBUG: Found user: True
+2025-08-08 19:39:17,371 - INFO - DEBUG: Returning user: 2003sohei@gmail.com
+2025-08-08 19:39:17,371 - ERROR - Error updating user profile: Database objects do not implement truth value testing or bool(). Please compare with None instead: database is not None
+INFO:     127.0.0.1:53308 - "PUT /api/user/profile HTTP/1.1" 500 Internal Server Error
+INFO:     127.0.0.1:53344 - "GET /api/health HTTP/1.1" 200 OK
+WARNING:  StatReload detected changes in 'server.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+2025-08-08 19:39:43,197 - INFO - Disconnected from MongoDB
+INFO:     Application shutdown complete.
+INFO:     Finished server process [85093]
+INFO:     Started server process [85685]
+INFO:     Waiting for application startup.
+2025-08-08 19:39:45,686 - INFO - Connected to MongoDB successfully
+2025-08-08 19:39:46,232 - INFO - Database indexes created successfully
+2025-08-08 19:39:46,274 - INFO - Found 5 existing preset categories
+2025-08-08 19:39:46,274 - INFO - Preset categories initialized successfully
+2025-08-08 19:39:46,274 - INFO - Cleanup tasks completed
+INFO:     Application startup complete.
+INFO:     127.0.0.1:53424 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53428 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53430 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53432 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53440 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53440 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53441 - "GET /health HTTP/1.1" 200 OK
+2025-08-08 19:44:23,526 - INFO - DEBUG: Attempting authentication with token: 8135236f-38cd-4cd8-b67f-2972db82ef94
+2025-08-08 19:44:23,599 - INFO - DEBUG: Found user: True
+2025-08-08 19:44:23,599 - INFO - DEBUG: Returning user: 2003sohei@gmail.com
+INFO:     127.0.0.1:53440 - "GET /api/rss-sources HTTP/1.1" 200 OK
+2025-08-08 19:44:23,750 - INFO - DEBUG: Attempting authentication with token: 8135236f-38cd-4cd8-b67f-2972db82ef94
+2025-08-08 19:44:23,778 - INFO - DEBUG: Attempting authentication with token: 8135236f-38cd-4cd8-b67f-2972db82ef94
+2025-08-08 19:44:23,780 - INFO - DEBUG: Attempting authentication with token: 8135236f-38cd-4cd8-b67f-2972db82ef94
+2025-08-08 19:44:23,794 - INFO - DEBUG: Found user: True
+2025-08-08 19:44:23,795 - INFO - DEBUG: Returning user: 2003sohei@gmail.com
+2025-08-08 19:44:23,863 - INFO - DEBUG: Found user: True
+2025-08-08 19:44:23,863 - INFO - DEBUG: Returning user: 2003sohei@gmail.com
+INFO:     127.0.0.1:53440 - "GET /api/user/profile HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53441 - "GET /api/rss-sources HTTP/1.1" 200 OK
+2025-08-08 19:44:23,956 - INFO - DEBUG: Attempting authentication with token: 8135236f-38cd-4cd8-b67f-2972db82ef94
+2025-08-08 19:44:24,005 - INFO - DEBUG: Found user: True
+2025-08-08 19:44:24,006 - INFO - DEBUG: Returning user: 2003sohei@gmail.com
+2025-08-08 19:44:24,079 - INFO - Fetched new feed for Reuters Business
+2025-08-08 19:44:26,288 - INFO - Fetched new feed for Bloomberg
+2025-08-08 19:44:26,289 - INFO - Enhanced Classification: "Trump Eases Way for Lower Rates as Stagflation Tal..." -> Finance (scores: Finance: 3.5)
+2025-08-08 19:44:26,289 - INFO - Enhanced Classification: "Rolls-Royce Nears Deal to Offload £4 Billion UK Pe..." -> Technology (scores: Technology: 6.0, Politics: 3.0, Finance: 1.8)
+2025-08-08 19:44:26,289 - INFO - Enhanced Classification: "US to Cut Car Levies, End Tariff Stacking, Japan S..." -> Technology (scores: Technology: 6.0, Environment: 3.0, Entertainment: 1.8)
+2025-08-08 19:44:26,289 - INFO - Enhanced Classification: "US Sparks Fresh Turmoil in Gold With Surprise Impo..." -> Technology (scores: Technology: 3.0, Finance: 1.8)
+2025-08-08 19:44:26,289 - INFO - Enhanced Classification: "Russia’s Urals Touted to China Refiners as Oil Flo..." -> Technology (scores: Technology: 6.0, Politics: 3.5, Finance: 1.8)
+2025-08-08 19:44:26,289 - INFO - Enhanced Classification: "Portes: Waller Would be an 'Excellent' Fed Chair, ..." -> Education (scores: Education: 7.0, Finance: 6.9, Technology: 6.0)
+2025-08-08 19:44:26,290 - INFO - Enhanced Classification: "Israel Prepares for Gaza City Military Takeover, V..." -> Education (scores: Education: 8.5, Technology: 7.5, Politics: 5.6)
+2025-08-08 19:44:26,290 - INFO - Enhanced Classification: "Emerging-Market Asset Rally Stalls as Trade Tensio..." -> Technology (scores: Technology: 3.0, Finance: 2.6, Science: 0.9)
+2025-08-08 19:44:26,290 - INFO - Enhanced Classification: "BofA’s Hartnett Says Stocks Hit by Outflows as Ral..." -> Finance (scores: Finance: 9.5, Technology: 6.0, Entertainment: 1.5)
+2025-08-08 19:44:26,290 - INFO - Enhanced Classification: "Gold Roiled by Tariffs, US Equity Futures Advance:..." -> Finance (scores: Finance: 3.3, Technology: 3.0, Environment: 3.0)
+2025-08-08 19:44:27,333 - INFO - Fetched new feed for Fortune
+2025-08-08 19:44:27,333 - INFO - Enhanced Classification: "The 5 things you need to ‘really create magic’ wit..." -> Technology (scores: Technology: 3.5, Environment: 3.0)
+2025-08-08 19:44:27,333 - INFO - Enhanced Classification: "Yum China’s sales keep growing, but a fierce food ..." -> Finance (scores: Finance: 4.1, Technology: 3.0, Environment: 3.0)
+2025-08-08 19:44:27,333 - INFO - Enhanced Classification: "The pirate flag from anime ‘One Piece’ is Indonesi..." -> Technology (scores: Technology: 6.0, Politics: 3.5, Education: 1.5)
+2025-08-08 19:44:27,333 - INFO - Enhanced Classification: "What can Northvolt’s failure teach us about Europe..." -> Technology (scores: Technology: 7.8, Education: 4.8, Science: 3.5)
+2025-08-08 19:44:27,333 - INFO - Enhanced Classification: "As Europe pushes towards its €1.5 trillion renewab..." -> Technology (scores: Technology: 6.0, Environment: 0.9, Finance: 0.8)
+2025-08-08 19:44:27,333 - INFO - Enhanced Classification: "“Decarbonization is not just a climate plan, it is..." -> Technology (scores: Technology: 6.0, Entertainment: 3.2, Finance: 2.6)
+2025-08-08 19:44:27,333 - INFO - Enhanced Classification: "TSMC secrets leak puts Japan’s Tokyo Electron on h..." -> Technology (scores: Technology: 3.0, Politics: 1.5)
+2025-08-08 19:44:27,333 - INFO - Enhanced Classification: "Intel CEO dogged by decades of China chip bets, bo..." -> Technology (scores: Technology: 3.0)
+2025-08-08 19:44:27,334 - INFO - Enhanced Classification: "AI-driven layoffs are shrinking the job market for..." -> Technology (scores: Technology: 10.0, Finance: 1.8, Science: 0.9)
+2025-08-08 19:44:27,334 - INFO - Enhanced Classification: "Can Allbirds get its groove back? Once the go-to s..." -> Technology (scores: Technology: 4.8, Entertainment: 1.8, Finance: 1.5)
+2025-08-08 19:44:28,450 - INFO - Fetched new feed for BBC World
+2025-08-08 19:44:28,450 - INFO - Enhanced Classification: "Netanyahu divides Israelis and allies with plan fo..." -> Technology (scores: Technology: 3.0)
+2025-08-08 19:44:28,450 - INFO - Enhanced Classification: "Why Trump-Putin talks unlikely to bring rapid end ..." -> Technology (scores: Technology: 6.0, Environment: 3.8)
+2025-08-08 19:44:28,450 - INFO - Enhanced Classification: "Mushroom murderer tried to kill husband with pasta..." -> General (scores: )
+2025-08-08 19:44:28,450 - INFO - Enhanced Classification: "US offers $50m reward for arrest of Venezuelan lea..." -> Technology (scores: Technology: 3.0, Health: 1.8)
+2025-08-08 19:44:28,451 - INFO - Enhanced Classification: "Ghana investigators find 'black boxes' of helicopt..." -> Politics (scores: Politics: 5.0, Finance: 0.9)
+2025-08-08 19:44:28,451 - INFO - Enhanced Classification: "Cacio e pepe: Good Food pasta recipe sparks fury i..." -> Technology (scores: Technology: 6.0, Environment: 3.0)
+2025-08-08 19:44:28,451 - INFO - Enhanced Classification: "Heartbreaking search for missing children after In..." -> Technology (scores: Technology: 3.0, Environment: 3.0, Entertainment: 1.5)
+2025-08-08 19:44:28,451 - INFO - Enhanced Classification: "South African court rules that Zambia can repatria..." -> Politics (scores: Politics: 5.2, Technology: 3.0)
+2025-08-08 19:44:28,451 - INFO - Enhanced Classification: "Trump calls for Intel boss to resign immediately, ..." -> General (scores: )
+2025-08-08 19:44:28,451 - INFO - Enhanced Classification: "Convicted rapist quits Australian parliament after..." -> Politics (scores: Politics: 3.5, Technology: 3.0)
+2025-08-08 19:44:29,029 - INFO - Fetched new feed for CNN International
+2025-08-08 19:44:29,029 - INFO - Enhanced Classification: "Trump pleads not guilty to 34 felony counts..." -> Technology (scores: Technology: 6.0, Sports: 0.8)
+2025-08-08 19:44:29,029 - INFO - Enhanced Classification: "Haberman reveals why Trump attacked judge and his ..." -> Technology (scores: Technology: 6.0, Travel: 3.5, Environment: 3.0)
+2025-08-08 19:44:29,030 - INFO - Enhanced Classification: "What to know about the Trump indictment on the eve..." -> Technology (scores: Technology: 7.5, Environment: 3.0, Sports: 0.8)
+2025-08-08 19:44:29,030 - INFO - Enhanced Classification: "READ: Trump indictment related to hush money payme..." -> Technology (scores: Technology: 6.0, Sports: 0.8)
+2025-08-08 19:44:29,030 - INFO - Enhanced Classification: "Russian authorities detain suspect over St. Peters..." -> Technology (scores: Technology: 6.0, Sports: 0.8)
+2025-08-08 19:44:29,030 - INFO - Enhanced Classification: "Video shows moment of deadly explosion at cafe in ..." -> Technology (scores: Technology: 6.0, Entertainment: 1.5)
+2025-08-08 19:44:29,030 - INFO - Enhanced Classification: "Wall Street Journal reporter Evan Gershkovich appe..." -> Technology (scores: Technology: 7.5, Science: 3.5, Environment: 3.0)
+2025-08-08 19:44:29,030 - INFO - Enhanced Classification: "Suspected Chinese spy balloon was able to transmit..." -> Technology (scores: Technology: 3.0)
+2025-08-08 19:44:29,030 - INFO - Enhanced Classification: "Beijing promised to 'fight back' over Taiwan leade..." -> Politics (scores: Politics: 7.0, Technology: 6.0, Environment: 3.0)
+2025-08-08 19:44:29,030 - INFO - Enhanced Classification: "'Scary, cold, hungry and lonely': Volunteer soldie..." -> Health (scores: Health: 3.2, Technology: 3.0, Finance: 1.5)
+2025-08-08 19:44:29,035 - INFO - Fetched new feed for Reuters World
+2025-08-08 19:44:29,225 - INFO - Fetched new feed for TechCrunch
+2025-08-08 19:44:29,225 - INFO - Enhanced Classification: "xAI’s legal chief steps down after whirlwind year..." -> Technology (scores: Technology: 6.0, Education: 0.8)
+2025-08-08 19:44:29,225 - INFO - Enhanced Classification: "Tesla shuts down Dojo, the AI training supercomput..." -> Technology (scores: Technology: 8.2, Entertainment: 1.5, Science: 0.9)
+2025-08-08 19:44:29,225 - INFO - Enhanced Classification: "Rocket Lab eyes big defense opportunities with new..." -> Science (scores: Science: 3.5, Finance: 0.9)
+2025-08-08 19:44:29,225 - INFO - Enhanced Classification: "High costs and thin margins threatening AI coding ..." -> Technology (scores: Technology: 7.3, Finance: 2.3, Entertainment: 1.5)
+2025-08-08 19:44:29,225 - INFO - Enhanced Classification: "How to use Instagram Map and set your location-sha..." -> Technology (scores: Technology: 3.0)
+2025-08-08 19:44:29,225 - INFO - Enhanced Classification: "IPO hopeful Brex scored major win to sell in the E..." -> Technology (scores: Technology: 6.9, Sports: 1.5)
+2025-08-08 19:44:29,225 - INFO - Enhanced Classification: "SpaceX is building a water pipeline to Starbase — ..." -> Technology (scores: Technology: 4.8, Science: 1.5, Education: 1.5)
+2025-08-08 19:44:29,226 - INFO - Enhanced Classification: "OpenAI’s GPT-5 is here..." -> Technology (scores: Technology: 6.5)
+2025-08-08 19:44:29,226 - INFO - Enhanced Classification: "AI agents aren’t the ‘new Google,’ says Airbnb CEO..." -> Technology (scores: Technology: 8.2, Travel: 4.3, Finance: 0.9)
+2025-08-08 19:44:29,226 - INFO - Enhanced Classification: "The backlash against Duolingo going ‘AI-first’ did..." -> Technology (scores: Technology: 8.2, Environment: 3.8, Finance: 1.5)
+2025-08-08 19:44:29,226 - INFO - Fetched 50 articles before filtering.
+INFO:     127.0.0.1:53440 - "GET /api/articles HTTP/1.1" 200 OK
+2025-08-08 19:44:29,226 - INFO - DEBUG: Found user: True
+2025-08-08 19:44:29,226 - INFO - DEBUG: Returning user: 2003sohei@gmail.com
+INFO:     127.0.0.1:53443 - "GET /api/rss-sources HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53456 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53461 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53463 - "GET /api/health HTTP/1.1" 200 OK
+2025-08-08 19:48:11,909 - INFO - DEBUG: Attempting authentication with token: 8135236f-38cd-4cd8-b67f-2972db82ef94
+2025-08-08 19:48:11,910 - INFO - DEBUG: Attempting authentication with token: 8135236f-38cd-4cd8-b67f-2972db82ef94
+2025-08-08 19:48:11,976 - INFO - DEBUG: Found user: True
+2025-08-08 19:48:11,976 - INFO - DEBUG: Returning user: 2003sohei@gmail.com
+2025-08-08 19:48:11,976 - INFO - DEBUG: Found user: True
+2025-08-08 19:48:11,976 - INFO - DEBUG: Returning user: 2003sohei@gmail.com
+INFO:     127.0.0.1:53494 - "GET /api/audio/deleted HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53495 - "GET /api/user/profile HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53497 - "GET /api/health HTTP/1.1" 200 OK
+2025-08-08 19:48:21,279 - INFO - DEBUG: Attempting authentication with token: 8135236f-38cd-4cd8-b67f-2972db82ef94
+2025-08-08 19:48:21,653 - INFO - DEBUG: Found user: True
+2025-08-08 19:48:21,653 - INFO - DEBUG: Returning user: 2003sohei@gmail.com
+INFO:     127.0.0.1:53497 - "GET /api/user/profile HTTP/1.1" 200 OK
+2025-08-08 19:48:21,796 - INFO - DEBUG: Attempting authentication with token: 8135236f-38cd-4cd8-b67f-2972db82ef94
+2025-08-08 19:48:21,849 - INFO - DEBUG: Found user: True
+2025-08-08 19:48:21,849 - INFO - DEBUG: Returning user: 2003sohei@gmail.com
+2025-08-08 19:48:21,867 - ERROR - Database error during get user profile: Database not connected
+2025-08-08 19:48:21,867 - ERROR - Error getting/creating user profile: 500: Internal server error: get user profile failed
+2025-08-08 19:48:21,867 - ERROR - Database error during get/create user profile: 500: Internal server error: get user profile failed
+2025-08-08 19:48:21,867 - ERROR - Error getting user insights: 500: Internal server error: get/create user profile failed
+2025-08-08 19:48:21,867 - ERROR - Error during get user insights: 500: Internal server error: get/create user profile failed
+2025-08-08 19:48:21,867 - ERROR - Error fetching user insights: 500: Internal server error: get user insights failed
+INFO:     127.0.0.1:53497 - "GET /api/user/insights HTTP/1.1" 200 OK
+2025-08-08 19:48:24,747 - INFO - DEBUG: Attempting authentication with token: 8135236f-38cd-4cd8-b67f-2972db82ef94
+2025-08-08 19:48:24,835 - INFO - DEBUG: Found user: True
+2025-08-08 19:48:24,835 - INFO - DEBUG: Returning user: 2003sohei@gmail.com
+INFO:     127.0.0.1:53497 - "PUT /api/user/profile HTTP/1.1" 400 Bad Request
+2025-08-08 19:48:27,857 - INFO - DEBUG: Attempting authentication with token: 8135236f-38cd-4cd8-b67f-2972db82ef94
+2025-08-08 19:48:27,939 - INFO - DEBUG: Found user: True
+2025-08-08 19:48:27,939 - INFO - DEBUG: Returning user: 2003sohei@gmail.com
+INFO:     127.0.0.1:53497 - "PUT /api/user/profile HTTP/1.1" 400 Bad Request
+2025-08-08 19:48:33,593 - INFO - DEBUG: Attempting authentication with token: 8135236f-38cd-4cd8-b67f-2972db82ef94
+2025-08-08 19:48:33,675 - INFO - DEBUG: Found user: True
+2025-08-08 19:48:33,675 - INFO - DEBUG: Returning user: 2003sohei@gmail.com
+INFO:     127.0.0.1:53501 - "PUT /api/user/profile HTTP/1.1" 400 Bad Request
+2025-08-08 19:48:36,651 - INFO - DEBUG: Attempting authentication with token: 8135236f-38cd-4cd8-b67f-2972db82ef94
+2025-08-08 19:48:36,716 - INFO - DEBUG: Found user: True
+2025-08-08 19:48:36,716 - INFO - DEBUG: Returning user: 2003sohei@gmail.com
+INFO:     127.0.0.1:53501 - "PUT /api/user/profile HTTP/1.1" 400 Bad Request
+INFO:     127.0.0.1:53546 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53624 - "GET /api/health HTTP/1.1" 200 OK
+WARNING:  StatReload detected changes in 'server.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+2025-08-08 19:50:32,047 - INFO - Disconnected from MongoDB
+INFO:     Application shutdown complete.
+INFO:     Finished server process [85685]
+INFO:     Started server process [86068]
+INFO:     Waiting for application startup.
+2025-08-08 19:50:36,550 - INFO - Connected to MongoDB successfully
+2025-08-08 19:50:37,324 - INFO - Database indexes created successfully
+2025-08-08 19:50:37,385 - INFO - Found 5 existing preset categories
+2025-08-08 19:50:37,385 - INFO - Preset categories initialized successfully
+2025-08-08 19:50:37,385 - INFO - Cleanup tasks completed
+INFO:     Application startup complete.
+2025-08-08 19:50:45,745 - INFO - DEBUG: Attempting authentication with token: 8135236f-38cd-4cd8-b67f-2972db82ef94
+2025-08-08 19:50:46,076 - INFO - DEBUG: Found user: True
+2025-08-08 19:50:46,076 - INFO - DEBUG: Returning user: 2003sohei@gmail.com
+INFO:     127.0.0.1:53756 - "GET /api/user/profile HTTP/1.1" 200 OK
+2025-08-08 19:50:46,276 - INFO - DEBUG: Attempting authentication with token: 8135236f-38cd-4cd8-b67f-2972db82ef94
+2025-08-08 19:50:46,340 - INFO - DEBUG: Found user: True
+2025-08-08 19:50:46,340 - INFO - DEBUG: Returning user: 2003sohei@gmail.com
+2025-08-08 19:50:46,363 - ERROR - Database error during get user profile: Database not connected
+2025-08-08 19:50:46,363 - ERROR - Error getting/creating user profile: 500: Internal server error: get user profile failed
+2025-08-08 19:50:46,363 - ERROR - Database error during get/create user profile: 500: Internal server error: get user profile failed
+2025-08-08 19:50:46,363 - ERROR - Error getting user insights: 500: Internal server error: get/create user profile failed
+2025-08-08 19:50:46,363 - ERROR - Error during get user insights: 500: Internal server error: get/create user profile failed
+2025-08-08 19:50:46,363 - ERROR - Error fetching user insights: 500: Internal server error: get user insights failed
+INFO:     127.0.0.1:53756 - "GET /api/user/insights HTTP/1.1" 200 OK
+2025-08-08 19:50:58,999 - INFO - DEBUG: Attempting authentication with token: 8135236f-38cd-4cd8-b67f-2972db82ef94
+2025-08-08 19:50:59,297 - INFO - DEBUG: Found user: True
+2025-08-08 19:50:59,297 - INFO - DEBUG: Returning user: 2003sohei@gmail.com
+INFO:     127.0.0.1:53778 - "GET /api/user/profile HTTP/1.1" 200 OK
+2025-08-08 19:50:59,432 - INFO - DEBUG: Attempting authentication with token: 8135236f-38cd-4cd8-b67f-2972db82ef94
+2025-08-08 19:50:59,493 - INFO - DEBUG: Found user: True
+2025-08-08 19:50:59,493 - INFO - DEBUG: Returning user: 2003sohei@gmail.com
+2025-08-08 19:50:59,493 - ERROR - Database error during get user profile: Database not connected
+2025-08-08 19:50:59,493 - ERROR - Error getting/creating user profile: 500: Internal server error: get user profile failed
+2025-08-08 19:50:59,493 - ERROR - Database error during get/create user profile: 500: Internal server error: get user profile failed
+2025-08-08 19:50:59,493 - ERROR - Error getting user insights: 500: Internal server error: get/create user profile failed
+2025-08-08 19:50:59,493 - ERROR - Error during get user insights: 500: Internal server error: get/create user profile failed
+2025-08-08 19:50:59,493 - ERROR - Error fetching user insights: 500: Internal server error: get user insights failed
+INFO:     127.0.0.1:53778 - "GET /api/user/insights HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53820 - "GET /api/health HTTP/1.1" 200 OK
+2025-08-08 19:51:18,851 - INFO - DEBUG: Attempting authentication with token: 8135236f-38cd-4cd8-b67f-2972db82ef94
+2025-08-08 19:51:19,044 - INFO - DEBUG: Found user: True
+2025-08-08 19:51:19,044 - INFO - DEBUG: Returning user: 2003sohei@gmail.com
+INFO:     127.0.0.1:53820 - "GET /api/user/profile HTTP/1.1" 200 OK
+2025-08-08 19:51:19,189 - INFO - DEBUG: Attempting authentication with token: 8135236f-38cd-4cd8-b67f-2972db82ef94
+2025-08-08 19:51:19,231 - INFO - DEBUG: Found user: True
+2025-08-08 19:51:19,231 - INFO - DEBUG: Returning user: 2003sohei@gmail.com
+2025-08-08 19:51:19,231 - ERROR - Database error during get user profile: Database not connected
+2025-08-08 19:51:19,231 - ERROR - Error getting/creating user profile: 500: Internal server error: get user profile failed
+2025-08-08 19:51:19,231 - ERROR - Database error during get/create user profile: 500: Internal server error: get user profile failed
+2025-08-08 19:51:19,231 - ERROR - Error getting user insights: 500: Internal server error: get/create user profile failed
+2025-08-08 19:51:19,231 - ERROR - Error during get user insights: 500: Internal server error: get/create user profile failed
+2025-08-08 19:51:19,231 - ERROR - Error fetching user insights: 500: Internal server error: get user insights failed
+INFO:     127.0.0.1:53820 - "GET /api/user/insights HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53930 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53982 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53990 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53990 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53991 - "GET /health HTTP/1.1" 200 OK
+2025-08-08 19:53:40,347 - INFO - DEBUG: Attempting authentication with token: 8135236f-38cd-4cd8-b67f-2972db82ef94
+2025-08-08 19:53:40,394 - INFO - DEBUG: Found user: True
+2025-08-08 19:53:40,394 - INFO - DEBUG: Returning user: 2003sohei@gmail.com
+INFO:     127.0.0.1:53990 - "GET /api/rss-sources HTTP/1.1" 200 OK
+2025-08-08 19:53:40,532 - INFO - DEBUG: Attempting authentication with token: 8135236f-38cd-4cd8-b67f-2972db82ef94
+2025-08-08 19:53:40,561 - INFO - DEBUG: Attempting authentication with token: 8135236f-38cd-4cd8-b67f-2972db82ef94
+2025-08-08 19:53:40,565 - INFO - DEBUG: Attempting authentication with token: 8135236f-38cd-4cd8-b67f-2972db82ef94
+2025-08-08 19:53:40,595 - INFO - DEBUG: Found user: True
+2025-08-08 19:53:40,595 - INFO - DEBUG: Returning user: 2003sohei@gmail.com
+2025-08-08 19:53:40,603 - INFO - DEBUG: Found user: True
+2025-08-08 19:53:40,603 - INFO - DEBUG: Returning user: 2003sohei@gmail.com
+INFO:     127.0.0.1:53990 - "GET /api/user/profile HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53991 - "GET /api/rss-sources HTTP/1.1" 200 OK
+2025-08-08 19:53:40,713 - INFO - DEBUG: Attempting authentication with token: 8135236f-38cd-4cd8-b67f-2972db82ef94
+2025-08-08 19:53:40,770 - INFO - DEBUG: Found user: True
+2025-08-08 19:53:40,770 - INFO - DEBUG: Returning user: 2003sohei@gmail.com
+2025-08-08 19:53:41,238 - INFO - Fetched new feed for Reuters Business
+2025-08-08 19:53:42,700 - INFO - Fetched new feed for Bloomberg
+2025-08-08 19:53:42,700 - INFO - Enhanced Classification: "Insight with Haslinda Amin 8/8/2025..." -> Technology (scores: Technology: 6.0, Finance: 3.2, Environment: 3.0)
+2025-08-08 19:53:42,700 - INFO - Enhanced Classification: "JPMorgan Says Treasury Curve Can Steepen on Miran ..." -> Finance (scores: Finance: 6.5, Technology: 4.5, Politics: 3.5)
+2025-08-08 19:53:42,700 - INFO - Enhanced Classification: "Bridgestone Plots US, Europe Growth to Offset Braz..." -> Technology (scores: Technology: 6.0, Politics: 3.5, Environment: 3.0)
+2025-08-08 19:53:42,700 - INFO - Enhanced Classification: "Siemens Picks Square for Exclusive Talks on Sale o..." -> Technology (scores: Technology: 3.0, Finance: 0.9)
+2025-08-08 19:53:42,700 - INFO - Enhanced Classification: "Trump Eases Way for Lower Rates as Stagflation Tal..." -> Finance (scores: Finance: 3.5)
+2025-08-08 19:53:42,701 - INFO - Enhanced Classification: "Rolls-Royce Nears Deal to Offload £4 Billion UK Pe..." -> Technology (scores: Technology: 6.0, Politics: 3.0, Finance: 1.8)
+2025-08-08 19:53:42,701 - INFO - Enhanced Classification: "US to Cut Car Levies, End Tariff Stacking, Japan S..." -> Technology (scores: Technology: 6.0, Environment: 3.0, Entertainment: 1.8)
+2025-08-08 19:53:42,701 - INFO - Enhanced Classification: "US Sparks Fresh Turmoil in Gold With Surprise Impo..." -> Technology (scores: Technology: 3.0, Finance: 1.8)
+2025-08-08 19:53:42,701 - INFO - Enhanced Classification: "Russia’s Urals Touted to China Refiners as Oil Flo..." -> Technology (scores: Technology: 6.0, Politics: 3.5, Finance: 1.8)
+2025-08-08 19:53:42,701 - INFO - Enhanced Classification: "Portes: Waller Would be an 'Excellent' Fed Chair, ..." -> Education (scores: Education: 7.0, Finance: 6.9, Technology: 6.0)
+2025-08-08 19:53:43,529 - INFO - Fetched new feed for Fortune
+2025-08-08 19:53:43,529 - INFO - Enhanced Classification: "A third of CEOs plan to axe jobs over the next yea..." -> Technology (scores: Technology: 3.0, Finance: 1.8)
+2025-08-08 19:53:43,529 - INFO - Enhanced Classification: "The 5 things you need to ‘really create magic’ wit..." -> Technology (scores: Technology: 3.5, Environment: 3.0)
+2025-08-08 19:53:43,529 - INFO - Enhanced Classification: "Yum China’s sales keep growing, but a fierce food ..." -> Finance (scores: Finance: 4.1, Technology: 3.0, Environment: 3.0)
+2025-08-08 19:53:43,529 - INFO - Enhanced Classification: "The pirate flag from anime ‘One Piece’ is Indonesi..." -> Technology (scores: Technology: 6.0, Politics: 3.5, Education: 1.5)
+2025-08-08 19:53:43,529 - INFO - Enhanced Classification: "What can Northvolt’s failure teach us about Europe..." -> Technology (scores: Technology: 7.8, Education: 4.8, Science: 3.5)
+2025-08-08 19:53:43,529 - INFO - Enhanced Classification: "As Europe pushes towards its €1.5 trillion renewab..." -> Technology (scores: Technology: 6.0, Environment: 0.9, Finance: 0.8)
+2025-08-08 19:53:43,530 - INFO - Enhanced Classification: "“Decarbonization is not just a climate plan, it is..." -> Technology (scores: Technology: 6.0, Entertainment: 3.2, Finance: 2.6)
+2025-08-08 19:53:43,530 - INFO - Enhanced Classification: "TSMC secrets leak puts Japan’s Tokyo Electron on h..." -> Technology (scores: Technology: 3.0, Politics: 1.5)
+2025-08-08 19:53:43,530 - INFO - Enhanced Classification: "Intel CEO dogged by decades of China chip bets, bo..." -> Technology (scores: Technology: 3.0)
+2025-08-08 19:53:43,530 - INFO - Enhanced Classification: "AI-driven layoffs are shrinking the job market for..." -> Technology (scores: Technology: 10.0, Finance: 1.8, Science: 0.9)
+2025-08-08 19:53:43,885 - INFO - Fetched new feed for BBC World
+2025-08-08 19:53:43,885 - INFO - Enhanced Classification: "Netanyahu divides Israelis and allies with plan fo..." -> Technology (scores: Technology: 3.0)
+2025-08-08 19:53:43,885 - INFO - Enhanced Classification: "Why Trump-Putin talks unlikely to bring rapid end ..." -> Technology (scores: Technology: 6.0, Environment: 3.8)
+2025-08-08 19:53:43,885 - INFO - Enhanced Classification: "Mushroom murderer tried to kill husband with pasta..." -> General (scores: )
+2025-08-08 19:53:43,885 - INFO - Enhanced Classification: "US offers $50m reward for arrest of Venezuelan lea..." -> Technology (scores: Technology: 3.0, Health: 1.8)
+2025-08-08 19:53:43,885 - INFO - Enhanced Classification: "Ghana investigators find 'black boxes' of helicopt..." -> Politics (scores: Politics: 5.0, Finance: 0.9)
+2025-08-08 19:53:43,885 - INFO - Enhanced Classification: "Cacio e pepe: Good Food pasta recipe sparks fury i..." -> Technology (scores: Technology: 6.0, Environment: 3.0)
+2025-08-08 19:53:43,885 - INFO - Enhanced Classification: "Heartbreaking search for missing children after In..." -> Technology (scores: Technology: 3.0, Environment: 3.0, Entertainment: 1.5)
+2025-08-08 19:53:43,885 - INFO - Enhanced Classification: "South African court rules that Zambia can repatria..." -> Politics (scores: Politics: 5.2, Technology: 3.0)
+2025-08-08 19:53:43,885 - INFO - Enhanced Classification: "Trump calls for Intel boss to resign immediately, ..." -> General (scores: )
+2025-08-08 19:53:43,886 - INFO - Enhanced Classification: "Convicted rapist quits Australian parliament after..." -> Politics (scores: Politics: 3.5, Technology: 3.0)
+2025-08-08 19:53:44,648 - INFO - Fetched new feed for CNN International
+2025-08-08 19:53:44,648 - INFO - Enhanced Classification: "Trump pleads not guilty to 34 felony counts..." -> Technology (scores: Technology: 6.0, Sports: 0.8)
+2025-08-08 19:53:44,648 - INFO - Enhanced Classification: "Haberman reveals why Trump attacked judge and his ..." -> Technology (scores: Technology: 6.0, Travel: 3.5, Environment: 3.0)
+2025-08-08 19:53:44,649 - INFO - Enhanced Classification: "What to know about the Trump indictment on the eve..." -> Technology (scores: Technology: 7.5, Environment: 3.0, Sports: 0.8)
+2025-08-08 19:53:44,649 - INFO - Enhanced Classification: "READ: Trump indictment related to hush money payme..." -> Technology (scores: Technology: 6.0, Sports: 0.8)
+2025-08-08 19:53:44,649 - INFO - Enhanced Classification: "Russian authorities detain suspect over St. Peters..." -> Technology (scores: Technology: 6.0, Sports: 0.8)
+2025-08-08 19:53:44,649 - INFO - Enhanced Classification: "Video shows moment of deadly explosion at cafe in ..." -> Technology (scores: Technology: 6.0, Entertainment: 1.5)
+2025-08-08 19:53:44,649 - INFO - Enhanced Classification: "Wall Street Journal reporter Evan Gershkovich appe..." -> Technology (scores: Technology: 7.5, Science: 3.5, Environment: 3.0)
+2025-08-08 19:53:44,649 - INFO - Enhanced Classification: "Suspected Chinese spy balloon was able to transmit..." -> Technology (scores: Technology: 3.0)
+2025-08-08 19:53:44,649 - INFO - Enhanced Classification: "Beijing promised to 'fight back' over Taiwan leade..." -> Politics (scores: Politics: 7.0, Technology: 6.0, Environment: 3.0)
+2025-08-08 19:53:44,649 - INFO - Enhanced Classification: "'Scary, cold, hungry and lonely': Volunteer soldie..." -> Health (scores: Health: 3.2, Technology: 3.0, Finance: 1.5)
+2025-08-08 19:53:44,654 - INFO - Fetched new feed for Reuters World
+2025-08-08 19:53:44,950 - INFO - Fetched new feed for TechCrunch
+2025-08-08 19:53:44,950 - INFO - Enhanced Classification: "xAI’s legal chief steps down after whirlwind year..." -> Technology (scores: Technology: 6.0, Education: 0.8)
+2025-08-08 19:53:44,950 - INFO - Enhanced Classification: "Tesla shuts down Dojo, the AI training supercomput..." -> Technology (scores: Technology: 8.2, Entertainment: 1.5, Science: 0.9)
+2025-08-08 19:53:44,950 - INFO - Enhanced Classification: "Rocket Lab eyes big defense opportunities with new..." -> Science (scores: Science: 3.5, Finance: 0.9)
+2025-08-08 19:53:44,951 - INFO - Enhanced Classification: "High costs and thin margins threatening AI coding ..." -> Technology (scores: Technology: 7.3, Finance: 2.3, Entertainment: 1.5)
+2025-08-08 19:53:44,951 - INFO - Enhanced Classification: "How to use Instagram Map and set your location-sha..." -> Technology (scores: Technology: 3.0)
+2025-08-08 19:53:44,951 - INFO - Enhanced Classification: "IPO hopeful Brex scored major win to sell in the E..." -> Technology (scores: Technology: 6.9, Sports: 1.5)
+2025-08-08 19:53:44,951 - INFO - Enhanced Classification: "SpaceX is building a water pipeline to Starbase — ..." -> Technology (scores: Technology: 4.8, Science: 1.5, Education: 1.5)
+2025-08-08 19:53:44,951 - INFO - Enhanced Classification: "OpenAI’s GPT-5 is here..." -> Technology (scores: Technology: 6.5)
+2025-08-08 19:53:44,951 - INFO - Enhanced Classification: "AI agents aren’t the ‘new Google,’ says Airbnb CEO..." -> Technology (scores: Technology: 8.2, Travel: 4.3, Finance: 0.9)
+2025-08-08 19:53:44,951 - INFO - Enhanced Classification: "The backlash against Duolingo going ‘AI-first’ did..." -> Technology (scores: Technology: 8.2, Environment: 3.8, Finance: 1.5)
+2025-08-08 19:53:44,951 - INFO - Fetched 50 articles before filtering.
+INFO:     127.0.0.1:53990 - "GET /api/articles HTTP/1.1" 200 OK
+2025-08-08 19:53:44,951 - INFO - DEBUG: Found user: True
+2025-08-08 19:53:44,951 - INFO - DEBUG: Returning user: 2003sohei@gmail.com
+INFO:     127.0.0.1:53993 - "GET /api/rss-sources HTTP/1.1" 200 OK
+2025-08-08 19:53:51,940 - INFO - DEBUG: Attempting authentication with token: 8135236f-38cd-4cd8-b67f-2972db82ef94
+2025-08-08 19:53:51,941 - INFO - DEBUG: Attempting authentication with token: 8135236f-38cd-4cd8-b67f-2972db82ef94
+2025-08-08 19:53:51,994 - INFO - DEBUG: Found user: True
+2025-08-08 19:53:51,994 - INFO - DEBUG: Returning user: 2003sohei@gmail.com
+2025-08-08 19:53:51,998 - INFO - DEBUG: Found user: True
+2025-08-08 19:53:51,998 - INFO - DEBUG: Returning user: 2003sohei@gmail.com
+INFO:     127.0.0.1:54004 - "GET /api/audio/deleted HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54005 - "GET /api/user/profile HTTP/1.1" 200 OK
+2025-08-08 19:53:55,418 - INFO - DEBUG: Attempting authentication with token: 8135236f-38cd-4cd8-b67f-2972db82ef94
+2025-08-08 19:53:55,586 - INFO - DEBUG: Found user: True
+2025-08-08 19:53:55,587 - INFO - DEBUG: Returning user: 2003sohei@gmail.com
+INFO:     127.0.0.1:54004 - "GET /api/user/profile HTTP/1.1" 200 OK
+2025-08-08 19:53:55,777 - INFO - DEBUG: Attempting authentication with token: 8135236f-38cd-4cd8-b67f-2972db82ef94
+2025-08-08 19:53:55,894 - INFO - DEBUG: Found user: True
+2025-08-08 19:53:55,894 - INFO - DEBUG: Returning user: 2003sohei@gmail.com
+2025-08-08 19:53:55,894 - ERROR - Database error during get user profile: Database not connected
+2025-08-08 19:53:55,894 - ERROR - Error getting/creating user profile: 500: Internal server error: get user profile failed
+2025-08-08 19:53:55,894 - ERROR - Database error during get/create user profile: 500: Internal server error: get user profile failed
+2025-08-08 19:53:55,894 - ERROR - Error getting user insights: 500: Internal server error: get/create user profile failed
+2025-08-08 19:53:55,894 - ERROR - Error during get user insights: 500: Internal server error: get/create user profile failed
+2025-08-08 19:53:55,894 - ERROR - Error fetching user insights: 500: Internal server error: get user insights failed
+INFO:     127.0.0.1:54004 - "GET /api/user/insights HTTP/1.1" 200 OK
+2025-08-08 19:53:57,624 - INFO - DEBUG: Attempting authentication with token: 8135236f-38cd-4cd8-b67f-2972db82ef94
+2025-08-08 19:53:57,677 - INFO - DEBUG: Found user: True
+2025-08-08 19:53:57,677 - INFO - DEBUG: Returning user: 2003sohei@gmail.com
+2025-08-08 19:53:57,677 - INFO - Received genre preferences: {'Technology': 1.4, 'Finance': 2.5, 'Sports': 2.200000000000001, 'Politics': 2.5, 'Health': 1.8800000000000008, 'Entertainment': 1.2400000000000002, 'Science': 1.6000000000000005, 'Environment': 2.5, 'Education': 2.5, 'Travel': 1.4800000000000004, 'General': 2.5}
+2025-08-08 19:53:57,677 - INFO - Validating Technology: 1.4 (type: <class 'float'>)
+2025-08-08 19:53:57,677 - INFO - Validating Finance: 2.5 (type: <class 'float'>)
+2025-08-08 19:53:57,677 - ERROR - Validation failed for Finance: score=2.5, type=<class 'float'>
+INFO:     127.0.0.1:54004 - "PUT /api/user/profile HTTP/1.1" 400 Bad Request
+INFO:     127.0.0.1:54009 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54051 - "GET /api/health HTTP/1.1" 200 OK
+2025-08-08 19:55:41,166 - INFO - DEBUG: Attempting authentication with token: 8135236f-38cd-4cd8-b67f-2972db82ef94
+2025-08-08 19:55:41,290 - INFO - DEBUG: Found user: True
+2025-08-08 19:55:41,290 - INFO - DEBUG: Returning user: 2003sohei@gmail.com
+INFO:     127.0.0.1:54071 - "GET /api/user/profile HTTP/1.1" 200 OK
+2025-08-08 19:55:41,428 - INFO - DEBUG: Attempting authentication with token: 8135236f-38cd-4cd8-b67f-2972db82ef94
+2025-08-08 19:55:41,476 - INFO - DEBUG: Found user: True
+2025-08-08 19:55:41,476 - INFO - DEBUG: Returning user: 2003sohei@gmail.com
+2025-08-08 19:55:41,476 - ERROR - Database error during get user profile: Database not connected
+2025-08-08 19:55:41,476 - ERROR - Error getting/creating user profile: 500: Internal server error: get user profile failed
+2025-08-08 19:55:41,476 - ERROR - Database error during get/create user profile: 500: Internal server error: get user profile failed
+2025-08-08 19:55:41,476 - ERROR - Error getting user insights: 500: Internal server error: get/create user profile failed
+2025-08-08 19:55:41,476 - ERROR - Error during get user insights: 500: Internal server error: get/create user profile failed
+2025-08-08 19:55:41,476 - ERROR - Error fetching user insights: 500: Internal server error: get user insights failed
+INFO:     127.0.0.1:54071 - "GET /api/user/insights HTTP/1.1" 200 OK
+2025-08-08 19:55:48,000 - INFO - DEBUG: Attempting authentication with token: 8135236f-38cd-4cd8-b67f-2972db82ef94
+2025-08-08 19:55:48,098 - INFO - DEBUG: Found user: True
+2025-08-08 19:55:48,099 - INFO - DEBUG: Returning user: 2003sohei@gmail.com
+INFO:     127.0.0.1:54089 - "GET /api/user/profile HTTP/1.1" 200 OK
+2025-08-08 19:55:48,394 - INFO - DEBUG: Attempting authentication with token: 8135236f-38cd-4cd8-b67f-2972db82ef94
+2025-08-08 19:55:48,569 - INFO - DEBUG: Found user: True
+2025-08-08 19:55:48,569 - INFO - DEBUG: Returning user: 2003sohei@gmail.com
+2025-08-08 19:55:48,569 - ERROR - Database error during get user profile: Database not connected
+2025-08-08 19:55:48,569 - ERROR - Error getting/creating user profile: 500: Internal server error: get user profile failed
+2025-08-08 19:55:48,569 - ERROR - Database error during get/create user profile: 500: Internal server error: get user profile failed
+2025-08-08 19:55:48,569 - ERROR - Error getting user insights: 500: Internal server error: get/create user profile failed
+2025-08-08 19:55:48,569 - ERROR - Error during get user insights: 500: Internal server error: get/create user profile failed
+2025-08-08 19:55:48,569 - ERROR - Error fetching user insights: 500: Internal server error: get user insights failed
+INFO:     127.0.0.1:54089 - "GET /api/user/insights HTTP/1.1" 200 OK
+2025-08-08 19:55:54,567 - INFO - DEBUG: Attempting authentication with token: 8135236f-38cd-4cd8-b67f-2972db82ef94
+2025-08-08 19:55:54,610 - INFO - DEBUG: Found user: True
+2025-08-08 19:55:54,610 - INFO - DEBUG: Returning user: 2003sohei@gmail.com
+INFO:     127.0.0.1:54108 - "GET /api/user/profile HTTP/1.1" 200 OK
+2025-08-08 19:55:54,789 - INFO - DEBUG: Attempting authentication with token: 8135236f-38cd-4cd8-b67f-2972db82ef94
+2025-08-08 19:55:54,886 - INFO - DEBUG: Found user: True
+2025-08-08 19:55:54,886 - INFO - DEBUG: Returning user: 2003sohei@gmail.com
+2025-08-08 19:55:54,886 - ERROR - Database error during get user profile: Database not connected
+2025-08-08 19:55:54,886 - ERROR - Error getting/creating user profile: 500: Internal server error: get user profile failed
+2025-08-08 19:55:54,886 - ERROR - Database error during get/create user profile: 500: Internal server error: get user profile failed
+2025-08-08 19:55:54,886 - ERROR - Error getting user insights: 500: Internal server error: get/create user profile failed
+2025-08-08 19:55:54,886 - ERROR - Error during get user insights: 500: Internal server error: get/create user profile failed
+2025-08-08 19:55:54,886 - ERROR - Error fetching user insights: 500: Internal server error: get user insights failed
+INFO:     127.0.0.1:54108 - "GET /api/user/insights HTTP/1.1" 200 OK
+2025-08-08 19:56:02,751 - INFO - DEBUG: Attempting authentication with token: 8135236f-38cd-4cd8-b67f-2972db82ef94
+2025-08-08 19:56:02,885 - INFO - DEBUG: Found user: True
+2025-08-08 19:56:02,885 - INFO - DEBUG: Returning user: 2003sohei@gmail.com
+INFO:     127.0.0.1:54117 - "GET /api/user/profile HTTP/1.1" 200 OK
+2025-08-08 19:56:03,288 - INFO - DEBUG: Attempting authentication with token: 8135236f-38cd-4cd8-b67f-2972db82ef94
+2025-08-08 19:56:03,353 - INFO - DEBUG: Found user: True
+2025-08-08 19:56:03,353 - INFO - DEBUG: Returning user: 2003sohei@gmail.com
+2025-08-08 19:56:03,353 - ERROR - Database error during get user profile: Database not connected
+2025-08-08 19:56:03,353 - ERROR - Error getting/creating user profile: 500: Internal server error: get user profile failed
+2025-08-08 19:56:03,353 - ERROR - Database error during get/create user profile: 500: Internal server error: get user profile failed
+2025-08-08 19:56:03,354 - ERROR - Error getting user insights: 500: Internal server error: get/create user profile failed
+2025-08-08 19:56:03,354 - ERROR - Error during get user insights: 500: Internal server error: get/create user profile failed
+2025-08-08 19:56:03,354 - ERROR - Error fetching user insights: 500: Internal server error: get user insights failed
+INFO:     127.0.0.1:54117 - "GET /api/user/insights HTTP/1.1" 200 OK
+2025-08-08 19:56:09,159 - INFO - DEBUG: Attempting authentication with token: 8135236f-38cd-4cd8-b67f-2972db82ef94
+2025-08-08 19:56:09,236 - INFO - DEBUG: Found user: True
+2025-08-08 19:56:09,236 - INFO - DEBUG: Returning user: 2003sohei@gmail.com
+INFO:     127.0.0.1:54150 - "GET /api/user/profile HTTP/1.1" 200 OK
+2025-08-08 19:56:09,696 - INFO - DEBUG: Attempting authentication with token: 8135236f-38cd-4cd8-b67f-2972db82ef94
+2025-08-08 19:56:09,781 - INFO - DEBUG: Found user: True
+2025-08-08 19:56:09,781 - INFO - DEBUG: Returning user: 2003sohei@gmail.com
+2025-08-08 19:56:09,781 - ERROR - Database error during get user profile: Database not connected
+2025-08-08 19:56:09,781 - ERROR - Error getting/creating user profile: 500: Internal server error: get user profile failed
+2025-08-08 19:56:09,781 - ERROR - Database error during get/create user profile: 500: Internal server error: get user profile failed
+2025-08-08 19:56:09,781 - ERROR - Error getting user insights: 500: Internal server error: get/create user profile failed
+2025-08-08 19:56:09,781 - ERROR - Error during get user insights: 500: Internal server error: get/create user profile failed
+2025-08-08 19:56:09,781 - ERROR - Error fetching user insights: 500: Internal server error: get user insights failed
+INFO:     127.0.0.1:54150 - "GET /api/user/insights HTTP/1.1" 200 OK
+2025-08-08 19:56:15,991 - INFO - DEBUG: Attempting authentication with token: 8135236f-38cd-4cd8-b67f-2972db82ef94
+2025-08-08 19:56:16,066 - INFO - DEBUG: Found user: True
+2025-08-08 19:56:16,066 - INFO - DEBUG: Returning user: 2003sohei@gmail.com
+INFO:     127.0.0.1:54168 - "GET /api/user/profile HTTP/1.1" 200 OK
+2025-08-08 19:56:16,257 - INFO - DEBUG: Attempting authentication with token: 8135236f-38cd-4cd8-b67f-2972db82ef94
+2025-08-08 19:56:16,382 - INFO - DEBUG: Found user: True
+2025-08-08 19:56:16,382 - INFO - DEBUG: Returning user: 2003sohei@gmail.com
+2025-08-08 19:56:16,382 - ERROR - Database error during get user profile: Database not connected
+2025-08-08 19:56:16,382 - ERROR - Error getting/creating user profile: 500: Internal server error: get user profile failed
+2025-08-08 19:56:16,382 - ERROR - Database error during get/create user profile: 500: Internal server error: get user profile failed
+2025-08-08 19:56:16,382 - ERROR - Error getting user insights: 500: Internal server error: get/create user profile failed
+2025-08-08 19:56:16,382 - ERROR - Error during get user insights: 500: Internal server error: get/create user profile failed
+2025-08-08 19:56:16,382 - ERROR - Error fetching user insights: 500: Internal server error: get user insights failed
+INFO:     127.0.0.1:54168 - "GET /api/user/insights HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54188 - "GET /api/health HTTP/1.1" 200 OK
+2025-08-08 19:57:02,763 - INFO - DEBUG: Attempting authentication with token: 8135236f-38cd-4cd8-b67f-2972db82ef94
+2025-08-08 19:57:02,852 - INFO - DEBUG: Found user: True
+2025-08-08 19:57:02,852 - INFO - DEBUG: Returning user: 2003sohei@gmail.com
+2025-08-08 19:57:02,852 - INFO - Received genre preferences: {'Technology': 1.1, 'Finance': 2.0, 'Sports': 2.0, 'Politics': 2.0, 'Health': 1.8800000000000008, 'Entertainment': 1.2400000000000002, 'Science': 1.6000000000000005, 'Environment': 2.0, 'Education': 2.0, 'Travel': 1.4800000000000004, 'General': 2.0}
+2025-08-08 19:57:02,852 - INFO - Validating Technology: 1.1 (type: <class 'float'>)
+2025-08-08 19:57:02,852 - INFO - Validating Finance: 2.0 (type: <class 'float'>)
+2025-08-08 19:57:02,852 - INFO - Validating Sports: 2.0 (type: <class 'float'>)
+2025-08-08 19:57:02,852 - INFO - Validating Politics: 2.0 (type: <class 'float'>)
+2025-08-08 19:57:02,852 - INFO - Validating Health: 1.8800000000000008 (type: <class 'float'>)
+2025-08-08 19:57:02,852 - INFO - Validating Entertainment: 1.2400000000000002 (type: <class 'float'>)
+2025-08-08 19:57:02,852 - INFO - Validating Science: 1.6000000000000005 (type: <class 'float'>)
+2025-08-08 19:57:02,852 - INFO - Validating Environment: 2.0 (type: <class 'float'>)
+2025-08-08 19:57:02,852 - INFO - Validating Education: 2.0 (type: <class 'float'>)
+2025-08-08 19:57:02,852 - INFO - Validating Travel: 1.4800000000000004 (type: <class 'float'>)
+2025-08-08 19:57:02,852 - INFO - Validating General: 2.0 (type: <class 'float'>)
+2025-08-08 19:57:02,937 - INFO - Updated profile for user 2003sohei@gmail.com
+INFO:     127.0.0.1:54193 - "PUT /api/user/profile HTTP/1.1" 200 OK
+2025-08-08 19:57:03,860 - INFO - DEBUG: Attempting authentication with token: 8135236f-38cd-4cd8-b67f-2972db82ef94
+2025-08-08 19:57:03,929 - INFO - DEBUG: Found user: True
+2025-08-08 19:57:03,929 - INFO - DEBUG: Returning user: 2003sohei@gmail.com
+2025-08-08 19:57:03,929 - INFO - Received genre preferences: {'Technology': 1.6, 'Finance': 2.0, 'Sports': 2.0, 'Politics': 2.0, 'Health': 1.8800000000000008, 'Entertainment': 1.2400000000000002, 'Science': 1.6000000000000005, 'Environment': 2.0, 'Education': 2.0, 'Travel': 1.4800000000000004, 'General': 2.0}
+2025-08-08 19:57:03,929 - INFO - Validating Technology: 1.6 (type: <class 'float'>)
+2025-08-08 19:57:03,929 - INFO - Validating Finance: 2.0 (type: <class 'float'>)
+2025-08-08 19:57:03,929 - INFO - Validating Sports: 2.0 (type: <class 'float'>)
+2025-08-08 19:57:03,929 - INFO - Validating Politics: 2.0 (type: <class 'float'>)
+2025-08-08 19:57:03,929 - INFO - Validating Health: 1.8800000000000008 (type: <class 'float'>)
+2025-08-08 19:57:03,929 - INFO - Validating Entertainment: 1.2400000000000002 (type: <class 'float'>)
+2025-08-08 19:57:03,929 - INFO - Validating Science: 1.6000000000000005 (type: <class 'float'>)
+2025-08-08 19:57:03,929 - INFO - Validating Environment: 2.0 (type: <class 'float'>)
+2025-08-08 19:57:03,929 - INFO - Validating Education: 2.0 (type: <class 'float'>)
+2025-08-08 19:57:03,929 - INFO - Validating Travel: 1.4800000000000004 (type: <class 'float'>)
+2025-08-08 19:57:03,929 - INFO - Validating General: 2.0 (type: <class 'float'>)
+2025-08-08 19:57:03,993 - INFO - Updated profile for user 2003sohei@gmail.com
+INFO:     127.0.0.1:54193 - "PUT /api/user/profile HTTP/1.1" 200 OK
+2025-08-08 19:57:04,604 - INFO - DEBUG: Attempting authentication with token: 8135236f-38cd-4cd8-b67f-2972db82ef94
+2025-08-08 19:57:04,693 - INFO - DEBUG: Found user: True
+2025-08-08 19:57:04,693 - INFO - DEBUG: Returning user: 2003sohei@gmail.com
+2025-08-08 19:57:04,693 - INFO - Received genre preferences: {'Technology': 0.6, 'Finance': 2.0, 'Sports': 2.0, 'Politics': 2.0, 'Health': 1.8800000000000008, 'Entertainment': 1.2400000000000002, 'Science': 1.6000000000000005, 'Environment': 2.0, 'Education': 2.0, 'Travel': 1.4800000000000004, 'General': 2.0}
+2025-08-08 19:57:04,693 - INFO - Validating Technology: 0.6 (type: <class 'float'>)
+2025-08-08 19:57:04,693 - INFO - Validating Finance: 2.0 (type: <class 'float'>)
+2025-08-08 19:57:04,693 - INFO - Validating Sports: 2.0 (type: <class 'float'>)
+2025-08-08 19:57:04,693 - INFO - Validating Politics: 2.0 (type: <class 'float'>)
+2025-08-08 19:57:04,693 - INFO - Validating Health: 1.8800000000000008 (type: <class 'float'>)
+2025-08-08 19:57:04,693 - INFO - Validating Entertainment: 1.2400000000000002 (type: <class 'float'>)
+2025-08-08 19:57:04,693 - INFO - Validating Science: 1.6000000000000005 (type: <class 'float'>)
+2025-08-08 19:57:04,693 - INFO - Validating Environment: 2.0 (type: <class 'float'>)
+2025-08-08 19:57:04,693 - INFO - Validating Education: 2.0 (type: <class 'float'>)
+2025-08-08 19:57:04,693 - INFO - Validating Travel: 1.4800000000000004 (type: <class 'float'>)
+2025-08-08 19:57:04,693 - INFO - Validating General: 2.0 (type: <class 'float'>)
+2025-08-08 19:57:04,753 - INFO - Updated profile for user 2003sohei@gmail.com
+INFO:     127.0.0.1:54193 - "PUT /api/user/profile HTTP/1.1" 200 OK
+2025-08-08 19:57:17,406 - INFO - DEBUG: Attempting authentication with token: 8135236f-38cd-4cd8-b67f-2972db82ef94
+2025-08-08 19:57:17,408 - INFO - DEBUG: Attempting authentication with token: 8135236f-38cd-4cd8-b67f-2972db82ef94
+2025-08-08 19:57:17,511 - INFO - DEBUG: Found user: True
+2025-08-08 19:57:17,511 - INFO - DEBUG: Returning user: 2003sohei@gmail.com
+2025-08-08 19:57:17,512 - INFO - DEBUG: Found user: True
+2025-08-08 19:57:17,512 - INFO - DEBUG: Returning user: 2003sohei@gmail.com
+INFO:     127.0.0.1:54196 - "GET /api/audio/deleted HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54197 - "GET /api/user/profile HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54199 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54237 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54239 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54252 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54316 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54338 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54402 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54406 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54446 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54497 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54499 - "GET /api/health HTTP/1.1" 200 OK
+bash: line 1: 85081 Killed: 9               python -m uvicorn server:app --reload --port 8003
