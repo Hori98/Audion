@@ -1,0 +1,11 @@
+INFO:     Will watch for changes in these directories: ['/Users/hori/Desktop/audion_project_final/Audion_Emergent.AI_Demo/backend']
+INFO:     Uvicorn running on http://127.0.0.1:8002 (Press CTRL+C to quit)
+INFO:     Started reloader process [8617] using StatReload
+INFO:     Started server process [8619]
+INFO:     Waiting for application startup.
+2025-08-05 14:21:26,024 - INFO - Connected to MongoDB successfully
+2025-08-05 14:21:26,199 - INFO - Database indexes created successfully
+2025-08-05 14:21:26,212 - INFO - Found 5 existing preset categories
+2025-08-05 14:21:26,212 - INFO - Preset categories initialized successfully
+2025-08-05 14:21:26,212 - INFO - Cleanup tasks completed
+INFO:     Application startup complete.

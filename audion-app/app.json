@@ -1,0 +1,87 @@
+{
+  "expo": {
+    "name": "audion-app",
+    "slug": "audion-app",
+    "version": "1.0.0",
+    "jsEngine": "hermes",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "audionapp",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "associatedDomains": ["applinks:audion.app"],
+      "infoPlist": {
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": true,
+          "NSExceptionDomains": {
+            "localhost": {
+              "NSExceptionAllowsInsecureHTTPLoads": true,
+              "NSExceptionMinimumTLSVersion": "1.0",
+              "NSExceptionRequiresForwardSecrecy": false
+            },
+            "127.0.0.1": {
+              "NSExceptionAllowsInsecureHTTPLoads": true,
+              "NSExceptionMinimumTLSVersion": "1.0",
+              "NSExceptionRequiresForwardSecrecy": false
+            }
+          }
+        },
+        "NSUserActivityTypes": [
+          "INSendMessageIntent",
+          "INSearchForMessagesIntent",
+          "com.audion.create-audio",
+          "com.audion.auto-pick"
+        ],
+        "UIApplicationShortcutItems": [
+          {
+            "UIApplicationShortcutItemType": "com.audion.auto-pick",
+            "UIApplicationShortcutItemTitle": "Auto Pick",
+            "UIApplicationShortcutItemSubtitle": "Create audio from recommended articles",
+            "UIApplicationShortcutItemIconType": "UIApplicationShortcutIconTypePlay"
+          },
+          {
+            "UIApplicationShortcutItemType": "com.audion.feed",
+            "UIApplicationShortcutItemTitle": "Browse Feed",
+            "UIApplicationShortcutItemSubtitle": "Select articles manually",
+            "UIApplicationShortcutItemIconType": "UIApplicationShortcutIconTypeSearch"
+          },
+          {
+            "UIApplicationShortcutItemType": "com.audion.library",
+            "UIApplicationShortcutItemTitle": "My Library",
+            "UIApplicationShortcutItemSubtitle": "Access saved audio",
+            "UIApplicationShortcutItemIconType": "UIApplicationShortcutIconTypeBookmark"
+          }
+        ]
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "edgeToEdgeEnabled": true
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static",
+      "favicon": "./assets/images/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/images/splash-icon.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "backgroundColor": "#ffffff"
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
