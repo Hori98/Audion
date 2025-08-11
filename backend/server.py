@@ -255,6 +255,8 @@ class AudioCreationRequest(BaseModel):
     article_urls: Optional[List[str]] = None  # Add URLs for auto-pick articles
     prompt_style: Optional[str] = "recommended"  # Prompt style: 'strict', 'recommended', 'friendly', 'insight', 'custom'
     custom_prompt: Optional[str] = None  # Custom prompt text if prompt_style is 'custom'
+    voice_language: Optional[str] = "en-US"  # Voice language: 'en-US', 'ja-JP'
+    voice_name: Optional[str] = "alloy"  # OpenAI voice name
 
 class RenameRequest(BaseModel):
     new_title: str
@@ -606,24 +608,37 @@ async def generate_audio_title_with_openai(articles_content: List[str]) -> str:
         logging.error(f"OpenAI title generation error: {e}")
         return f"AI News Summary - {datetime.now().strftime('%Y-%m-%d')}"
 
-def get_system_message_by_prompt_style(prompt_style: str = "recommended", custom_prompt: str = None) -> str:
-    """Get system message based on prompt style"""
-    prompt_styles = {
-        "strict": "正確で事実に基づいたニュース原稿を作成してください。推測や主観は避け、確認された情報のみを報告し、200-250語で簡潔にまとめてください。単一ナレーター向けに、スピーカーラベルや対話形式は使用せず、自然な話し言葉で構成してください。",
-        "recommended": "専門的でクリアなニュース原稿を単一ナレーター向けに作成してください。重要情報を分かりやすく整理し、200-300語で自然な話し言葉で構成してください。スピーカーラベルや対話形式は使用せず、音声ナレーション用の原稿として作成してください。",
-        "friendly": "分かりやすく親しみやすいニュース原稿を作成してください。専門用語は簡単に説明し、背景情報も含めて初心者でも理解できるよう250-350語で丁寧に解説してください。単一ナレーター向けに、スピーカーラベルは使用せず、自然で親しみやすい話し言葉で構成してください。",
-        "insight": "ニュースの背景分析と今後への影響を重視した原稿を作成してください。事実に加えて、専門的な洞察や市場・社会への意味も含め、300-400語で深い理解を提供してください。単一ナレーター向けに、分析的で洞察に富んだ話し言葉で構成してください。",
-        "custom": custom_prompt or "専門的でクリアなニュース原稿を単一ナレーター向けに作成してください。重要情報を分かりやすく整理し、200-300語で自然な話し言葉で構成してください。"
-    }
+def get_system_message_by_prompt_style(prompt_style: str = "recommended", custom_prompt: str = None, voice_language: str = "en-US") -> str:
+    """Get system message based on prompt style and voice language"""
     
-    return prompt_styles.get(prompt_style, prompt_styles["recommended"])
+    # Define prompts by language
+    if voice_language == "ja-JP":
+        # Japanese prompts
+        prompt_styles_ja = {
+            "strict": "正確で事実に基づいた日本語ニュース原稿を作成してください。推測や主観は避け、確認された情報のみを報告し、200-250語で簡潔にまとめてください。単一ナレーター向けに、スピーカーラベルや対話形式は使用せず、自然な日本語の話し言葉で構成してください。",
+            "recommended": "専門的でクリアな日本語ニュース原稿を単一ナレーター向けに作成してください。重要情報を分かりやすく整理し、200-300語で自然な日本語の話し言葉で構成してください。スピーカーラベルや対話形式は使用せず、音声ナレーション用の日本語原稿として作成してください。",
+            "friendly": "分かりやすく親しみやすい日本語ニュース原稿を作成してください。専門用語は簡単に説明し、背景情報も含めて初心者でも理解できるよう250-350語で丁寧に日本語で解説してください。単一ナレーター向けに、スピーカーラベルは使用せず、自然で親しみやすい日本語の話し言葉で構成してください。",
+            "insight": "ニュースの背景分析と今後への影響を重視した日本語原稿を作成してください。事実に加えて、専門的な洞察や市場・社会への意味も含め、300-400語で深い理解を提供する日本語原稿を作成してください。単一ナレーター向けに、分析的で洞察に富んだ日本語の話し言葉で構成してください。",
+            "custom": custom_prompt or "専門的でクリアな日本語ニュース原稿を単一ナレーター向けに作成してください。重要情報を分かりやすく整理し、200-300語で自然な日本語の話し言葉で構成してください。"
+        }
+        return prompt_styles_ja.get(prompt_style, prompt_styles_ja["recommended"])
+    else:
+        # English prompts
+        prompt_styles_en = {
+            "strict": "Create an accurate, fact-based English news script. Avoid speculation or personal opinions, report only verified information, and keep it concise at 200-250 words. Format for a single narrator without speaker labels or dialogue, using natural spoken English.",
+            "recommended": "Create a professional and clear English news script for a single narrator. Organize important information clearly and structure it in 200-300 words using natural spoken English. Do not use speaker labels or dialogue format - create as an audio narration script.",
+            "friendly": "Create an easy-to-understand and approachable English news script. Explain technical terms simply and include background information so beginners can understand, providing a comprehensive explanation in 250-350 words. Format for a single narrator without speaker labels, using natural and friendly spoken English.",
+            "insight": "Create an English news script focusing on background analysis and future implications. Include facts plus professional insights and market/social significance, providing deep understanding in 300-400 words. Format for a single narrator with analytical and insightful spoken English.",
+            "custom": custom_prompt or "Create a professional and clear English news script for a single narrator. Organize important information clearly and structure it in 200-300 words using natural spoken English."
+        }
+        return prompt_styles_en.get(prompt_style, prompt_styles_en["recommended"])
 
-async def summarize_articles_with_openai(articles_content: List[str], prompt_style: str = "recommended", custom_prompt: str = None) -> str:
+async def summarize_articles_with_openai(articles_content: List[str], prompt_style: str = "recommended", custom_prompt: str = None, voice_language: str = "en-US") -> str:
     try:
         if not OPENAI_API_KEY or OPENAI_API_KEY == "your-openai-key":
             return "Breaking news today as technology companies continue to shape our digital landscape. Recent developments include major updates to artificial intelligence systems and significant changes in social media platforms. Industry analysts report growing investments in sustainable technology solutions, while cybersecurity experts emphasize the importance of data protection in an increasingly connected world. These developments signal continued innovation across the tech sector."
         client = openai.AsyncOpenAI(api_key=OPENAI_API_KEY)
-        system_message = get_system_message_by_prompt_style(prompt_style, custom_prompt)
+        system_message = get_system_message_by_prompt_style(prompt_style, custom_prompt, voice_language)
         combined_content = "\n\n--- Article ---\n\n".join(articles_content)
         user_message = f"Please create a single-narrator news script summarizing these articles:\n\n{combined_content}\n\nWrite only the script content without any speaker labels, host names, or dialogue markers."
         chat_completion = await client.chat.completions.create(
@@ -670,15 +685,18 @@ async def upload_to_s3(audio_content: bytes, filename: str) -> str:
         logging.error(f"S3 upload failed: {e}")
         raise e
 
-async def convert_text_to_speech(text: str) -> dict:
+async def convert_text_to_speech(text: str, voice_language: str = "en-US", voice_name: str = "alloy") -> dict:
     try:
         logging.info(f"Starting TTS conversion for text length: {len(text)}")
         logging.info(f"OpenAI API Key available: {bool(OPENAI_API_KEY)}")
         
+        # Log voice settings
+        logging.info(f"Using voice language: {voice_language}, voice: {voice_name}")
+        
         client = openai.AsyncOpenAI(api_key=OPENAI_API_KEY)
         response = await client.audio.speech.create(
             model="tts-1",
-            voice="alloy",
+            voice=voice_name,
             input=text,
         )
         logging.info("OpenAI TTS request completed successfully")
@@ -1409,11 +1427,17 @@ async def create_audio(request: AudioCreationRequest, current_user: User = Depen
         script = await summarize_articles_with_openai(
             articles_content, 
             prompt_style=request.prompt_style or "recommended", 
-            custom_prompt=request.custom_prompt
+            custom_prompt=request.custom_prompt,
+            voice_language=request.voice_language or "en-US"
         )
         generated_title = await generate_audio_title_with_openai(articles_content)
         
-        audio_data = await convert_text_to_speech(script)
+        # Use user's voice language settings for TTS
+        audio_data = await convert_text_to_speech(
+            script, 
+            voice_language=request.voice_language or "en-US",
+            voice_name=request.voice_name or "alloy"
+        )
         audio_url = audio_data['url']
         duration = audio_data['duration']
 
@@ -1934,7 +1958,8 @@ async def create_auto_picked_audio(request: AutoPickRequest, current_user: User 
         script = await summarize_articles_with_openai(
             articles_content, 
             prompt_style="recommended",  # Auto-pick uses default recommended style for now
-            custom_prompt=None
+            custom_prompt=None,
+            voice_language="en-US"  # TODO: Auto-pick should use user's voice language preference
         )
         generated_title = await generate_audio_title_with_openai(articles_content)
         
@@ -2562,7 +2587,8 @@ async def setup_user_onboard(request: OnboardRequest, current_user: User = Depen
                     script = await summarize_articles_with_openai(
                         articles_content, 
                         prompt_style="friendly",  # Welcome audio uses friendly style
-                        custom_prompt=None
+                        custom_prompt=None,
+                        voice_language="en-US"  # TODO: Welcome audio should use user's voice language preference
                     )
                     generated_title = f"Welcome to {first_category['display_name']} News"
                     

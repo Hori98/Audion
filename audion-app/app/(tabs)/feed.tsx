@@ -4,6 +4,7 @@ import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
 import { useAudio } from '../../context/AudioContext';
 import { useTheme } from '../../context/ThemeContext';
+import { useLanguage } from '../../context/LanguageContext';
 import { useTranslation } from 'react-i18next';
 import { format } from 'date-fns';
 import { useFocusEffect } from '@react-navigation/native';
@@ -35,6 +36,7 @@ export default function FeedScreen() {
   const { token } = useAuth();
   const { showMiniPlayer } = useAudio();
   const { theme } = useTheme();
+  const { currentVoiceLanguage } = useLanguage();
   const { t } = useTranslation();
   const { donateShortcut } = useSiriShortcuts();
   const [articles, setArticles] = useState<Article[]>([]);
@@ -743,7 +745,9 @@ export default function FeedScreen() {
           article_titles: articleTitles,
           article_urls: articleUrls,
           prompt_style: savedPromptStyle,
-          custom_prompt: savedCustomPrompt
+          custom_prompt: savedCustomPrompt,
+          voice_language: currentVoiceLanguage,
+          voice_name: "alloy" // Default voice, can be made configurable later
         },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -889,7 +893,9 @@ export default function FeedScreen() {
           article_titles: articleTitles,
           article_urls: articleUrls,
           prompt_style: savedPromptStyle,
-          custom_prompt: savedCustomPrompt
+          custom_prompt: savedCustomPrompt,
+          voice_language: currentVoiceLanguage,
+          voice_name: "alloy"
         },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -1166,7 +1172,9 @@ export default function FeedScreen() {
           article_titles: articleTitles,
           article_urls: articleUrls,
           prompt_style: savedPromptStyle,
-          custom_prompt: savedCustomPrompt
+          custom_prompt: savedCustomPrompt,
+          voice_language: currentVoiceLanguage,
+          voice_name: "alloy"
         },
         { headers: { Authorization: `Bearer ${token}` } }
       );
