@@ -20,7 +20,7 @@ Audion is a full-stack podcast generation application that uses AI to convert RS
 - **Database**: MongoDB with Motor (async driver)
 - **Authentication**: JWT tokens with Bearer authentication
 - **AI Integration**: OpenAI GPT for script generation, Google Text-to-Speech for audio
-- **File Storage**: Vercel Blob for audio file storage
+- **File Storage**: AWS S3 for audio file storage
 - **RSS Processing**: Feedparser for RSS feed ingestion with caching
 
 ## Development Commands
@@ -115,7 +115,7 @@ Users authenticate via email/password, receive JWT tokens, and the token serves 
 RSS feeds are cached for 5 minutes to reduce external API calls. Articles are fetched on-demand when users request them.
 
 ### File Storage
-Audio files are stored using Vercel Blob storage with generated UUIDs for unique identification.
+Audio files are stored using AWS S3 storage with generated UUIDs for unique identification.
 
 ### Testing
 Use `backend_test.py` to run comprehensive API tests including authentication, RSS management, article fetching, and AI-powered audio generation.
@@ -126,7 +126,7 @@ Use `backend_test.py` to run comprehensive API tests including authentication, R
 - **Authentication System**: Complete user registration/login with JWT tokens
 - **RSS Management**: Full CRUD operations for RSS sources with auto-sync
 - **AI Content Generation**: OpenAI integration for script generation with multiple prompt styles
-- **Audio Pipeline**: Google TTS integration with Vercel Blob storage
+- **Audio Pipeline**: Google TTS integration with AWS S3 storage
 - **Basic UI**: Spotify-inspired interface with tab navigation
 
 ### ✅ Phase 2: Advanced Settings & UX (COMPLETED)
@@ -209,7 +209,7 @@ Use `backend_test.py` to run comprehensive API tests including authentication, R
 - **Backend**: FastAPI Python - MVP complete, needs scaling
 - **Database**: MongoDB - Optimized for current load
 - **AI Integration**: OpenAI GPT + Google TTS - Stable
-- **Storage**: Vercel Blob - Suitable for current scale
+- **Storage**: AWS S3 - Suitable for current scale
 - **Deployment**: Development environment only
 
 ### 🎯 Next Immediate Actions
