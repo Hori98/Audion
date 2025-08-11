@@ -97,18 +97,25 @@ export default function ArchiveScreen() {
         params
       });
 
+      // Handle response data safely
+      const responseData = response.data || {};
+      const articlesData = responseData.articles || [];
+
       if (page === 1) {
-        setArticles(response.data.articles);
+        setArticles(articlesData);
       } else {
-        setArticles(prev => [...prev, ...response.data.articles]);
+        setArticles(prev => [...prev, ...articlesData]);
       }
 
       // Update genres from fetched articles
-      const uniqueGenres = [...new Set(response.data.articles.map((article: ArchivedArticle) => article.genre))];
-      setGenres(prev => [...new Set([...prev, ...uniqueGenres])]);
+      if (articlesData && articlesData.length > 0) {
+        const uniqueGenres = [...new Set(articlesData.map((article: ArchivedArticle) => article.genre))].filter(Boolean);
+        setGenres(prev => [...new Set([...prev, ...uniqueGenres])]);
+      }
 
     } catch (error: any) {
       console.error('Error fetching archived articles:', error);
+      setArticles([]); // Set empty array on error
       ErrorHandlingService.showError(error, {
         action: 'fetch_archive',
         source: 'Archive Screen'
@@ -121,10 +128,12 @@ export default function ArchiveScreen() {
       const response = await axios.get(`${API}/archive/folders`, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      setFolders(response.data.folders || []);
+      // Backend returns array directly, not wrapped in folders property
+      const foldersData = Array.isArray(response.data) ? response.data : (response.data.folders || []);
+      setFolders(foldersData);
     } catch (error: any) {
       console.warn('Error fetching archive folders:', error);
-      // Don't show error for folders since it's not critical
+      setFolders([]); // Set empty array on error
     }
   };
 
@@ -133,10 +142,16 @@ export default function ArchiveScreen() {
       const response = await axios.get(`${API}/archive/stats`, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      setStats(response.data);
+      // Handle response data safely with defaults
+      const statsData = response.data || {};
+      setStats({
+        total: statsData.total || 0,
+        favorites: statsData.favorites || 0,
+        unread: statsData.unread || 0
+      });
     } catch (error: any) {
       console.warn('Error fetching archive stats:', error);
-      // Don't show error for stats since it's not critical
+      setStats({ total: 0, favorites: 0, unread: 0 }); // Set defaults on error
     }
   };
 
@@ -154,7 +169,11 @@ export default function ArchiveScreen() {
   };
 
   const handleFilterChange = async () => {
-    await fetchArchivedArticles();
+    try {
+      await fetchArchivedArticles();
+    } catch (error) {
+      console.warn('Filter change error:', error);
+    }
   };
 
   const handleArticlePress = async (url: string, article: ArchivedArticle) => {
@@ -334,7 +353,7 @@ export default function ArchiveScreen() {
             </Text>
           </TouchableOpacity>
           
-          {folders.map((folder) => (
+          {(folders || []).map((folder) => (
             <TouchableOpacity
               key={folder}
               onPress={() => {
@@ -387,7 +406,7 @@ export default function ArchiveScreen() {
             </Text>
           </TouchableOpacity>
           
-          {genres.map((genre) => (
+          {(genres || []).map((genre) => (
             <TouchableOpacity
               key={genre}
               onPress={() => {
@@ -453,7 +472,7 @@ export default function ArchiveScreen() {
           />
         }
       >
-        {articles.length === 0 ? (
+        {!articles || articles.length === 0 ? (
           <View style={styles.emptyState}>
             <Ionicons name="bookmark-outline" size={64} color={theme.textMuted} />
             <Text style={[styles.emptyStateTitle, { color: theme.text }]}>
@@ -466,7 +485,7 @@ export default function ArchiveScreen() {
             </Text>
           </View>
         ) : (
-          articles.map((article) => (
+          (articles || []).map((article) => (
             <View
               key={article.id}
               style={[styles.articleCard, { backgroundColor: theme.surface }]}
