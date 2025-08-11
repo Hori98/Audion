@@ -151,6 +151,13 @@ export default function AppLayout() {
         }}
       />
       <Tabs.Screen
+        name="archive"
+        options={{
+          tabBarLabel: 'Archive',
+          tabBarIcon: ({ color, size }) => <Ionicons name="bookmark-outline" color={color} size={size} />,
+        }}
+      />
+      <Tabs.Screen
         name="discover"
         options={{
           tabBarLabel: 'Discover',

@@ -79,6 +79,12 @@ async def lifespan(app: FastAPI):
             await db.preset_categories.create_index("name", unique=True)
             await db.deleted_audio.create_index([("user_id", 1), ("deleted_at", -1)])
             await db.deleted_audio.create_index("permanent_delete_at")
+            # Archive indexes
+            await db.archived_articles.create_index([("user_id", 1), ("archived_at", -1)])
+            await db.archived_articles.create_index([("user_id", 1), ("article_id", 1)], unique=True)
+            await db.archived_articles.create_index([("user_id", 1), ("is_favorite", -1)])
+            await db.archived_articles.create_index([("user_id", 1), ("read_status", 1)])
+            await db.archived_articles.create_index([("user_id", 1), ("folder", 1)])
             logging.info("Database indexes created successfully")
         except Exception as e:
             logging.error(f"Failed to create database indexes: {e}")
@@ -269,6 +275,47 @@ class MisreadingFeedback(BaseModel):
     reported_text: Optional[str] = None  # What the user heard
     expected_text: Optional[str] = None  # What should have been said
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+# Article Archive Models
+class ArchivedArticle(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    user_id: str
+    article_id: str  # Reference to original article
+    article_title: str
+    article_summary: str
+    article_link: str
+    article_published: str
+    source_name: str
+    article_genre: Optional[str] = None
+    article_content: Optional[str] = None  # Full article content if available
+    
+    # Archive-specific metadata
+    archived_at: datetime = Field(default_factory=datetime.utcnow)
+    tags: List[str] = []  # User-added tags for organization
+    notes: Optional[str] = None  # User notes about the article
+    read_status: str = "unread"  # "unread", "reading", "read"
+    is_favorite: bool = False  # Star/favorite marking
+    folder: Optional[str] = None  # Optional folder organization
+    
+    # Search and filtering helpers
+    search_text: Optional[str] = None  # Combined title + summary for full-text search
+
+class ArchiveRequest(BaseModel):
+    article_id: str
+    article_title: str
+    article_summary: str
+    article_link: str
+    article_published: str
+    source_name: str
+    article_genre: Optional[str] = None
+    article_content: Optional[str] = None
+
+class ArchiveUpdateRequest(BaseModel):
+    tags: Optional[List[str]] = None
+    notes: Optional[str] = None
+    read_status: Optional[str] = None  # "unread", "reading", "read"  
+    is_favorite: Optional[bool] = None
+    folder: Optional[str] = None
 
 class UserProfile(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -3322,6 +3369,233 @@ async def check_audio_limits(
         "error_message": error_message,
         "usage_info": usage_info
     }
+
+# ==================== ARTICLE ARCHIVE ENDPOINTS ====================
+
+@app.post("/api/archive/article", response_model=ArchivedArticle, tags=["Archive"])
+async def archive_article(request: ArchiveRequest, current_user: User = Depends(get_current_user)):
+    """Archive an article for later reading"""
+    try:
+        # Check if article is already archived
+        existing = await db.archived_articles.find_one({
+            "user_id": current_user.id,
+            "article_id": request.article_id
+        })
+        
+        if existing:
+            return ArchivedArticle(**existing)
+        
+        # Create archive entry
+        archived_article = ArchivedArticle(
+            user_id=current_user.id,
+            article_id=request.article_id,
+            article_title=request.article_title,
+            article_summary=request.article_summary,
+            article_link=request.article_link,
+            article_published=request.article_published,
+            source_name=request.source_name,
+            article_genre=request.article_genre,
+            article_content=request.article_content,
+            search_text=f"{request.article_title} {request.article_summary}"
+        )
+        
+        await db.archived_articles.insert_one(archived_article.dict())
+        
+        # Record user interaction for personalization
+        try:
+            await db.user_interactions.insert_one({
+                "user_id": current_user.id,
+                "article_id": request.article_id,
+                "interaction_type": "archived",
+                "genre": request.article_genre or "General",
+                "timestamp": datetime.utcnow(),
+                "metadata": {"source": request.source_name}
+            })
+        except Exception as e:
+            logging.warning(f"Failed to record archive interaction: {e}")
+        
+        logging.info(f"Article archived: {request.article_title} by user {current_user.email}")
+        return archived_article
+        
+    except Exception as e:
+        logging.error(f"Archive article error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/archive/articles", response_model=List[ArchivedArticle], tags=["Archive"])
+async def get_archived_articles(
+    current_user: User = Depends(get_current_user),
+    limit: int = 50,
+    offset: int = 0,
+    folder: Optional[str] = None,
+    read_status: Optional[str] = None,
+    is_favorite: Optional[bool] = None,
+    search: Optional[str] = None,
+    sort_by: str = "archived_at",
+    sort_order: str = "desc"
+):
+    """Get user's archived articles with filtering and search"""
+    try:
+        # Build query filter
+        query_filter = {"user_id": current_user.id}
+        
+        if folder:
+            query_filter["folder"] = folder
+        if read_status:
+            query_filter["read_status"] = read_status
+        if is_favorite is not None:
+            query_filter["is_favorite"] = is_favorite
+        if search:
+            # Text search in title and summary
+            query_filter["$text"] = {"$search": search}
+        
+        # Build sort criteria
+        sort_direction = -1 if sort_order == "desc" else 1
+        sort_criteria = [(sort_by, sort_direction)]
+        
+        # Execute query with pagination
+        cursor = db.archived_articles.find(query_filter).sort(sort_criteria).skip(offset).limit(limit)
+        archived_articles = await cursor.to_list(length=limit)
+        
+        return [ArchivedArticle(**article) for article in archived_articles]
+        
+    except Exception as e:
+        logging.error(f"Get archived articles error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.put("/api/archive/article/{article_id}", response_model=ArchivedArticle, tags=["Archive"])
+async def update_archived_article(
+    article_id: str,
+    request: ArchiveUpdateRequest,
+    current_user: User = Depends(get_current_user)
+):
+    """Update archived article metadata (tags, notes, read status, etc.)"""
+    try:
+        # Build update data
+        update_data = {}
+        if request.tags is not None:
+            update_data["tags"] = request.tags
+        if request.notes is not None:
+            update_data["notes"] = request.notes
+        if request.read_status is not None:
+            update_data["read_status"] = request.read_status
+        if request.is_favorite is not None:
+            update_data["is_favorite"] = request.is_favorite
+        if request.folder is not None:
+            update_data["folder"] = request.folder
+        
+        if not update_data:
+            raise HTTPException(status_code=400, detail="No update data provided")
+        
+        # Update the archived article
+        result = await db.archived_articles.update_one(
+            {"user_id": current_user.id, "article_id": article_id},
+            {"$set": update_data}
+        )
+        
+        if result.matched_count == 0:
+            raise HTTPException(status_code=404, detail="Archived article not found")
+        
+        # Return updated article
+        updated_article = await db.archived_articles.find_one({
+            "user_id": current_user.id,
+            "article_id": article_id
+        })
+        
+        return ArchivedArticle(**updated_article)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Update archived article error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/api/archive/article/{article_id}", tags=["Archive"])
+async def unarchive_article(article_id: str, current_user: User = Depends(get_current_user)):
+    """Remove article from archive"""
+    try:
+        result = await db.archived_articles.delete_one({
+            "user_id": current_user.id,
+            "article_id": article_id
+        })
+        
+        if result.deleted_count == 0:
+            raise HTTPException(status_code=404, detail="Archived article not found")
+        
+        # Record interaction
+        try:
+            await db.user_interactions.insert_one({
+                "user_id": current_user.id,
+                "article_id": article_id,
+                "interaction_type": "unarchived",
+                "genre": "General",  # We don't have genre info when unarchiving
+                "timestamp": datetime.utcnow()
+            })
+        except Exception as e:
+            logging.warning(f"Failed to record unarchive interaction: {e}")
+        
+        return {"message": "Article removed from archive successfully"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Unarchive article error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/archive/stats", tags=["Archive"])
+async def get_archive_stats(current_user: User = Depends(get_current_user)):
+    """Get archive statistics and insights"""
+    try:
+        # Total archived articles
+        total_count = await db.archived_articles.count_documents({"user_id": current_user.id})
+        
+        # Count by read status
+        read_stats = await db.archived_articles.aggregate([
+            {"$match": {"user_id": current_user.id}},
+            {"$group": {"_id": "$read_status", "count": {"$sum": 1}}}
+        ]).to_list(length=10)
+        
+        # Count by folder
+        folder_stats = await db.archived_articles.aggregate([
+            {"$match": {"user_id": current_user.id}},
+            {"$group": {"_id": "$folder", "count": {"$sum": 1}}}
+        ]).to_list(length=20)
+        
+        # Count favorites
+        favorites_count = await db.archived_articles.count_documents({
+            "user_id": current_user.id,
+            "is_favorite": True
+        })
+        
+        # Recent activity (last 7 days)
+        week_ago = datetime.utcnow() - timedelta(days=7)
+        recent_count = await db.archived_articles.count_documents({
+            "user_id": current_user.id,
+            "archived_at": {"$gte": week_ago}
+        })
+        
+        return {
+            "total_articles": total_count,
+            "favorites_count": favorites_count,
+            "recent_week_count": recent_count,
+            "read_status_breakdown": {item["_id"] or "unread": item["count"] for item in read_stats},
+            "folder_breakdown": {item["_id"] or "unfiled": item["count"] for item in folder_stats}
+        }
+        
+    except Exception as e:
+        logging.error(f"Get archive stats error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/archive/folders", response_model=List[str], tags=["Archive"])
+async def get_archive_folders(current_user: User = Depends(get_current_user)):
+    """Get list of all folders used in user's archive"""
+    try:
+        folders = await db.archived_articles.distinct("folder", {"user_id": current_user.id})
+        # Remove null/empty folders and return sorted list
+        return sorted([f for f in folders if f])
+        
+    except Exception as e:
+        logging.error(f"Get archive folders error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 # Lifespan events now handled above
 

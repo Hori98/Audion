@@ -65,6 +65,7 @@ export default function FeedScreen() {
   const [fabRotation] = useState(new Animated.Value(0)); // FAB animation
   const [feedLikedArticles, setFeedLikedArticles] = useState<Set<string>>(new Set());
   const [feedDislikedArticles, setFeedDislikedArticles] = useState<Set<string>>(new Set());
+  const [archivedArticles, setArchivedArticles] = useState<Set<string>>(new Set()); // Track archived articles
   const [readingHistory, setReadingHistory] = useState<Map<string, Date>>(new Map()); // Track reading history by article ID
 
   const genres = [
@@ -204,6 +205,8 @@ export default function FeedScreen() {
         if (token && token !== '') {
           await loadCustomPrompts();
           await loadGlobalSelection();
+          await loadArchivedArticles();
+          await loadReadingHistory();
           // Force refresh sources to get latest changes from sources screen
           await fetchSources(true);
           await fetchArticles();
@@ -252,6 +255,22 @@ export default function FeedScreen() {
     } catch (error) {
       console.error('Error loading global selection:', error);
       return [];
+    }
+  };
+
+  // Load archived articles from backend
+  const loadArchivedArticles = async () => {
+    try {
+      const response = await axios.get(`${API}/archive/articles`, {
+        headers: { Authorization: `Bearer ${token}` },
+        params: { page: 1, limit: 1000 } // Get all archived articles for quick lookup
+      });
+      
+      const archivedIds = new Set(response.data.articles.map((article: any) => article.original_article_id));
+      setArchivedArticles(archivedIds);
+    } catch (error) {
+      console.warn('Error loading archived articles:', error);
+      // Don't block app if archive loading fails
     }
   };
 
@@ -1229,6 +1248,69 @@ export default function FeedScreen() {
     }
   };
 
+  // Archive/unarchive article
+  const handleArchiveArticle = async (article: Article) => {
+    try {
+      const isCurrentlyArchived = archivedArticles.has(article.id);
+      
+      if (isCurrentlyArchived) {
+        // Unarchive - remove from archive
+        await axios.delete(
+          `${API}/archive/article/${article.id}`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        
+        setArchivedArticles(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(article.id);
+          return newSet;
+        });
+        
+        // Show feedback
+        Alert.alert('Success', 'Article removed from archive');
+      } else {
+        // Archive article
+        await axios.post(
+          `${API}/archive/article`,
+          {
+            original_article_id: article.id,
+            title: article.title,
+            url: article.link,
+            summary: article.summary,
+            source_name: article.source_name || article.source || 'Unknown',
+            published_at: article.published || article.published_at || new Date().toISOString(),
+            genre: article.genre || 'General'
+          },
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        
+        setArchivedArticles(prev => new Set([...prev, article.id]));
+        
+        // Show feedback
+        Alert.alert('Success', 'Article saved to archive');
+      }
+    } catch (error: any) {
+      console.error('Error archiving article:', error);
+      
+      // Revert optimistic update on error
+      setArchivedArticles(prev => {
+        const newSet = new Set(prev);
+        if (archivedArticles.has(article.id)) {
+          newSet.add(article.id);
+        } else {
+          newSet.delete(article.id);
+        }
+        return newSet;
+      });
+      
+      ErrorHandlingService.showError(error, {
+        action: 'archive_article',
+        source: 'Feed Screen',
+        details: { articleTitle: article.title }
+      });
+    }
+  };
+
 
 
 
@@ -1591,6 +1673,26 @@ export default function FeedScreen() {
                       />
                     </TouchableOpacity>
                   )}
+                  
+                  {/* Archive Button */}
+                  <TouchableOpacity 
+                    onPress={() => handleArchiveArticle(article)}
+                    style={[
+                      styles.feedArchiveButton, 
+                      { backgroundColor: archivedArticles.has(article.id) ? theme.secondary : theme.accent },
+                      archivedArticles.has(article.id) && styles.activeButton
+                    ]}
+                    accessibilityRole="button"
+                    accessibilityLabel={archivedArticles.has(article.id) ? `Remove article from archive: ${article.title}` : `Save article to archive: ${article.title}`}
+                    accessibilityHint={archivedArticles.has(article.id) ? "Tap to remove this article from your archive" : "Tap to save this article to your archive for later reading"}
+                    accessibilityState={{ selected: archivedArticles.has(article.id) }}
+                  >
+                    <Ionicons 
+                      name={archivedArticles.has(article.id) ? "bookmark" : "bookmark-outline"} 
+                      size={14} 
+                      color={archivedArticles.has(article.id) ? theme.primary : theme.textMuted}
+                    />
+                  </TouchableOpacity>
                   
                   <TouchableOpacity 
                     onPress={() => handleFeedLikeArticle(article)}
@@ -2267,6 +2369,14 @@ const styles = StyleSheet.create({
     marginRight: 4,
   },
   feedLikeButton: {
+    padding: 4,
+    borderRadius: 14,
+    width: 28,
+    height: 28,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  feedArchiveButton: {
     padding: 4,
     borderRadius: 14,
     width: 28,
