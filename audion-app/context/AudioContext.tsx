@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { Audio } from 'expo-av';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import DownloadService, { DownloadProgress } from '../services/DownloadService';
 
 interface AudioItem {
   id: string;
@@ -14,7 +15,23 @@ interface AudioItem {
     title: string;
     start_time: number;
     end_time: number;
+    original_url?: string; // Added for source linking
   }>;
+  // 🆕 ダウンロード機能追加
+  download_status?: 'none' | 'downloading' | 'downloaded' | 'failed';
+  local_file_path?: string; // ローカルファイルパス
+  download_progress?: number; // 0-100
+  file_size?: number; // バイト単位
+}
+
+interface CurrentChapter {
+  index: number;
+  chapter: {
+    title: string;
+    start_time: number;
+    end_time: number;
+    original_url?: string;
+  };
 }
 
 interface AudioContextType {
@@ -27,10 +44,17 @@ interface AudioContextType {
   sound: Audio.Sound | null;
   playbackRate: number; // Playback speed (0.7, 1.0, 1.3, 1.5)
   
+  // Chapter navigation
+  currentChapter: CurrentChapter | null;
+  
   // UI state
   showMiniPlayer: boolean;
   showFullScreenPlayer: boolean;
   openDirectToScript: boolean;
+  
+  // 🆕 Download state
+  downloadProgress: Map<string, number>; // audioId -> progress (0-100)
+  downloadingAudios: Set<string>; // Currently downloading audio IDs
   
   // Actions
   playAudio: (audioItem: AudioItem) => Promise<void>;
@@ -40,6 +64,17 @@ interface AudioContextType {
   seekTo: (position: number) => Promise<void>;
   setPlaybackRate: (rate: number) => Promise<void>;
   setShowFullScreenPlayer: (show: boolean, openToScript?: boolean) => void;
+  
+  // Chapter actions
+  getCurrentChapter: () => CurrentChapter | null;
+  openCurrentChapterSource: () => Promise<void>;
+  
+  // 🆕 Download actions
+  downloadAudio: (audioItem: AudioItem) => Promise<void>;
+  removeDownload: (audioId: string) => Promise<void>;
+  isAudioDownloaded: (audioId: string) => Promise<boolean>;
+  getDownloadProgress: (audioId: string) => number;
+  isAudioDownloading: (audioId: string) => boolean;
   
   // Cleanup
   cleanupAudio: (audioId: string) => void;
@@ -62,8 +97,39 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   const [showFullScreenPlayer, setShowFullScreenPlayer] = useState(false);
   const [openDirectToScript, setOpenDirectToScript] = useState(false);
   const [playStartTime, setPlayStartTime] = useState<number | null>(null);
+  const [currentChapter, setCurrentChapter] = useState<CurrentChapter | null>(null);
+  
+  // 🆕 Download states
+  const [downloadProgress, setDownloadProgress] = useState<Map<string, number>>(new Map());
+  const [downloadingAudios, setDownloadingAudios] = useState<Set<string>>(new Set());
   
   const API = process.env.EXPO_PUBLIC_BACKEND_URL ? `${process.env.EXPO_PUBLIC_BACKEND_URL}/api` : 'http://localhost:8000/api';
+
+  // Helper function to update current chapter based on playback position
+  const updateCurrentChapter = (audioItem: AudioItem, currentPosition: number) => {
+    if (!audioItem.chapters || audioItem.chapters.length === 0) {
+      setCurrentChapter(null);
+      return;
+    }
+
+    // Convert position from milliseconds to seconds for comparison
+    const positionInSeconds = currentPosition / 1000;
+    
+    // Find the current chapter
+    const activeChapter = audioItem.chapters.find((chapter, index) => {
+      return positionInSeconds >= chapter.start_time && positionInSeconds <= chapter.end_time;
+    });
+
+    if (activeChapter) {
+      const chapterIndex = audioItem.chapters.indexOf(activeChapter);
+      setCurrentChapter({
+        index: chapterIndex,
+        chapter: activeChapter
+      });
+    } else {
+      setCurrentChapter(null);
+    }
+  };
 
   // Cleanup on unmount
   useEffect(() => {
@@ -75,10 +141,16 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const playAudio = async (audioItem: AudioItem) => {
-    console.log('AudioContext: Playing audio:', audioItem.title);
+    console.log('AudioContext: Playing audio with local support:', audioItem.title);
     setIsLoading(true);
 
     try {
+      // Check if we have a local file first
+      const localPath = await DownloadService.getLocalPath(audioItem.id);
+      const audioUri = localPath || audioItem.audio_url;
+      
+      console.log('🎵 Audio source:', localPath ? 'Local file' : 'Remote URL', audioUri);
+
       // Record previous audio completion if switching
       if (currentAudio && sound && currentAudio.id !== audioItem.id) {
         const completionPct = duration > 0 ? (position / duration) * 100 : 0;
@@ -97,24 +169,29 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
         setSound(null);
       }
 
-      // Create new sound
+      // Create new sound with local or remote URI
       const { sound: newSound } = await Audio.Sound.createAsync(
-        { uri: audioItem.audio_url },
+        { uri: audioUri },
         { shouldPlay: true }
       );
 
       // Set up status listener with enhanced tracking
       newSound.setOnPlaybackStatusUpdate((status) => {
         if (status.isLoaded) {
-          setPosition(status.positionMillis || 0);
+          const currentPos = status.positionMillis || 0;
+          setPosition(currentPos);
           setDuration(status.durationMillis || audioItem.duration * 1000);
           setIsPlaying(status.isPlaying);
+
+          // Update current chapter based on position
+          updateCurrentChapter(audioItem, currentPos);
 
           if (status.didJustFinish) {
             // Record completion
             setTimeout(() => recordInteraction('completed'), 50);
             setIsPlaying(false);
             setPosition(0);
+            setCurrentChapter(null);
             setShowMiniPlayer(false);
             newSound.unloadAsync();
             setSound(null);
@@ -129,9 +206,67 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       setIsPlaying(true);
       setShowMiniPlayer(true);
       setDuration(audioItem.duration * 1000);
-      setPlayStartTime(Date.now()); // Record start time for duration tracking
+      setPlayStartTime(Date.now());
+
+      // Record play interaction with source info
+      await recordInteraction('play_started', { 
+        audio_id: audioItem.id,
+        source: localPath ? 'local' : 'remote'
+      });
+
     } catch (error) {
       console.error('Error playing audio:', error);
+      
+      // If local file failed, try remote as fallback
+      if (localPath && error) {
+        console.log('🔄 Local playback failed, trying remote fallback...');
+        try {
+          const { sound: fallbackSound } = await Audio.Sound.createAsync(
+            { uri: audioItem.audio_url },
+            { shouldPlay: true }
+          );
+          
+          fallbackSound.setOnPlaybackStatusUpdate((status) => {
+            if (status.isLoaded) {
+              const currentPos = status.positionMillis || 0;
+              setPosition(currentPos);
+              setDuration(status.durationMillis || audioItem.duration * 1000);
+              setIsPlaying(status.isPlaying);
+              updateCurrentChapter(audioItem, currentPos);
+              
+              if (status.didJustFinish) {
+                setTimeout(() => recordInteraction('completed'), 50);
+                setIsPlaying(false);
+                setPosition(0);
+                setCurrentChapter(null);
+                setShowMiniPlayer(false);
+                fallbackSound.unloadAsync();
+                setSound(null);
+                setCurrentAudio(null);
+                setPlayStartTime(null);
+              }
+            }
+          });
+          
+          setSound(fallbackSound);
+          setCurrentAudio(audioItem);
+          setIsPlaying(true);
+          setShowMiniPlayer(true);
+          setDuration(audioItem.duration * 1000);
+          setPlayStartTime(Date.now());
+          
+          await recordInteraction('play_started', { 
+            audio_id: audioItem.id,
+            source: 'remote_fallback'
+          });
+          
+        } catch (fallbackError) {
+          console.error('❌ Both local and remote playback failed:', fallbackError);
+          throw fallbackError;
+        }
+      } else {
+        throw error;
+      }
     } finally {
       setIsLoading(false);
     }
@@ -175,6 +310,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     setIsPlaying(false);
     setPosition(0);
     setCurrentAudio(null);
+    setCurrentChapter(null);
     setShowMiniPlayer(false);
     setShowFullScreenPlayer(false);
     setPlayStartTime(null);
@@ -275,6 +411,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       setIsPlaying(false);
       setPosition(0);
       setDuration(0);
+      setCurrentChapter(null);
       setShowMiniPlayer(false);
       setShowFullScreenPlayer(false);
       setPlayStartTime(null);
@@ -345,6 +482,151 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     setOpenDirectToScript(openToScript);
   };
 
+  const getCurrentChapter = (): CurrentChapter | null => {
+    return currentChapter;
+  };
+
+  const openCurrentChapterSource = async () => {
+    if (!currentChapter || !currentChapter.chapter.original_url) {
+      console.warn('No current chapter or source URL available');
+      return;
+    }
+
+    try {
+      // Import Linking dynamically to avoid import issues
+      const { Linking } = await import('react-native');
+      
+      // Record interaction for analytics
+      await recordInteraction('chapter_source_opened', {
+        chapter_index: currentChapter.index,
+        chapter_title: currentChapter.chapter.title,
+        source_url: currentChapter.chapter.original_url
+      });
+
+      // Open the source URL
+      const supported = await Linking.canOpenURL(currentChapter.chapter.original_url);
+      if (supported) {
+        await Linking.openURL(currentChapter.chapter.original_url);
+      } else {
+        console.error('Cannot open URL:', currentChapter.chapter.original_url);
+      }
+    } catch (error) {
+      console.error('Error opening chapter source:', error);
+    }
+  };
+
+  // 🆕 Download functions
+  const downloadAudio = async (audioItem: AudioItem) => {
+    try {
+      console.log('🔽 Starting download for:', audioItem.title);
+      
+      // Add to downloading set
+      setDownloadingAudios(prev => new Set([...prev, audioItem.id]));
+      
+      // Initialize progress
+      setDownloadProgress(prev => new Map([...prev, [audioItem.id, 0]]));
+      
+      // Record interaction
+      await recordInteraction('download_started', { audio_id: audioItem.id });
+      
+      // Start download with progress callback
+      await DownloadService.downloadAudio(
+        audioItem.id,
+        audioItem.audio_url,
+        audioItem.title,
+        (progress: DownloadProgress) => {
+          setDownloadProgress(prev => new Map([...prev, [audioItem.id, progress.progress]]));
+          
+          if (progress.status === 'completed') {
+            setDownloadingAudios(prev => {
+              const newSet = new Set(prev);
+              newSet.delete(audioItem.id);
+              return newSet;
+            });
+            
+            // Record successful download
+            recordInteraction('download_completed', { 
+              audio_id: audioItem.id,
+              file_size: progress.totalBytes 
+            });
+            
+            console.log('✅ Download completed:', audioItem.title);
+          } else if (progress.status === 'failed') {
+            setDownloadingAudios(prev => {
+              const newSet = new Set(prev);
+              newSet.delete(audioItem.id);
+              return newSet;
+            });
+            
+            // Record failed download
+            recordInteraction('download_failed', { audio_id: audioItem.id });
+            
+            console.error('❌ Download failed:', audioItem.title);
+          }
+        }
+      );
+      
+    } catch (error) {
+      console.error('❌ Download error:', error);
+      
+      // Clean up on error
+      setDownloadingAudios(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(audioItem.id);
+        return newSet;
+      });
+      
+      setDownloadProgress(prev => {
+        const newMap = new Map(prev);
+        newMap.delete(audioItem.id);
+        return newMap;
+      });
+      
+      // Record failed download
+      await recordInteraction('download_failed', { 
+        audio_id: audioItem.id,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+      
+      throw error;
+    }
+  };
+
+  const removeDownload = async (audioId: string) => {
+    try {
+      console.log('🗑️ Removing download for:', audioId);
+      
+      await DownloadService.removeDownload(audioId);
+      
+      // Clean up state
+      setDownloadProgress(prev => {
+        const newMap = new Map(prev);
+        newMap.delete(audioId);
+        return newMap;
+      });
+      
+      // Record interaction
+      await recordInteraction('download_removed', { audio_id: audioId });
+      
+      console.log('✅ Download removed successfully');
+    } catch (error) {
+      console.error('❌ Failed to remove download:', error);
+      throw error;
+    }
+  };
+
+  const isAudioDownloaded = async (audioId: string): Promise<boolean> => {
+    return await DownloadService.isAudioDownloaded(audioId);
+  };
+
+  const getDownloadProgress = (audioId: string): number => {
+    return downloadProgress.get(audioId) || 0;
+  };
+
+  const isAudioDownloading = (audioId: string): boolean => {
+    return downloadingAudios.has(audioId);
+  };
+
   const value: AudioContextType = {
     currentAudio,
     isPlaying,
@@ -353,9 +635,13 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     duration,
     sound,
     playbackRate,
+    currentChapter,
     showMiniPlayer,
     showFullScreenPlayer,
     openDirectToScript,
+    // 🆕 Download states
+    downloadProgress,
+    downloadingAudios,
     playAudio,
     pauseAudio,
     resumeAudio,
@@ -363,6 +649,14 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     seekTo,
     setPlaybackRate,
     setShowFullScreenPlayer: setShowFullScreenPlayerWithScript,
+    getCurrentChapter,
+    openCurrentChapterSource,
+    // 🆕 Download actions
+    downloadAudio,
+    removeDownload,
+    isAudioDownloaded,
+    getDownloadProgress,
+    isAudioDownloading,
     cleanupAudio,
     recordInteraction,
   };

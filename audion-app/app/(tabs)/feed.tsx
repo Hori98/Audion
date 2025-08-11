@@ -4,15 +4,16 @@ import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
 import { useAudio } from '../../context/AudioContext';
 import { useTheme } from '../../context/ThemeContext';
+import { useTranslation } from 'react-i18next';
 import { format } from 'date-fns';
 import { useFocusEffect } from '@react-navigation/native';
 import * as WebBrowser from 'expo-web-browser';
 import { Ionicons } from '@expo/vector-icons'; // Added import
-import { useRouter } from 'expo-router';
 import { useSiriShortcuts } from '../../hooks/useSiriShortcuts';
 import AudioCreationSuccessModal from '../../components/AudioCreationSuccessModal';
 import LoadingIndicator from '../../components/LoadingIndicator';
 import LoadingButton from '../../components/LoadingButton';
+import PlanUpgradeModal from '../../components/PlanUpgradeModal';
 import CacheService from '../../services/CacheService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ErrorHandlingService } from '../../services/ErrorHandlingService';
@@ -34,19 +35,22 @@ export default function FeedScreen() {
   const { token } = useAuth();
   const { showMiniPlayer } = useAudio();
   const { theme } = useTheme();
-  const router = useRouter();
+  const { t } = useTranslation();
   const { donateShortcut } = useSiriShortcuts();
   const [articles, setArticles] = useState<Article[]>([]);
   const [sources, setSources] = useState<RSSSource[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedGenre, setSelectedGenre] = useState('All');
   const [selectedSource, setSelectedSource] = useState('All');
+  const [selectedReadingFilter, setSelectedReadingFilter] = useState('All Articles');
   const [selectedArticleIds, setSelectedArticleIds] = useState<string[]>([]); // Global selection state
   const [allArticlesMap, setAllArticlesMap] = useState<Map<string, Article>>(new Map()); // Track all articles across filters
   const [normalizedArticlesMap, setNormalizedArticlesMap] = useState<Map<string, Article>>(new Map()); // Track articles by normalized ID
   const [creatingAudio, setCreatingAudio] = useState(false); // Added state
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [createdAudio, setCreatedAudio] = useState<any>(null);
+  const [showPlanUpgradeModal, setShowPlanUpgradeModal] = useState(false);
+  const [planUpgradeInfo, setPlanUpgradeInfo] = useState<{errorMessage?: string; usageInfo?: any}>({});
   const [refreshing, setRefreshing] = useState(false);
   // Removed: showSelectedModal state
   const [uiUpdateTrigger, setUiUpdateTrigger] = useState(0); // Force UI updates
@@ -59,10 +63,15 @@ export default function FeedScreen() {
   const [fabRotation] = useState(new Animated.Value(0)); // FAB animation
   const [feedLikedArticles, setFeedLikedArticles] = useState<Set<string>>(new Set());
   const [feedDislikedArticles, setFeedDislikedArticles] = useState<Set<string>>(new Set());
+  const [readingHistory, setReadingHistory] = useState<Map<string, Date>>(new Map()); // Track reading history by article ID
 
   const genres = [
     'All', 'Technology', 'Finance', 'Sports', 'Politics', 'Health',
     'Entertainment', 'Science', 'Environment', 'Education', 'Travel', 'General'
+  ];
+
+  const readingFilters = [
+    'All Articles', 'Unread', 'Read', 'This Week\'s Reads'
   ];
 
   const [customPrompts, setCustomPrompts] = useState<any[]>([]);
@@ -110,6 +119,7 @@ export default function FeedScreen() {
       console.error('Error saving custom prompts:', error);
     }
   };
+
 
   // Add new custom prompt
   const addCustomPrompt = async () => {
@@ -217,10 +227,10 @@ export default function FeedScreen() {
     handleFilterChange();
   }, [selectedGenre, selectedSource]);
 
-  // Effect to force UI update when selection changes
+  // Effect to force UI update when selection or filters change
   useEffect(() => {
-    // Force component re-render when selection changes
-  }, [selectedArticleIds, articles, uiUpdateTrigger]);
+    // Force component re-render when selection or filters change
+  }, [selectedArticleIds, articles, uiUpdateTrigger, selectedReadingFilter]);
 
   // Load global selection state from AsyncStorage
   const loadGlobalSelection = async () => {
@@ -243,6 +253,67 @@ export default function FeedScreen() {
     }
   };
 
+  // Load reading history from AsyncStorage
+  const loadReadingHistory = async () => {
+    try {
+      const savedHistory = await AsyncStorage.getItem('reading_history');
+      if (savedHistory) {
+        const parsed = JSON.parse(savedHistory);
+        // Convert string dates back to Date objects
+        const historyMap = new Map();
+        Object.entries(parsed).forEach(([articleId, dateStr]) => {
+          historyMap.set(articleId, new Date(dateStr as string));
+        });
+        setReadingHistory(historyMap);
+      }
+    } catch (error) {
+      console.error('Error loading reading history:', error);
+    }
+  };
+
+  // Save reading history to AsyncStorage
+  const saveReadingHistory = async (historyMap: Map<string, Date>) => {
+    try {
+      const historyObj = Object.fromEntries(
+        Array.from(historyMap.entries()).map(([key, value]) => [key, value.toISOString()])
+      );
+      await AsyncStorage.setItem('reading_history', JSON.stringify(historyObj));
+    } catch (error) {
+      console.error('Error saving reading history:', error);
+    }
+  };
+
+  // Record article reading
+  const recordArticleReading = async (article: Article) => {
+    try {
+      const readAt = new Date();
+      const newHistory = new Map(readingHistory);
+      newHistory.set(article.id, readAt);
+      setReadingHistory(newHistory);
+      await saveReadingHistory(newHistory);
+
+      // Also send to backend for persistence and analytics
+      axios.post(
+        `${API}/reading-history`,
+        {
+          article_id: article.id,
+          article_normalized_id: article.normalizedId,
+          article_title: article.title,
+          article_url: article.link,
+          source_name: article.source_name || article.source || 'Unknown',
+          genre: article.genre || 'General',
+          read_at: readAt.toISOString()
+        },
+        { headers: { Authorization: `Bearer ${token}` } }
+      ).catch(error => {
+        // Don't block UI if backend fails
+        console.warn('Failed to sync reading history to backend:', error);
+      });
+    } catch (error) {
+      console.error('Error recording article reading:', error);
+    }
+  };
+
   // Generate normalized ID for article deduplication
   const generateNormalizedId = (article: Article): string => {
     // Use title + source + published date to create a unique identifier
@@ -255,6 +326,43 @@ export default function FeedScreen() {
       hash = hash & hash; // Convert to 32-bit integer
     }
     return `norm_${Math.abs(hash).toString(36)}`;
+  };
+
+  // Check if article was read this week
+  const isReadThisWeek = (articleId: string): boolean => {
+    const readDate = readingHistory.get(articleId);
+    if (!readDate) return false;
+    
+    const now = new Date();
+    const weekStart = new Date(now);
+    weekStart.setDate(now.getDate() - now.getDay()); // Start of current week (Sunday)
+    weekStart.setHours(0, 0, 0, 0);
+    
+    return readDate >= weekStart;
+  };
+
+  // Filter articles based on reading status
+  const getFilteredArticles = (): Article[] => {
+    let filteredArticles = articles;
+
+    // Apply reading filter
+    switch (selectedReadingFilter) {
+      case 'Unread':
+        filteredArticles = articles.filter(article => !readingHistory.has(article.id));
+        break;
+      case 'Read':
+        filteredArticles = articles.filter(article => readingHistory.has(article.id));
+        break;
+      case 'This Week\'s Reads':
+        filteredArticles = articles.filter(article => isReadThisWeek(article.id));
+        break;
+      case 'All Articles':
+      default:
+        filteredArticles = articles;
+        break;
+    }
+
+    return filteredArticles;
   };
 
   // Normalize articles to prevent duplicates across filters
@@ -440,9 +548,14 @@ export default function FeedScreen() {
     setRefreshing(false);
   };
 
-  const handleArticlePress = async (url: string) => {
+  const handleArticlePress = async (url: string, article?: Article) => {
     if (url) {
       try {
+        // Record reading history before opening article
+        if (article) {
+          await recordArticleReading(article);
+        }
+        
         await WebBrowser.openBrowserAsync(url);
       } catch (error: any) {
         console.error('Error opening article:', error);
@@ -667,7 +780,18 @@ export default function FeedScreen() {
     } catch (error: any) {
       console.error('Error creating audio:', error);
       
-      // Handle limit exceeded errors
+      // Handle 429 rate limit error with plan upgrade modal
+      if (error.response?.status === 429) {
+        const errorData = error.response.data;
+        setPlanUpgradeInfo({
+          errorMessage: errorData.message || '音声作成の制限に達しました',
+          usageInfo: errorData.usage_info
+        });
+        setShowPlanUpgradeModal(true);
+        return;
+      }
+      
+      // Handle other limit exceeded errors
       if (error.response?.status === 403 && error.response?.data?.type === 'limit_exceeded') {
         const errorData = error.response.data;
         Alert.alert(
@@ -691,7 +815,7 @@ export default function FeedScreen() {
     } finally {
       setCreatingAudio(false);
     }
-  };
+  };;
 
   const handleAutoPickFromFeed = async () => {
     if (articles.length === 0) {
@@ -939,6 +1063,167 @@ export default function FeedScreen() {
     }
   };
 
+  // Create audio from a single read article
+  const handleCreateSingleAudio = async (article: Article) => {
+    if (creatingAudio) {
+      return; // Prevent double-clicking
+    }
+
+    setCreatingAudio(true);
+    try {
+      // Load prompt settings
+      const savedPromptStyle = await AsyncStorage.getItem('unified_prompt_style') || 'standard';
+      const savedCustomPrompt = await AsyncStorage.getItem('unified_custom_prompt') || '';
+
+      const response = await axios.post(
+        `${API}/audio/create`,
+        {
+          article_ids: [article.id],
+          article_titles: [article.title],
+          article_urls: [article.link],
+          prompt_style: savedPromptStyle,
+          custom_prompt: savedCustomPrompt
+        },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      // Record interaction for personalization
+      try {
+        await axios.post(
+          `${API}/user-interaction`,
+          {
+            article_id: article.id,
+            interaction_type: 'created_single_audio',
+            genre: article.genre || 'General'
+          },
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+      } catch (interactionError) {
+        console.warn('Failed to record single audio interaction:', interactionError);
+      }
+
+      // Show success modal
+      setCreatedAudio(response.data);
+      setShowSuccessModal(true);
+      
+      // Donate shortcut for single audio creation
+      donateShortcut('create-single-audio');
+    } catch (error: any) {
+      console.error('Error creating single audio:', error);
+      
+      // Handle limit exceeded errors
+      if (error.response?.status === 403 && error.response?.data?.type === 'limit_exceeded') {
+        const errorData = error.response.data;
+        Alert.alert(
+          'Limit Reached', 
+          errorData.message,
+          [
+            { text: 'OK', style: 'default' },
+            { text: 'View Usage', onPress: () => {
+              console.log('Usage info:', errorData.usage_info);
+            }}
+          ]
+        );
+      } else {
+        ErrorHandlingService.showError(error, { 
+          action: 'create_single_audio',
+          source: 'Feed Screen - Read Article',
+          details: { articleTitle: article.title }
+        });
+      }
+    } finally {
+      setCreatingAudio(false);
+    }
+  };
+
+  // Create audio from this week's read articles
+  const handleCreateWeeklyAudio = async () => {
+    if (creatingAudio) {
+      return; // Prevent double-clicking
+    }
+
+    const weeklyArticles = articles.filter(article => isReadThisWeek(article.id));
+    
+    if (weeklyArticles.length === 0) {
+      Alert.alert('No Weekly Reads', 'No articles have been read this week.');
+      return;
+    }
+
+    setCreatingAudio(true);
+    try {
+      // Load prompt settings
+      const savedPromptStyle = await AsyncStorage.getItem('unified_prompt_style') || 'standard';
+      const savedCustomPrompt = await AsyncStorage.getItem('unified_custom_prompt') || '';
+
+      const articleIds = weeklyArticles.map(article => article.id);
+      const articleTitles = weeklyArticles.map(article => article.title);
+      const articleUrls = weeklyArticles.map(article => article.link);
+
+      const response = await axios.post(
+        `${API}/audio/create`,
+        {
+          article_ids: articleIds,
+          article_titles: articleTitles,
+          article_urls: articleUrls,
+          prompt_style: savedPromptStyle,
+          custom_prompt: savedCustomPrompt
+        },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      // Record interactions for all articles
+      for (const article of weeklyArticles) {
+        try {
+          await axios.post(
+            `${API}/user-interaction`,
+            {
+              article_id: article.id,
+              interaction_type: 'created_weekly_audio',
+              genre: article.genre || 'General'
+            },
+            { headers: { Authorization: `Bearer ${token}` } }
+          );
+        } catch (interactionError) {
+          console.warn('Failed to record weekly audio interaction:', interactionError);
+        }
+      }
+
+      // Show success modal
+      setCreatedAudio(response.data);
+      setShowSuccessModal(true);
+      
+      donateShortcut('create-weekly-audio');
+    } catch (error: any) {
+      console.error('Error creating weekly audio:', error);
+      
+      // Handle limit exceeded errors
+      if (error.response?.status === 403 && error.response?.data?.type === 'limit_exceeded') {
+        const errorData = error.response.data;
+        Alert.alert(
+          'Limit Reached', 
+          errorData.message,
+          [
+            { text: 'OK', style: 'default' },
+            { text: 'View Usage', onPress: () => {
+              console.log('Usage info:', errorData.usage_info);
+            }}
+          ]
+        );
+      } else {
+        ErrorHandlingService.showError(error, { 
+          action: 'create_weekly_audio',
+          source: 'Feed Screen - Weekly Reads',
+          details: { articleCount: weeklyArticles.length }
+        });
+      }
+    } finally {
+      setCreatingAudio(false);
+    }
+  };
+
+
+
+
   if (loading) {
     return (
       <LoadingIndicator 
@@ -1045,6 +1330,38 @@ export default function FeedScreen() {
         ))}
       </ScrollView>
 
+      {/* Reading Status Filter Buttons */}
+      <ScrollView 
+        horizontal 
+        showsHorizontalScrollIndicator={false} 
+        style={styles.readingButtonsContainer}
+        contentContainerStyle={styles.readingButtonsContent}
+        accessibilityLabel="Filter articles by reading status"
+        accessibilityRole="tablist"
+      >
+        {readingFilters.map((filter) => (
+          <TouchableOpacity
+            key={filter}
+            onPress={() => setSelectedReadingFilter(filter)}
+            style={[
+              styles.readingFilterButton,
+              { backgroundColor: selectedReadingFilter === filter ? theme.secondary : theme.surface },
+            ]}
+            accessibilityRole="tab"
+            accessibilityLabel={`Filter by ${filter.toLowerCase()}`}
+            accessibilityHint={`Tap to view ${filter.toLowerCase()}`}
+            accessibilityState={{ selected: selectedReadingFilter === filter }}
+          >
+            <Text style={[
+              styles.readingFilterButtonText,
+              { color: selectedReadingFilter === filter ? theme.primary : theme.textSecondary },
+            ]}>
+              {filter}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+
       {/* Manual Pick Button - Always visible with pick count */}
       <View style={styles.manualPickContainer}>
         {/* Pick Counter - Show when in selection mode and articles are selected */}
@@ -1112,6 +1429,34 @@ export default function FeedScreen() {
             </Text>
           </TouchableOpacity>
         )}
+        
+        {/* Weekly Audio Button - Show when This Week's Reads filter is active */}
+        {selectedReadingFilter === 'This Week\'s Reads' && !selectionMode && (
+          <TouchableOpacity
+            style={[
+              styles.weeklyAudioButton,
+              { backgroundColor: theme.secondary, borderColor: theme.primary }
+            ]}
+            onPress={handleCreateWeeklyAudio}
+            disabled={creatingAudio}
+            accessibilityRole="button"
+            accessibilityLabel="Create audio from this week's reads"
+            accessibilityHint="Create audio from all articles read this week"
+          >
+            <Ionicons 
+              name="calendar" 
+              size={16} 
+              color={theme.primary}
+              style={{ marginRight: 6 }} 
+            />
+            <Text style={[
+              styles.weeklyAudioButtonText, 
+              { color: theme.primary }
+            ]}>
+              Weekly Audio
+            </Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       <ScrollView 
@@ -1126,10 +1471,17 @@ export default function FeedScreen() {
           />
         }
       >        
-        {articles.length === 0 ? (
-          <Text style={[styles.noArticlesText, { color: theme.textSecondary }]}>No articles found. Add some RSS sources first!</Text>
-        ) : (
-          articles.map((article) => {
+        {(() => {
+          const filteredArticles = getFilteredArticles();
+          return filteredArticles.length === 0 ? (
+            <Text style={[styles.noArticlesText, { color: theme.textSecondary }]}>
+              {selectedReadingFilter === 'This Week\'s Reads' ? 'No articles read this week.' :
+               selectedReadingFilter === 'Read' ? 'No articles have been read yet.' :
+               selectedReadingFilter === 'Unread' ? 'All articles have been read.' :
+               'No articles found. Add some RSS sources first!'}
+            </Text>
+          ) : (
+            filteredArticles.map((article) => {
             const isSelected = article.normalizedId ? selectedArticleIds.includes(article.normalizedId) : false;
             
             return (
@@ -1149,7 +1501,7 @@ export default function FeedScreen() {
               {selectionMode && (
                 <TouchableOpacity
                   style={styles.jumpButton}
-                  onPress={() => handleArticlePress(article.link)}
+                  onPress={() => handleArticlePress(article.link, article)}
                   accessibilityRole="button"
                   accessibilityLabel={`Read full article: ${article.title}`}
                   accessibilityHint="Tap to open the full article in browser"
@@ -1161,7 +1513,7 @@ export default function FeedScreen() {
               {/* Main touchable area for article selection/reading */}
               <TouchableOpacity
                 style={styles.articleTouchableArea}
-                onPress={selectionMode ? () => toggleArticleSelection(article.id) : () => handleArticlePress(article.link)}
+                onPress={selectionMode ? () => toggleArticleSelection(article.id) : () => handleArticlePress(article.link, article)}
                 accessibilityRole="button"
                 accessibilityLabel={`Article: ${article.title} from ${article.source_name}`}
                 accessibilityHint={selectionMode ? 'Tap to select/deselect this article' : 'Tap to read the full article in browser'}
@@ -1181,7 +1533,14 @@ export default function FeedScreen() {
                 <View style={[styles.articleContent, selectionMode && styles.articleContentWithCheckbox]}>
                   {/* Header row with source and genre */}
                   <View style={styles.articleHeader}>
-                    <Text style={[styles.articleSource, { color: theme.textMuted }]}>{article.source_name}</Text>
+                    <View style={styles.sourceWithReadStatus}>
+                      <Text style={[styles.articleSource, { color: theme.textMuted }]}>{article.source_name}</Text>
+                      {readingHistory.has(article.id) && (
+                        <View style={[styles.readIndicator, { backgroundColor: theme.success }]}>
+                          <Ionicons name="checkmark" size={10} color="#fff" />
+                        </View>
+                      )}
+                    </View>
                     {article.genre && (
                       <View style={[styles.genreTag, { backgroundColor: theme.secondary }]}>
                         <Text style={[styles.genreTagText, { color: theme.primary }]}>{article.genre}</Text>
@@ -1202,9 +1561,29 @@ export default function FeedScreen() {
                 </View>
               </TouchableOpacity>
               
-              {/* Like/Dislike Buttons - Show in normal mode */}
+              {/* Action Buttons - Show in normal mode */}
               {!selectionMode && (
                 <View style={styles.feedActionButtons}>
+                  {/* Audio Button - Show for read articles */}
+                  {readingHistory.has(article.id) && (
+                    <TouchableOpacity 
+                      onPress={() => handleCreateSingleAudio(article)}
+                      style={[
+                        styles.feedAudioButton, 
+                        { backgroundColor: theme.primary }
+                      ]}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Create audio for: ${article.title}`}
+                      accessibilityHint="Create audio to better understand this article"
+                    >
+                      <Ionicons 
+                        name="musical-notes" 
+                        size={14} 
+                        color="#fff"
+                      />
+                    </TouchableOpacity>
+                  )}
+                  
                   <TouchableOpacity 
                     onPress={() => handleFeedLikeArticle(article)}
                     style={[
@@ -1246,7 +1625,8 @@ export default function FeedScreen() {
             </View>
             );
           })
-        )}
+        );
+        })()}
       </ScrollView>
 
       {/* Selection Count Info - Show in selection mode */}
@@ -1260,28 +1640,30 @@ export default function FeedScreen() {
 
       {/* Auto Pick - Main FAB - Always visible when not in selection mode */}
       {!selectionMode && (
-        <TouchableOpacity
-          style={[
-            styles.mainFAB, 
-            { 
-              backgroundColor: theme.primary,
-              bottom: showMiniPlayer ? 140 : 20,
-              right: 20
-            }
-          ]}
-          onPress={handleAutoPickFromFeed}
-          disabled={creatingAudio}
-          activeOpacity={0.8}
-          accessibilityRole="button"
-          accessibilityLabel="Auto-pick articles and create audio"
-          accessibilityHint="Automatically selects top articles from current filter and creates audio"
-        >
-          {creatingAudio ? (
-            <ActivityIndicator color="#fff" size={20} />
-          ) : (
-            <Ionicons name="sparkles" size={24} color="#fff" />
-          )}
-        </TouchableOpacity>
+        <>
+          <TouchableOpacity
+            style={[
+              styles.mainFAB, 
+              { 
+                backgroundColor: theme.primary,
+                bottom: showMiniPlayer ? 140 : 20,
+                right: 20
+              }
+            ]}
+            onPress={handleAutoPickFromFeed}
+            disabled={creatingAudio}
+            activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel="Auto-pick articles and create audio"
+            accessibilityHint="Automatically selects top articles from current filter and creates audio"
+          >
+            {creatingAudio ? (
+              <ActivityIndicator color="#fff" size={20} />
+            ) : (
+              <Ionicons name="sparkles" size={24} color="#fff" />
+            )}
+          </TouchableOpacity>
+        </>
       )}
 
       {/* Create Audio FAB - Show in selection mode when articles are selected */}
@@ -1325,6 +1707,14 @@ export default function FeedScreen() {
           // Clear selections after modal closes to prevent interference
           setTimeout(() => clearAllSelections(), 100);
         }}
+      />
+
+      {/* Plan Upgrade Modal */}
+      <PlanUpgradeModal
+        visible={showPlanUpgradeModal}
+        onClose={() => setShowPlanUpgradeModal(false)}
+        errorMessage={planUpgradeInfo.errorMessage}
+        usageInfo={planUpgradeInfo.usageInfo}
       />
       
       {/* Prompt Style Selection Modal */}
@@ -1493,10 +1883,10 @@ export default function FeedScreen() {
               <View style={styles.promptExamples}>
                 <Text style={[styles.examplesTitle, { color: theme.text }]}>Example Prompts:</Text>
                 <Text style={[styles.exampleText, { color: theme.textSecondary }]}>
-                  • "Focus on technology and innovation news with detailed technical explanations"{'\n'}
-                  • "Present news in a casual, conversational tone suitable for commuting"{'\n'}
-                  • "Emphasize business implications and market analysis in all stories"{'\n'}
-                  • "Include historical context and background for better understanding"
+                  • &ldquo;Focus on technology and innovation news with detailed technical explanations&rdquo;{'\n'}
+                  • &ldquo;Present news in a casual, conversational tone suitable for commuting&rdquo;{'\n'}
+                  • &ldquo;Emphasize business implications and market analysis in all stories&rdquo;{'\n'}
+                  • &ldquo;Include historical context and background for better understanding&rdquo;
                 </Text>
               </View>
             </View>
@@ -1538,6 +1928,16 @@ const styles = StyleSheet.create({
     paddingVertical: 0,
     alignItems: 'center',
   },
+  readingButtonsContainer: {
+    paddingHorizontal: 10,
+    marginTop: 4,
+    marginBottom: 8,
+    maxHeight: 50,
+  },
+  readingButtonsContent: {
+    paddingVertical: 0,
+    alignItems: 'center',
+  },
   filterButton: {
     paddingVertical: 8,
     paddingHorizontal: 15,
@@ -1568,6 +1968,19 @@ const styles = StyleSheet.create({
   },
   genreButtonTextActive: {
     color: '#ffffff',
+  },
+  readingFilterButton: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 16,
+    backgroundColor: '#e2e8f0',
+    marginRight: 6,
+    marginBottom: 4,
+  },
+  readingFilterButtonText: {
+    color: '#4a5568',
+    fontWeight: '500',
+    fontSize: 12,
   },
   articlesContainer: {
     flex: 1,
@@ -1805,6 +2218,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 2,
   },
+  sourceWithReadStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  readIndicator: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 6,
+  },
   genreTag: {
     paddingHorizontal: 6,
     paddingVertical: 1,
@@ -1822,6 +2248,15 @@ const styles = StyleSheet.create({
     bottom: 8,
     right: 8,
     gap: 6,
+  },
+  feedAudioButton: {
+    padding: 4,
+    borderRadius: 14,
+    width: 28,
+    height: 28,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 4,
   },
   feedLikeButton: {
     padding: 4,
@@ -1852,6 +2287,20 @@ const styles = StyleSheet.create({
     marginLeft: 8,
   },
   promptStyleButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  weeklyAudioButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+    borderWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 8,
+  },
+  weeklyAudioButtonText: {
     fontSize: 14,
     fontWeight: '600',
   },

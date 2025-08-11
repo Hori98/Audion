@@ -9,19 +9,30 @@ export interface DebugSettings {
   enableBetaFeatures: boolean;
   mockPremiumUser: boolean;
   enableTestAlerts: boolean;
+  // 🆕 MECE補完項目
+  forcedAPIErrors: boolean;
+  mockNetworkConditions: boolean; 
+  enablePerformanceMetrics: boolean;
+  mockDataGeneration: boolean;
 }
 
 class DebugService {
   private static readonly STORAGE_KEY = 'debug_settings';
-  private static readonly DEBUG_PASSWORD = 'audion_dev_2024'; // Change this regularly
+  private static readonly DEBUG_PASSWORD = 'audion_dev_2025'; // Change this regularly // Change this regularly
   
   private static currentSettings: DebugSettings = {
     enableDebugMode: false,
+    forcedSubscriptionTier: undefined,
     bypassSubscriptionLimits: false,
     showDebugInfo: false,
     enableBetaFeatures: false,
     mockPremiumUser: false,
     enableTestAlerts: false,
+    // 🆕 MECE補完項目のデフォルト値
+    forcedAPIErrors: false,
+    mockNetworkConditions: false, 
+    enablePerformanceMetrics: false,
+    mockDataGeneration: false,
   };
 
   // Check if app is in development mode
@@ -50,11 +61,16 @@ class DebugService {
   // Save debug settings to storage
   static async saveDebugSettings(settings: Partial<DebugSettings>): Promise<void> {
     try {
+      console.log('💾 Saving debug settings:', settings);
+      console.log('📋 Before merge, currentSettings:', this.currentSettings);
+      
       this.currentSettings = { ...this.currentSettings, ...settings };
       await AsyncStorage.setItem(this.STORAGE_KEY, JSON.stringify(this.currentSettings));
-      console.log('Debug settings saved:', this.currentSettings);
+      
+      console.log('✅ After merge, currentSettings:', this.currentSettings);
+      console.log('💾 Settings saved to AsyncStorage successfully');
     } catch (error) {
-      console.error('Failed to save debug settings:', error);
+      console.error('❌ Failed to save debug settings:', error);
     }
   }
 
@@ -79,7 +95,9 @@ class DebugService {
 
   // Force specific subscription tier for testing
   static async setForcedSubscriptionTier(tier?: SubscriptionTier): Promise<void> {
+    console.log('🎯 Setting forced subscription tier:', tier);
     await this.saveDebugSettings({ forcedSubscriptionTier: tier });
+    console.log('✅ Forced tier saved, current settings:', this.currentSettings);
   }
 
   static getForcedSubscriptionTier(): SubscriptionTier | undefined {
@@ -143,17 +161,27 @@ class DebugService {
 
   // Reset all debug settings
   static async resetDebugSettings(): Promise<void> {
+    // 🔐 現在のデバッグモード状態を保持
+    const currentDebugMode = this.currentSettings.enableDebugMode;
+    
     const defaultSettings: DebugSettings = {
-      enableDebugMode: false,
+      enableDebugMode: currentDebugMode, // 🎯 ログイン状態保持
+      forcedSubscriptionTier: undefined,
       bypassSubscriptionLimits: false,
       showDebugInfo: false,
       enableBetaFeatures: false,
       mockPremiumUser: false,
       enableTestAlerts: false,
+      // 🆕 MECE補完項目のデフォルト値
+      forcedAPIErrors: false,
+      mockNetworkConditions: false,
+      enablePerformanceMetrics: false,
+      mockDataGeneration: false,
     };
     
     this.currentSettings = defaultSettings;
     await AsyncStorage.setItem(this.STORAGE_KEY, JSON.stringify(defaultSettings));
+    console.log('🔄 Debug settings reset (preserving login):', defaultSettings);
   }
 
   // Get environment info for debugging
@@ -172,6 +200,63 @@ class DebugService {
       console.log('🧪 Beta Test Mode Activated');
       console.log('Environment Info:', this.getEnvironmentInfo());
     }
+  }
+
+  // 🆕 MECE補完: API エラーシミュレーション機能
+  static shouldForceAPIErrors(): boolean {
+    return this.isDebugModeEnabled() && this.currentSettings.forcedAPIErrors;
+  }
+
+  static async toggleForcedAPIErrors(): Promise<void> {
+    const newValue = !this.currentSettings.forcedAPIErrors;
+    await this.saveDebugSettings({ forcedAPIErrors: newValue });
+  }
+
+  // 🆕 MECE補完: ネットワーク状況テスト機能
+  static shouldMockNetworkConditions(): boolean {
+    return this.isDebugModeEnabled() && this.currentSettings.mockNetworkConditions;
+  }
+
+  static async toggleMockNetworkConditions(): Promise<void> {
+    const newValue = !this.currentSettings.mockNetworkConditions;
+    await this.saveDebugSettings({ mockNetworkConditions: newValue });
+  }
+
+  // 🆕 MECE補完: パフォーマンス計測機能  
+  static shouldEnablePerformanceMetrics(): boolean {
+    return this.isDebugModeEnabled() && this.currentSettings.enablePerformanceMetrics;
+  }
+
+  static async togglePerformanceMetrics(): Promise<void> {
+    const newValue = !this.currentSettings.enablePerformanceMetrics;
+    await this.saveDebugSettings({ enablePerformanceMetrics: newValue });
+  }
+
+  // 🆕 MECE補完: テストデータ自動生成機能
+  static shouldMockDataGeneration(): boolean {
+    return this.isDebugModeEnabled() && this.currentSettings.mockDataGeneration;
+  }
+
+  static async toggleMockDataGeneration(): Promise<void> {
+    const newValue = !this.currentSettings.mockDataGeneration;
+    await this.saveDebugSettings({ mockDataGeneration: newValue });
+  }
+
+  // 🆕 統合ヘルパー: 全MECE項目の確認
+  static getMECEStatus(): { [key: string]: boolean } {
+    return {
+      // 既存機能
+      bypassSubscriptionLimits: this.shouldBypassSubscriptionLimits(),
+      showDebugInfo: this.shouldShowDebugInfo(),
+      enableBetaFeatures: this.areBetaFeaturesEnabled(),
+      mockPremiumUser: this.isMockPremiumUser(),
+      enableTestAlerts: this.areTestAlertsEnabled(),
+      // MECE補完機能
+      forcedAPIErrors: this.shouldForceAPIErrors(),
+      mockNetworkConditions: this.shouldMockNetworkConditions(),
+      enablePerformanceMetrics: this.shouldEnablePerformanceMetrics(),
+      mockDataGeneration: this.shouldMockDataGeneration(),
+    };
   }
 }
 
