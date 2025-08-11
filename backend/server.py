@@ -3421,14 +3421,14 @@ async def archive_article(request: ArchiveRequest, current_user: User = Depends(
         logging.error(f"Archive article error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/api/archive/articles", response_model=List[ArchivedArticle], tags=["Archive"])
+@app.get("/api/archive/articles", tags=["Archive"])
 async def get_archived_articles(
     current_user: User = Depends(get_current_user),
+    page: int = 1,
     limit: int = 50,
-    offset: int = 0,
     folder: Optional[str] = None,
-    read_status: Optional[str] = None,
-    is_favorite: Optional[bool] = None,
+    genre: Optional[str] = None,
+    favorites_only: Optional[bool] = None,
     search: Optional[str] = None,
     sort_by: str = "archived_at",
     sort_order: str = "desc"
@@ -3440,23 +3440,44 @@ async def get_archived_articles(
         
         if folder:
             query_filter["folder"] = folder
-        if read_status:
-            query_filter["read_status"] = read_status
-        if is_favorite is not None:
-            query_filter["is_favorite"] = is_favorite
+        if genre:
+            query_filter["genre"] = genre
+        if favorites_only:
+            query_filter["is_favorite"] = True
         if search:
             # Text search in title and summary
-            query_filter["$text"] = {"$search": search}
+            query_filter["$or"] = [
+                {"title": {"$regex": search, "$options": "i"}},
+                {"summary": {"$regex": search, "$options": "i"}}
+            ]
+        
+        # Calculate offset from page
+        offset = (page - 1) * limit
         
         # Build sort criteria
         sort_direction = -1 if sort_order == "desc" else 1
         sort_criteria = [(sort_by, sort_direction)]
         
+        # Get total count for pagination
+        total_count = await db.archived_articles.count_documents(query_filter)
+        
         # Execute query with pagination
         cursor = db.archived_articles.find(query_filter).sort(sort_criteria).skip(offset).limit(limit)
         archived_articles = await cursor.to_list(length=limit)
         
-        return [ArchivedArticle(**article) for article in archived_articles]
+        # Convert to response format
+        articles = []
+        for article in archived_articles:
+            article_data = ArchivedArticle(**article)
+            articles.append(article_data.dict())
+        
+        return {
+            "articles": articles,
+            "total": total_count,
+            "page": page,
+            "limit": limit,
+            "pages": (total_count + limit - 1) // limit
+        }
         
     except Exception as e:
         logging.error(f"Get archived articles error: {e}")
@@ -3548,37 +3569,22 @@ async def get_archive_stats(current_user: User = Depends(get_current_user)):
         # Total archived articles
         total_count = await db.archived_articles.count_documents({"user_id": current_user.id})
         
-        # Count by read status
-        read_stats = await db.archived_articles.aggregate([
-            {"$match": {"user_id": current_user.id}},
-            {"$group": {"_id": "$read_status", "count": {"$sum": 1}}}
-        ]).to_list(length=10)
-        
-        # Count by folder
-        folder_stats = await db.archived_articles.aggregate([
-            {"$match": {"user_id": current_user.id}},
-            {"$group": {"_id": "$folder", "count": {"$sum": 1}}}
-        ]).to_list(length=20)
-        
         # Count favorites
         favorites_count = await db.archived_articles.count_documents({
             "user_id": current_user.id,
             "is_favorite": True
         })
         
-        # Recent activity (last 7 days)
-        week_ago = datetime.utcnow() - timedelta(days=7)
-        recent_count = await db.archived_articles.count_documents({
+        # Count unread articles
+        unread_count = await db.archived_articles.count_documents({
             "user_id": current_user.id,
-            "archived_at": {"$gte": week_ago}
+            "is_read": {"$ne": True}
         })
         
         return {
-            "total_articles": total_count,
-            "favorites_count": favorites_count,
-            "recent_week_count": recent_count,
-            "read_status_breakdown": {item["_id"] or "unread": item["count"] for item in read_stats},
-            "folder_breakdown": {item["_id"] or "unfiled": item["count"] for item in folder_stats}
+            "total": total_count,
+            "favorites": favorites_count,
+            "unread": unread_count
         }
         
     except Exception as e:
