@@ -34,12 +34,20 @@ export default function QuickSettingsScreen() {
   const router = useRouter();
   const { logout, user } = useAuth();
   const { theme, themeMode, setThemeMode } = useTheme();
-  const { currentLanguage, setLanguage, supportedLanguages } = useLanguage();
+  const { 
+    currentLanguage, 
+    setLanguage, 
+    supportedLanguages,
+    currentVoiceLanguage,
+    setVoiceLanguage,
+    supportedVoiceLanguages
+  } = useLanguage();
   const { t } = useTranslation();
   
   const [debugMenuVisible, setDebugMenuVisible] = useState(false);
   const [themeModalVisible, setThemeModalVisible] = useState(false);
   const [languageModalVisible, setLanguageModalVisible] = useState(false);
+  const [voiceLanguageModalVisible, setVoiceLanguageModalVisible] = useState(false);
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
 
   const handleLogout = () => {
@@ -73,7 +81,31 @@ export default function QuickSettingsScreen() {
     return supportedLanguages.find(lang => lang.code === currentLanguage)?.nativeName || 'English';
   };
 
-  const quickSettings: QuickSettingItem[] = [
+  const getCurrentVoiceLanguageName = () => {
+    return supportedVoiceLanguages.find(lang => lang.code === currentVoiceLanguage)?.nativeName || 'English (US)';
+  };
+
+  // Define settings by sections for better organization
+  const languageSettings: QuickSettingItem[] = [
+    {
+      id: 'ui-language',
+      title: 'アプリの表示言語',
+      subtitle: 'App Interface: ' + getCurrentLanguageName(),
+      icon: 'phone-portrait-outline',
+      type: 'navigation',
+      onPress: () => setLanguageModalVisible(true)
+    },
+    {
+      id: 'voice-language',
+      title: '音声・原稿の言語',
+      subtitle: 'Script & Voice: ' + getCurrentVoiceLanguageName(),
+      icon: 'musical-note-outline',
+      type: 'navigation',
+      onPress: () => setVoiceLanguageModalVisible(true)
+    }
+  ];
+
+  const appSettings: QuickSettingItem[] = [
     {
       id: 'sources',
       title: t('settings.rssSourceManagement'),
@@ -91,14 +123,6 @@ export default function QuickSettingsScreen() {
       onPress: () => setThemeModalVisible(true)
     },
     {
-      id: 'language',
-      title: t('settings.language'),
-      subtitle: t('settings.languageSubtitle') + ': ' + getCurrentLanguageName(),
-      icon: 'language-outline',
-      type: 'navigation',
-      onPress: () => setLanguageModalVisible(true)
-    },
-    {
       id: 'schedule',
       title: t('settings.scheduleDelivery'),
       subtitle: t('settings.scheduleSubtitle'),
@@ -114,7 +138,10 @@ export default function QuickSettingsScreen() {
       type: 'toggle',
       value: notificationsEnabled,
       onToggle: setNotificationsEnabled
-    },
+    }
+  ];
+
+  const accountSettings: QuickSettingItem[] = [
     {
       id: 'account',
       title: t('settings.account'),
@@ -172,49 +199,157 @@ export default function QuickSettingsScreen() {
           </View>
         </View>
 
-        {/* Quick Settings */}
-        <View style={styles.settingsContainer}>
-          {quickSettings.map((setting) => (
-            <TouchableOpacity
-              key={setting.id}
-              style={[styles.settingItem, { backgroundColor: theme.card }]}
-              onPress={setting.onPress}
-              disabled={!setting.onPress && setting.type !== 'toggle'}
-            >
-              <View style={styles.settingLeft}>
-                <View style={[styles.iconContainer, { backgroundColor: theme.accent }]}>
-                  <Ionicons 
-                    name={setting.icon as any} 
-                    size={20} 
-                    color={theme.primary} 
-                  />
-                </View>
-                <View style={styles.settingText}>
-                  <Text style={[styles.settingTitle, { color: theme.text }]}>
-                    {setting.title}
-                  </Text>
-                  {setting.subtitle && (
-                    <Text style={[styles.settingSubtitle, { color: theme.textSecondary }]}>
-                      {setting.subtitle}
+        {/* Language Settings Section */}
+        <View style={styles.sectionContainer}>
+          <Text style={[styles.sectionTitle, { color: theme.text }]}>
+            🌍 言語設定 / Language Settings
+          </Text>
+          <Text style={[styles.sectionDescription, { color: theme.textSecondary }]}>
+            アプリの表示言語と音声・原稿の言語は独立して設定できます
+          </Text>
+          <View style={styles.settingsContainer}>
+            {languageSettings.map((setting) => (
+              <TouchableOpacity
+                key={setting.id}
+                style={[styles.settingItem, { backgroundColor: theme.card }]}
+                onPress={setting.onPress}
+                disabled={!setting.onPress && setting.type !== 'toggle'}
+              >
+                <View style={styles.settingLeft}>
+                  <View style={[styles.iconContainer, { backgroundColor: theme.accent }]}>
+                    <Ionicons 
+                      name={setting.icon as any} 
+                      size={20} 
+                      color={theme.primary} 
+                    />
+                  </View>
+                  <View style={styles.settingText}>
+                    <Text style={[styles.settingTitle, { color: theme.text }]}>
+                      {setting.title}
                     </Text>
+                    {setting.subtitle && (
+                      <Text style={[styles.settingSubtitle, { color: theme.textSecondary }]}>
+                        {setting.subtitle}
+                      </Text>
+                    )}
+                  </View>
+                </View>
+                <View style={styles.settingRight}>
+                  {setting.type === 'toggle' && (
+                    <Switch
+                      value={setting.value}
+                      onValueChange={setting.onToggle}
+                      trackColor={{ false: theme.border, true: theme.primary }}
+                      thumbColor={setting.value ? '#fff' : theme.background}
+                    />
+                  )}
+                  {setting.type === 'navigation' && (
+                    <Ionicons name="chevron-forward" size={20} color={theme.textMuted} />
                   )}
                 </View>
-              </View>
-              
-              <View style={styles.settingRight}>
-                {setting.type === 'toggle' && setting.onToggle ? (
-                  <Switch
-                    value={setting.value}
-                    onValueChange={setting.onToggle}
-                    trackColor={{ false: theme.textMuted, true: theme.primary + '40' }}
-                    thumbColor={setting.value ? theme.primary : '#f4f3f4'}
-                  />
-                ) : (
-                  <Ionicons name="chevron-forward" size={20} color={theme.textMuted} />
-                )}
-              </View>
-            </TouchableOpacity>
-          ))}
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+
+        {/* App Settings Section */}
+        <View style={styles.sectionContainer}>
+          <Text style={[styles.sectionTitle, { color: theme.text }]}>
+            ⚙️ アプリ設定 / App Settings
+          </Text>
+          <View style={styles.settingsContainer}>
+            {appSettings.map((setting) => (
+              <TouchableOpacity
+                key={setting.id}
+                style={[styles.settingItem, { backgroundColor: theme.card }]}
+                onPress={setting.onPress}
+                disabled={!setting.onPress && setting.type !== 'toggle'}
+              >
+                <View style={styles.settingLeft}>
+                  <View style={[styles.iconContainer, { backgroundColor: theme.accent }]}>
+                    <Ionicons 
+                      name={setting.icon as any} 
+                      size={20} 
+                      color={theme.primary} 
+                    />
+                  </View>
+                  <View style={styles.settingText}>
+                    <Text style={[styles.settingTitle, { color: theme.text }]}>
+                      {setting.title}
+                    </Text>
+                    {setting.subtitle && (
+                      <Text style={[styles.settingSubtitle, { color: theme.textSecondary }]}>
+                        {setting.subtitle}
+                      </Text>
+                    )}
+                  </View>
+                </View>
+                <View style={styles.settingRight}>
+                  {setting.type === 'toggle' && (
+                    <Switch
+                      value={setting.value}
+                      onValueChange={setting.onToggle}
+                      trackColor={{ false: theme.border, true: theme.primary }}
+                      thumbColor={setting.value ? '#fff' : theme.background}
+                    />
+                  )}
+                  {setting.type === 'navigation' && (
+                    <Ionicons name="chevron-forward" size={20} color={theme.textMuted} />
+                  )}
+                </View>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+
+        {/* Account & Advanced Section */}
+        <View style={styles.sectionContainer}>
+          <Text style={[styles.sectionTitle, { color: theme.text }]}>
+            👤 アカウント / Account & Advanced
+          </Text>
+          <View style={styles.settingsContainer}>
+            {accountSettings.map((setting) => (
+              <TouchableOpacity
+                key={setting.id}
+                style={[styles.settingItem, { backgroundColor: theme.card }]}
+                onPress={setting.onPress}
+                disabled={!setting.onPress && setting.type !== 'toggle'}
+              >
+                <View style={styles.settingLeft}>
+                  <View style={[styles.iconContainer, { backgroundColor: theme.accent }]}>
+                    <Ionicons 
+                      name={setting.icon as any} 
+                      size={20} 
+                      color={theme.primary} 
+                    />
+                  </View>
+                  <View style={styles.settingText}>
+                    <Text style={[styles.settingTitle, { color: theme.text }]}>
+                      {setting.title}
+                    </Text>
+                    {setting.subtitle && (
+                      <Text style={[styles.settingSubtitle, { color: theme.textSecondary }]}>
+                        {setting.subtitle}
+                      </Text>
+                    )}
+                  </View>
+                </View>
+                <View style={styles.settingRight}>
+                  {setting.type === 'toggle' && (
+                    <Switch
+                      value={setting.value}
+                      onValueChange={setting.onToggle}
+                      trackColor={{ false: theme.border, true: theme.primary }}
+                      thumbColor={setting.value ? '#fff' : theme.background}
+                    />
+                  )}
+                  {setting.type === 'navigation' && (
+                    <Ionicons name="chevron-forward" size={20} color={theme.textMuted} />
+                  )}
+                </View>
+              </TouchableOpacity>
+            ))}
+          </View>
         </View>
 
         {/* App Info */}
@@ -300,11 +435,15 @@ export default function QuickSettingsScreen() {
             >
               <Ionicons name="arrow-back" size={24} color={theme.text} />
             </TouchableOpacity>
-            <Text style={[styles.modalTitle, { color: theme.text }]}>{t('settings.language')}</Text>
+            <Text style={[styles.modalTitle, { color: theme.text }]}>アプリ表示言語</Text>
             <View style={styles.placeholder} />
           </View>
 
           <ScrollView style={styles.modalContent}>
+            <Text style={[styles.voiceLanguageDescription, { color: theme.textSecondary }]}>
+              アプリのメニューや設定画面の表示言語を選択してください。音声や原稿の言語は別途設定できます。
+            </Text>
+            
             {supportedLanguages.map((language) => (
               <TouchableOpacity
                 key={language.code}
@@ -329,6 +468,70 @@ export default function QuickSettingsScreen() {
                 {currentLanguage === language.code && (
                   <Ionicons name="checkmark" size={24} color={theme.primary} />
                 )}
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </SafeAreaView>
+      </Modal>
+
+      {/* Voice Language Modal */}
+      <Modal
+        animationType="slide"
+        transparent={false}
+        visible={voiceLanguageModalVisible}
+        onRequestClose={() => setVoiceLanguageModalVisible(false)}
+      >
+        <SafeAreaView style={[styles.modalContainer, { backgroundColor: theme.background }]}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity
+              onPress={() => setVoiceLanguageModalVisible(false)}
+              style={styles.modalBackButton}
+            >
+              <Ionicons name="arrow-back" size={24} color={theme.text} />
+            </TouchableOpacity>
+            <Text style={[styles.modalTitle, { color: theme.text }]}>音声言語選択</Text>
+            <View style={styles.placeholder} />
+          </View>
+
+          <ScrollView style={styles.modalContent}>
+            <Text style={[styles.voiceLanguageDescription, { color: theme.textSecondary }]}>
+              音声原稿の生成言語とTTS音声の言語を選択してください。アプリの表示言語とは独立して設定できます。
+              {'\n'}• 日本語選択: 日本語でニュース原稿を生成し、日本語音声で読み上げ
+              {'\n'}• 英語選択: 英語でニュース原稿を生成し、英語音声で読み上げ
+            </Text>
+            
+            {supportedVoiceLanguages.map((voiceLanguage) => (
+              <TouchableOpacity
+                key={voiceLanguage.code}
+                style={[
+                  styles.voiceLanguageOption,
+                  { backgroundColor: theme.card },
+                  currentVoiceLanguage === voiceLanguage.code && { borderColor: theme.primary, borderWidth: 2 }
+                ]}
+                onPress={async () => {
+                  await setVoiceLanguage(voiceLanguage.code);
+                  setVoiceLanguageModalVisible(false);
+                }}
+              >
+                <View style={styles.voiceLanguageInfo}>
+                  <Text style={[styles.voiceLanguageName, { color: theme.text }]}>
+                    {voiceLanguage.nativeName}
+                  </Text>
+                  <Text style={[styles.voiceLanguageDetails, { color: theme.textSecondary }]}>
+                    {voiceLanguage.name} • {voiceLanguage.voices.length}種類の音声
+                  </Text>
+                </View>
+                <View style={styles.voiceLanguageRight}>
+                  <Ionicons 
+                    name="musical-notes-outline" 
+                    size={20} 
+                    color={theme.textMuted} 
+                    style={{ marginRight: 8 }}
+                  />
+                  {currentVoiceLanguage === voiceLanguage.code && (
+                    <Ionicons name="checkmark" size={24} color={theme.primary} />
+                  )}
+                </View>
               </TouchableOpacity>
             ))}
           </ScrollView>
@@ -505,5 +708,53 @@ const createStyles = (theme: any) => StyleSheet.create({
   },
   languageEnglishName: {
     fontSize: 14,
+  },
+  // Voice Language Modal Styles
+  voiceLanguageDescription: {
+    fontSize: 14,
+    lineHeight: 20,
+    marginBottom: 20,
+    paddingHorizontal: 4,
+  },
+  voiceLanguageOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  voiceLanguageInfo: {
+    flex: 1,
+  },
+  voiceLanguageName: {
+    fontSize: 16,
+    fontWeight: '500',
+    marginBottom: 4,
+  },
+  voiceLanguageDetails: {
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  voiceLanguageRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  // Section Styles for better organization
+  sectionContainer: {
+    marginBottom: 32,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    marginBottom: 8,
+    paddingHorizontal: 4,
+  },
+  sectionDescription: {
+    fontSize: 13,
+    lineHeight: 18,
+    marginBottom: 16,
+    paddingHorizontal: 4,
   },
 });
