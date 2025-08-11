@@ -3,12 +3,25 @@ import React, { useEffect } from 'react';
 import { AuthProvider, useAuth } from '../context/AuthContext';
 import { AudioProvider } from '../context/AudioContext';
 import { ThemeProvider } from '../context/ThemeContext';
+import { LanguageProvider } from '../context/LanguageContext';
 import { Slot, useRouter, useSegments } from 'expo-router';
 import { ActivityIndicator, View, Alert } from 'react-native';
 import MiniPlayer from '../components/MiniPlayer';
 import FullScreenPlayer from '../components/FullScreenPlayer';
+import ChapterSourceButton from '../components/ChapterSourceButton';
+import { useAudio } from '../context/AudioContext';
+
+const ChapterSourceButtonWrapper = () => {
+  const { isPlaying, currentAudio, showFullScreenPlayer } = useAudio();
+  return (
+    <ChapterSourceButton 
+      visible={isPlaying && currentAudio !== null && !showFullScreenPlayer} 
+    />
+  );
+};
 import { useSiriShortcuts } from '../hooks/useSiriShortcuts';
 import { useAppIconShortcuts } from '../hooks/useAppIconShortcuts';
+import '../i18n'; // Initialize i18n
 
 const InitialLayout = () => {
   const { user, loading, isNewUser } = useAuth();
@@ -48,6 +61,7 @@ const InitialLayout = () => {
   return (
     <View style={{ flex: 1 }}>
       <Slot />
+      <ChapterSourceButtonWrapper />
       <MiniPlayer />
       <FullScreenPlayer />
     </View>
@@ -56,12 +70,14 @@ const InitialLayout = () => {
 
 export default function RootLayout() {
   return (
-    <ThemeProvider>
-      <AuthProvider>
-        <AudioProvider>
-          <InitialLayout />
-        </AudioProvider>
-      </AuthProvider>
-    </ThemeProvider>
+    <LanguageProvider>
+      <ThemeProvider>
+        <AuthProvider>
+          <AudioProvider>
+            <InitialLayout />
+          </AudioProvider>
+        </AuthProvider>
+      </ThemeProvider>
+    </LanguageProvider>
   );
 }

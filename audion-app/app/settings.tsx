@@ -14,6 +14,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
+import { useLanguage } from '../context/LanguageContext';
+import { useTranslation } from 'react-i18next';
 import DebugMenu from '../components/DebugMenu';
 import DebugService from '../services/DebugService';
 
@@ -32,9 +34,12 @@ export default function QuickSettingsScreen() {
   const router = useRouter();
   const { logout, user } = useAuth();
   const { theme, themeMode, setThemeMode } = useTheme();
+  const { currentLanguage, setLanguage, supportedLanguages } = useLanguage();
+  const { t } = useTranslation();
   
   const [debugMenuVisible, setDebugMenuVisible] = useState(false);
   const [themeModalVisible, setThemeModalVisible] = useState(false);
+  const [languageModalVisible, setLanguageModalVisible] = useState(false);
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
 
   const handleLogout = () => {
@@ -55,27 +60,56 @@ export default function QuickSettingsScreen() {
     );
   };
 
+  const getThemeDisplayName = () => {
+    switch (themeMode) {
+      case 'system': return t('settings.systemTheme');
+      case 'dark': return t('settings.darkTheme');
+      case 'light': return t('settings.lightTheme');
+      default: return themeMode;
+    }
+  };
+
+  const getCurrentLanguageName = () => {
+    return supportedLanguages.find(lang => lang.code === currentLanguage)?.nativeName || 'English';
+  };
+
   const quickSettings: QuickSettingItem[] = [
     {
       id: 'sources',
-      title: 'RSSソース管理',
-      subtitle: 'ニュースソースの追加・管理',
+      title: t('settings.rssSourceManagement'),
+      subtitle: t('settings.rssSourceSubtitle'),
       icon: 'newspaper-outline',
       type: 'navigation',
       onPress: () => router.push('/sources')
     },
     {
       id: 'theme',
-      title: 'テーマ',
-      subtitle: `現在: ${themeMode === 'system' ? 'システム' : themeMode === 'dark' ? 'ダーク' : 'ライト'}`,
+      title: t('settings.theme'),
+      subtitle: t('settings.themeSubtitle', { theme: getThemeDisplayName() }),
       icon: 'contrast-outline',
       type: 'navigation',
       onPress: () => setThemeModalVisible(true)
     },
     {
+      id: 'language',
+      title: t('settings.language'),
+      subtitle: t('settings.languageSubtitle') + ': ' + getCurrentLanguageName(),
+      icon: 'language-outline',
+      type: 'navigation',
+      onPress: () => setLanguageModalVisible(true)
+    },
+    {
+      id: 'schedule',
+      title: t('settings.scheduleDelivery'),
+      subtitle: t('settings.scheduleSubtitle'),
+      icon: 'time-outline',
+      type: 'navigation',
+      onPress: () => router.push('/schedule-content-settings')
+    },
+    {
       id: 'notifications',
-      title: 'プッシュ通知',
-      subtitle: '新着音声の通知',
+      title: t('settings.pushNotifications'),
+      subtitle: t('settings.notificationSubtitle'),
       icon: 'notifications-outline',
       type: 'toggle',
       value: notificationsEnabled,
@@ -83,23 +117,23 @@ export default function QuickSettingsScreen() {
     },
     {
       id: 'account',
-      title: 'アカウント',
-      subtitle: user?.email || 'ユーザー情報',
+      title: t('settings.account'),
+      subtitle: user?.email || t('settings.accountSubtitle'),
       icon: 'person-outline',
       type: 'navigation',
       onPress: () => Alert.alert('開発中', 'アカウント設定は開発中です')
     },
     {
       id: 'developer',
-      title: '開発者オプション',
-      subtitle: DebugService.isDebugModeEnabled() ? 'デバッグモード有効' : 'デバッグモード無効',
+      title: t('settings.developerOptions'),
+      subtitle: DebugService.isDebugModeEnabled() ? t('settings.debugEnabled') : t('settings.debugDisabled'),
       icon: 'code-outline',
       type: 'navigation',
       onPress: () => setDebugMenuVisible(true)
     },
     {
       id: 'logout',
-      title: 'ログアウト',
+      title: t('settings.logout'),
       subtitle: 'アカウントからサインアウト',
       icon: 'log-out-outline',
       type: 'action',
@@ -119,7 +153,7 @@ export default function QuickSettingsScreen() {
         >
           <Ionicons name="arrow-back" size={24} color={theme.text} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>設定</Text>
+        <Text style={styles.headerTitle}>{t('settings.title')}</Text>
         <View style={styles.placeholder} />
       </View>
 
@@ -243,6 +277,56 @@ export default function QuickSettingsScreen() {
                   {themeOption.name}
                 </Text>
                 {themeMode === themeOption.key && (
+                  <Ionicons name="checkmark" size={24} color={theme.primary} />
+                )}
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </SafeAreaView>
+      </Modal>
+
+      {/* Language Modal */}
+      <Modal
+        animationType="slide"
+        transparent={false}
+        visible={languageModalVisible}
+        onRequestClose={() => setLanguageModalVisible(false)}
+      >
+        <SafeAreaView style={[styles.modalContainer, { backgroundColor: theme.background }]}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity
+              onPress={() => setLanguageModalVisible(false)}
+              style={styles.modalBackButton}
+            >
+              <Ionicons name="arrow-back" size={24} color={theme.text} />
+            </TouchableOpacity>
+            <Text style={[styles.modalTitle, { color: theme.text }]}>{t('settings.language')}</Text>
+            <View style={styles.placeholder} />
+          </View>
+
+          <ScrollView style={styles.modalContent}>
+            {supportedLanguages.map((language) => (
+              <TouchableOpacity
+                key={language.code}
+                style={[
+                  styles.languageOption,
+                  { backgroundColor: theme.card },
+                  currentLanguage === language.code && { borderColor: theme.primary, borderWidth: 2 }
+                ]}
+                onPress={async () => {
+                  await setLanguage(language.code);
+                  setLanguageModalVisible(false);
+                }}
+              >
+                <View style={styles.languageInfo}>
+                  <Text style={[styles.languageName, { color: theme.text }]}>
+                    {language.nativeName}
+                  </Text>
+                  <Text style={[styles.languageEnglishName, { color: theme.textSecondary }]}>
+                    {language.name}
+                  </Text>
+                </View>
+                {currentLanguage === language.code && (
                   <Ionicons name="checkmark" size={24} color={theme.primary} />
                 )}
               </TouchableOpacity>
@@ -401,5 +485,25 @@ const createStyles = (theme: any) => StyleSheet.create({
     fontWeight: '500',
     marginLeft: 12,
     flex: 1,
+  },
+  languageOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  languageInfo: {
+    flex: 1,
+  },
+  languageName: {
+    fontSize: 16,
+    fontWeight: '500',
+    marginBottom: 2,
+  },
+  languageEnglishName: {
+    fontSize: 14,
   },
 });

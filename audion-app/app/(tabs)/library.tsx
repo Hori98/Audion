@@ -8,6 +8,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { format } from 'date-fns';
 import { Ionicons } from '@expo/vector-icons';
 import LoadingIndicator from '../../components/LoadingIndicator';
+import DownloadButton from '../../components/DownloadButton';
 
 interface RecentAudioItem {
   id: string;
@@ -64,8 +65,9 @@ export default function RecentScreen() {
       await playAudio({
         id: audio.id,
         title: audio.title,
-        url: audio.audio_url,
-        duration: audio.duration
+        audio_url: audio.audio_url, // Fixed: use audio_url instead of url
+        duration: audio.duration,
+        created_at: audio.created_at
       });
     } catch (error) {
       console.error('Error playing audio:', error);
@@ -180,6 +182,20 @@ export default function RecentScreen() {
                     />
                   </View>
                 </TouchableOpacity>
+                
+                {/* 🆕 Download Button */}
+                <DownloadButton
+                  audioItem={{
+                    id: audio.id,
+                    title: audio.title,
+                    audio_url: audio.audio_url,
+                    duration: audio.duration,
+                    created_at: audio.created_at
+                  }}
+                  size="small"
+                  showText={false}
+                />
+                
                 <TouchableOpacity
                   style={styles.deleteButton}
                   onPress={() => handleDeleteAudio(audio.id)}
