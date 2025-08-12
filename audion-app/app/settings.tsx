@@ -131,6 +131,14 @@ export default function QuickSettingsScreen() {
       onPress: () => router.push('/schedule-content-settings')
     },
     {
+      id: 'auto-pick',
+      title: 'Auto-Pick設定',
+      subtitle: '記事選定アルゴリズムの詳細設定',
+      icon: 'settings-outline',
+      type: 'navigation',
+      onPress: () => router.push('/auto-pick-settings')
+    },
+    {
       id: 'notifications',
       title: t('settings.pushNotifications'),
       subtitle: t('settings.notificationSubtitle'),
