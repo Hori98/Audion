@@ -1273,13 +1273,13 @@ export default function FeedScreen() {
         await axios.post(
           `${API}/archive/article`,
           {
-            original_article_id: article.id,
-            title: article.title,
-            url: article.link,
-            summary: article.summary,
+            article_id: article.id,
+            article_title: article.title,
+            article_link: article.link,
+            article_summary: article.summary || '',
+            article_published: article.published || article.published_at || new Date().toISOString(),
             source_name: article.source_name || article.source || 'Unknown',
-            published_at: article.published || article.published_at || new Date().toISOString(),
-            genre: article.genre || 'General'
+            article_genre: article.genre || 'General'
           },
           { headers: { Authorization: `Bearer ${token}` } }
         );
