@@ -8,68 +8,154 @@ import {
   RefreshControl,
   SafeAreaView,
   Alert,
+  Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { useRouter } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
+import * as WebBrowser from 'expo-web-browser';
 import axios from 'axios';
+import { Article } from '../../types';
+import CacheService from '../../services/CacheService';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
-interface Article {
-  id: string;
-  title: string;
-  description: string;
-  url: string;
-  published_date: string;
-  source: string;
-  genre?: string;
-  reading_time?: number;
-  content?: string;
-}
+const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:8003';
+const API = `${BACKEND_URL}/api`;
 
 export default function MainScreen() {
-  const { token, user } = useAuth();
+  const { token } = useAuth();
   const { theme } = useTheme();
   const router = useRouter();
   
   const [articles, setArticles] = useState<Article[]>([]);
+  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedGenre, setSelectedGenre] = useState<string>('All');
   const [creatingAudio, setCreatingAudio] = useState(false);
-  
-  const API = process.env.EXPO_PUBLIC_BACKEND_URL 
-    ? `${process.env.EXPO_PUBLIC_BACKEND_URL}/api` 
-    : 'http://localhost:8003/api';
+  const [readingHistory, setReadingHistory] = useState<Map<string, Date>>(new Map());
 
   const genres = ['All', 'Breaking News', 'Technology', 'Business', 'Politics', 'World', 'Sports', 'Entertainment'];
 
-  useEffect(() => {
-    if (token) {
-      fetchCuratedArticles();
-    }
-  }, [token]);
+  // Feedベースの安定したuseFocusEffect
+  useFocusEffect(
+    React.useCallback(() => {
+      const initializeData = async () => {
+        if (token && token !== '') {
+          await loadReadingHistory();
+          await fetchHomeArticles();
+        }
+      };
+      initializeData();
+    }, [token])
+  );
 
-  const fetchCuratedArticles = async () => {
-    try {
-      setRefreshing(true);
-      const response = await axios.get(`${API}/articles/curated`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      
-      if (response.data && Array.isArray(response.data)) {
-        setArticles(response.data);
+  // ジャンルフィルター変更時の記事更新
+  useEffect(() => {
+    const handleFilterChange = async () => {
+      if (token && token !== '') {
+        await fetchHomeArticles();
       }
+    };
+    handleFilterChange();
+  }, [selectedGenre]);
+
+  // 読書履歴をAsyncStorageから読み込み（Feedと同じロジック）
+  const loadReadingHistory = async () => {
+    try {
+      const savedHistory = await AsyncStorage.getItem('reading_history');
+      if (savedHistory) {
+        const parsed = JSON.parse(savedHistory);
+        const historyMap = new Map();
+        Object.entries(parsed).forEach(([articleId, dateStr]) => {
+          historyMap.set(articleId, new Date(dateStr as string));
+        });
+        setReadingHistory(historyMap);
+      }
+    } catch (error) {
+      console.error('Error loading reading history:', error);
+    }
+  };
+
+  // Feedベースの記事取得（全ソース対象）
+  const fetchHomeArticles = async () => {
+    setLoading(true);
+    try {
+      const filters = {
+        ...(selectedGenre !== 'All' && { genre: selectedGenre }),
+        // Homeは全ソースを表示（sourceフィルターなし）
+      };
+
+      // キャッシュをチェック
+      const cachedArticles = await CacheService.getArticles(filters);
+      if (cachedArticles) {
+        setArticles(cachedArticles);
+        setLoading(false);
+        return;
+      }
+
+      // API呼び出し（Feedと同じエンドポイント）
+      const headers = { Authorization: `Bearer ${token}` };
+      const params: { genre?: string } = {};
+      if (selectedGenre !== 'All') {
+        params.genre = selectedGenre;
+      }
+      
+      const response = await axios.get(`${API}/articles`, { headers, params });
+      
+      // キャッシュに保存
+      await CacheService.setArticles(response.data, filters);
+      setArticles(response.data);
+      
     } catch (error: any) {
-      console.error('Error fetching curated articles:', error);
+      console.error('Error fetching home articles:', error);
       Alert.alert('Error', 'Failed to load articles. Please try again.');
     } finally {
-      setRefreshing(false);
+      setLoading(false);
     }
   };
 
   const onRefresh = useCallback(() => {
-    fetchCuratedArticles();
+    setRefreshing(true);
+    fetchHomeArticles().finally(() => setRefreshing(false));
   }, []);
+
+  // 記事の読書履歴を記録（Feedと同じロジック）
+  const recordArticleReading = async (article: Article) => {
+    try {
+      const newHistory = new Map(readingHistory);
+      newHistory.set(article.id, new Date());
+      setReadingHistory(newHistory);
+
+      // AsyncStorageに保存
+      const historyObject: { [key: string]: string } = {};
+      newHistory.forEach((date, articleId) => {
+        historyObject[articleId] = date.toISOString();
+      });
+      await AsyncStorage.setItem('reading_history', JSON.stringify(historyObject));
+    } catch (error) {
+      console.error('Error recording article reading:', error);
+    }
+  };
+
+  // Feedと同じブラウザ表示機能
+  const openArticleInBrowser = async (article: Article) => {
+    if (article?.link) {
+      try {
+        // 読書履歴を記録
+        await recordArticleReading(article);
+        
+        // 外部ブラウザで開く（安定）
+        await WebBrowser.openBrowserAsync(article.link);
+      } catch (error: any) {
+        console.error('Error opening article:', error);
+        Alert.alert('Error', 'Failed to open article.');
+      }
+    } else {
+      Alert.alert('Error', 'Article link not available.');
+    }
+  };
 
   const handleAutoPick = async () => {
     if (creatingAudio) return;
@@ -214,48 +300,69 @@ export default function MainScreen() {
             <TouchableOpacity
               key={article.id}
               style={[styles.newsCard, { backgroundColor: theme.surface }]}
-              onPress={() => {
-                // Navigate to article detail or web view
-              }}
+              onPress={() => openArticleInBrowser(article)}
               activeOpacity={0.7}
             >
-              <View style={styles.newsCardHeader}>
-                <View style={styles.sourceInfo}>
-                  <Text style={[styles.newsSource, { color: theme.primary }]}>
-                    {article.source}
+              <View style={styles.newsCardContent}>
+                {/* Left side: Text content */}
+                <View style={styles.newsTextContent}>
+                  <View style={styles.newsCardHeader}>
+                    <View style={styles.sourceInfo}>
+                      <Text style={[styles.newsSource, { color: theme.primary }]}>
+                        {article.source_name || 'Unknown Source'}
+                      </Text>
+                      <View style={[styles.sourceDot, { backgroundColor: theme.textMuted }]} />
+                      <Text style={[styles.newsTime, { color: theme.textMuted }]}>
+                        {formatDate(article.published || '')}
+                      </Text>
+                    </View>
+                  </View>
+                  
+                  <Text style={[styles.newsTitle, { color: theme.text }]} numberOfLines={3}>
+                    {article.title || 'Untitled'}
                   </Text>
-                  <View style={[styles.sourceDot, { backgroundColor: theme.textMuted }]} />
-                  <Text style={[styles.newsTime, { color: theme.textMuted }]}>
-                    {formatDate(article.published_date)}
-                  </Text>
+                  
+                  {article.summary && article.summary.trim() && (
+                    <Text 
+                      style={[styles.newsDescription, { color: theme.textSecondary }]}
+                      numberOfLines={2}
+                    >
+                      {article.summary.trim()}
+                    </Text>
+                  )}
+                  
+                  <View style={styles.newsFooter}>
+                    <Text style={[styles.readingTime, { color: theme.textMuted }]}>
+                      {getReadingTime(article.content)}
+                    </Text>
+                    
+                    <View style={styles.newsActions}>
+                      <TouchableOpacity style={styles.newsActionButton}>
+                        <Ionicons name="bookmark-outline" size={16} color={theme.textMuted} />
+                      </TouchableOpacity>
+                      <TouchableOpacity style={styles.newsActionButton}>
+                        <Ionicons name="share-outline" size={16} color={theme.textMuted} />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
                 </View>
-              </View>
-              
-              <Text style={[styles.newsTitle, { color: theme.text }]} numberOfLines={3}>
-                {article.title}
-              </Text>
-              
-              {article.description && (
-                <Text 
-                  style={[styles.newsDescription, { color: theme.textSecondary }]}
-                  numberOfLines={2}
-                >
-                  {article.description}
-                </Text>
-              )}
-              
-              <View style={styles.newsFooter}>
-                <Text style={[styles.readingTime, { color: theme.textMuted }]}>
-                  {getReadingTime(article.content)}
-                </Text>
-                
-                <View style={styles.newsActions}>
-                  <TouchableOpacity style={styles.newsActionButton}>
-                    <Ionicons name="bookmark-outline" size={16} color={theme.textMuted} />
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.newsActionButton}>
-                    <Ionicons name="share-outline" size={16} color={theme.textMuted} />
-                  </TouchableOpacity>
+
+                {/* Right side: Thumbnail image */}
+                <View style={styles.newsThumbnailContainer}>
+                  {article.image_url ? (
+                    <Image
+                      source={{ uri: article.image_url }}
+                      style={styles.newsThumbnail}
+                      resizeMode="cover"
+                      onError={() => {
+                        console.log('Failed to load image:', article.image_url);
+                      }}
+                    />
+                  ) : (
+                    <View style={[styles.placeholderThumbnail, { backgroundColor: theme.accent }]}>
+                      <Ionicons name="newspaper-outline" size={24} color={theme.textMuted} />
+                    </View>
+                  )}
                 </View>
               </View>
             </TouchableOpacity>
@@ -355,8 +462,33 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 3,
   },
+  newsCardContent: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  newsTextContent: {
+    flex: 1,
+    marginRight: 12,
+  },
   newsCardHeader: {
     marginBottom: 8,
+  },
+  newsThumbnailContainer: {
+    width: 80,
+    height: 80,
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
+  newsThumbnail: {
+    width: '100%',
+    height: '100%',
+  },
+  placeholderThumbnail: {
+    width: '100%',
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 8,
   },
   sourceInfo: {
     flexDirection: 'row',

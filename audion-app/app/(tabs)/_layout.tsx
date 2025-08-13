@@ -1,5 +1,4 @@
 import { Tabs } from 'expo-router';
-import { Home } from 'lucide-react-native';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { TouchableOpacity, View, Image, Text, Platform } from 'react-native';
@@ -132,6 +131,7 @@ export default function AppLayout() {
   
   return (
     <Tabs
+      initialRouteName="index"
       screenOptions={{
         tabBarActiveTintColor: theme.primary,
         tabBarInactiveTintColor: theme.tabBarInactive,
@@ -144,31 +144,39 @@ export default function AppLayout() {
         headerShown: true,
       }}>
       <Tabs.Screen
-        name="main"
+        name="index"
         options={{
+          title: 'Home',
           tabBarLabel: 'Home',
           tabBarIcon: ({ color, size }) => <Ionicons name="home-outline" color={color} size={size} />,
+          href: '/(tabs)/'
         }}
       />
       <Tabs.Screen
         name="feed"
         options={{
+          title: 'Feed',
           tabBarLabel: 'Feed',
-          tabBarIcon: ({ color, size }) => <Home color={color} size={size} />,
+          tabBarIcon: ({ color, size }) => <Ionicons name="newspaper-outline" color={color} size={size} />,
+          href: '/(tabs)/feed'
         }}
       />
       <Tabs.Screen
         name="archive"
         options={{
+          title: 'Archive',
           tabBarLabel: 'Archive',
           tabBarIcon: ({ color, size }) => <Ionicons name="bookmark-outline" color={color} size={size} />,
+          href: '/(tabs)/archive'
         }}
       />
       <Tabs.Screen
         name="library"
         options={{
+          title: 'Recent',
           tabBarLabel: 'Recent',
           tabBarIcon: ({ color, size }) => <Ionicons name="time-outline" color={color} size={size} />,
+          href: '/(tabs)/library'
         }}
       />
     </Tabs>
