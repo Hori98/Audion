@@ -251,6 +251,7 @@ class Article(BaseModel):
     source_name: str
     content: Optional[str] = None
     genre: Optional[str] = None
+    image_url: Optional[str] = None
 
 class AudioCreation(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -598,14 +599,12 @@ def classify_genre(title: str, summary: str, confidence_threshold: float = 1.0) 
         genre_scores = calculate_genre_scores(title, summary)
         
         if not genre_scores:
-            logging.warning(f"No genre scores calculated for: {title[:50]}...")
             return "General"
         
         # Sort genres by score (highest first)
         sorted_genres = sorted(genre_scores.items(), key=lambda x: x[1], reverse=True)
         
         if not sorted_genres:
-            logging.warning(f"No sorted genres for: {title[:50]}...")
             return "General"
         
         top_genre, top_score = sorted_genres[0]
@@ -618,7 +617,7 @@ def classify_genre(title: str, summary: str, confidence_threshold: float = 1.0) 
         
         # Enhanced logging with top 3 scores
         score_summary = ", ".join([f"{genre}: {score:.1f}" for genre, score in sorted_genres[:3] if score > 0])
-        logging.info(f"Enhanced Classification: \"{title[:50]}...\" -> {result_genre} (scores: {score_summary})")
+        # Removed verbose classification logging
         
         return result_genre
     except Exception as e:
@@ -641,6 +640,75 @@ def get_genre_confidence(title: str, summary: str) -> Tuple[str, float, Dict[str
     confidence = genre_probabilities[top_genre]
     
     return top_genre, confidence, genre_probabilities
+
+def extract_image_from_entry(entry) -> Optional[str]:
+    """Extract image URL from RSS entry using multiple methods"""
+    import re
+    
+    # Method 1: Check for media:thumbnail or media:content
+    try:
+        if hasattr(entry, 'media_thumbnail'):
+            thumbnails = entry.media_thumbnail
+            if thumbnails and len(thumbnails) > 0:
+                return thumbnails[0].get('url')
+    except:
+        pass
+        
+    try:
+        if hasattr(entry, 'media_content'):
+            media_content = entry.media_content
+            if media_content and len(media_content) > 0:
+                for media in media_content:
+                    if media.get('type', '').startswith('image/'):
+                        return media.get('url')
+    except:
+        pass
+    
+    # Method 2: Check entry.enclosures for images
+    try:
+        if hasattr(entry, 'enclosures'):
+            for enclosure in entry.enclosures:
+                if enclosure.get('type', '').startswith('image/'):
+                    return enclosure.get('href')
+    except:
+        pass
+    
+    # Method 3: Parse HTML content for img tags
+    try:
+        content = ""
+        if hasattr(entry, 'content') and entry.content:
+            if isinstance(entry.content, list) and len(entry.content) > 0:
+                content = entry.content[0].get('value', '')
+            else:
+                content = str(entry.content)
+        elif hasattr(entry, 'summary'):
+            content = entry.summary
+        elif hasattr(entry, 'description'):
+            content = entry.description
+        
+        if content:
+            # Find img tags and extract src
+            img_matches = re.findall(r'<img[^>]+src=[\'"]([^\'"]+)[\'"][^>]*>', content, re.IGNORECASE)
+            if img_matches:
+                # Return the first valid image URL
+                for img_url in img_matches:
+                    if img_url.startswith(('http://', 'https://')):
+                        return img_url
+    except:
+        pass
+    
+    # Method 4: Check for image field directly
+    try:
+        if hasattr(entry, 'image'):
+            image_data = entry.image
+            if isinstance(image_data, dict):
+                return image_data.get('href') or image_data.get('url')
+            elif isinstance(image_data, str):
+                return image_data
+    except:
+        pass
+    
+    return None
 
 async def generate_audio_title_with_openai(articles_content: List[str]) -> str:
     """Generate an engaging title for the audio based on article content"""
@@ -776,9 +844,7 @@ async def convert_text_to_speech(text: str, voice_language: str = "en-US", voice
         # Enhanced bug tracking for Japanese language issue
         if voice_language == "ja-JP":
             script_preview = text[:100] + "..." if len(text) > 100 else text
-            logging.warning(f"🎌 JAPANESE TTS CALL - Language: {voice_language}, Voice: {voice_name}")
-            logging.warning(f"🎌 Script Preview: {script_preview}")
-            logging.warning(f"🎌 Full Script Length: {len(text)} characters")
+            logging.info(f"🎌 Japanese TTS - Language: {voice_language}, Voice: {voice_name}, Length: {len(text)} chars")
             if "English" in text[:500] or any(word in text[:500] for word in ["the", "and", "in", "on", "at"]):
                 logging.error(f"🚨 POTENTIAL BUG: Japanese language requested but script contains English words!")
                 logging.error(f"🚨 Script start: {text[:200]}")
@@ -1092,16 +1158,12 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Database not connected")
     
     token = credentials.credentials
-    logging.info(f"DEBUG: Attempting authentication with token: {token}")
     
     user = await db.users.find_one({"id": token})
-    logging.info(f"DEBUG: Found user: {user is not None}")
     
     if not user:
-        logging.error(f"DEBUG: User not found for token: {token}")
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid authentication credentials")
     
-    logging.info(f"DEBUG: Returning user: {user.get('email', 'No email')}")
     return User(**user)
 
 # === API Endpoints ===
@@ -1422,6 +1484,84 @@ async def delete_rss_source(source_id: str, current_user: User = Depends(get_cur
         raise HTTPException(status_code=404, detail="Source not found")
     return {"message": "Source deleted"}
 
+@app.post("/api/rss-sources/bootstrap", tags=["RSS"])
+async def bootstrap_default_sources(current_user: User = Depends(get_current_user)):
+    """Add default high-quality RSS sources for users who don't have any sources yet"""
+    try:
+        # Check if user already has sources
+        existing_sources = await db.rss_sources.count_documents({"user_id": current_user.id})
+        
+        # Default comprehensive news sources with high coverage
+        default_sources = [
+            {
+                "name": "BBC News",
+                "url": "http://feeds.bbci.co.uk/news/rss.xml",
+                "description": "British Broadcasting Corporation - International news coverage"
+            },
+            {
+                "name": "Reuters",
+                "url": "https://feeds.reuters.com/reuters/topNews",
+                "description": "Reuters - Global news and business information"
+            },
+            {
+                "name": "Associated Press",
+                "url": "https://feeds.apnews.com/rss/apf-topnews",
+                "description": "Associated Press - Breaking news and top stories"
+            },
+            {
+                "name": "The Guardian",
+                "url": "https://www.theguardian.com/world/rss",
+                "description": "The Guardian - World news and analysis"
+            },
+            {
+                "name": "CNN",
+                "url": "http://rss.cnn.com/rss/edition.rss",
+                "description": "CNN - Cable News Network international edition"
+            },
+            {
+                "name": "NPR News",
+                "url": "https://feeds.npr.org/1001/rss.xml",
+                "description": "National Public Radio - News from the US and around the world"
+            },
+            {
+                "name": "TechCrunch",
+                "url": "https://techcrunch.com/feed/",
+                "description": "TechCrunch - Technology industry news and startups"
+            },
+            {
+                "name": "Hacker News",
+                "url": "https://feeds.feedburner.com/oreilly/radar/atom",
+                "description": "Technology and programming news"
+            }
+        ]
+        
+        added_sources = []
+        for source_data in default_sources:
+            try:
+                source = RSSSource(
+                    user_id=current_user.id,
+                    name=source_data["name"],
+                    url=source_data["url"],
+                    is_active=True
+                )
+                await db.rss_sources.insert_one(source.dict())
+                added_sources.append(source.dict())
+                # Default RSS source added
+            except Exception as e:
+                logging.warning(f"Failed to add default source {source_data['name']}: {e}")
+                continue
+        
+        return {
+            "message": f"Successfully added {len(added_sources)} default RSS sources",
+            "sources_added": len(added_sources),
+            "existing_sources": existing_sources,
+            "added_sources": [s["name"] for s in added_sources]
+        }
+        
+    except Exception as e:
+        logging.error(f"Error bootstrapping default sources for user {current_user.email}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to add default sources")
+
 @app.get("/api/articles", response_model=List[Article], tags=["Articles"])
 async def get_articles(current_user: User = Depends(get_current_user), genre: Optional[str] = None, source: Optional[str] = None):
     """Get articles with query parameters (backward compatibility)"""
@@ -1438,71 +1578,100 @@ async def post_articles(request: dict, current_user: User = Depends(get_current_
 async def get_curated_articles(current_user: User = Depends(get_current_user)):
     """Get curated articles for the main news feed - automatically selects diverse, high-quality content"""
     try:
-        # Get all user's articles first
-        all_articles = await get_articles_internal(current_user)
+        # Use cached RSS data only to avoid long processing times
+        curated_articles = []
         
-        if not all_articles:
-            return []
+        # Get user's RSS sources
+        sources = await db.rss_sources.find({
+            "user_id": current_user.id,
+            "$or": [
+                {"is_active": {"$ne": False}},
+                {"is_active": {"$exists": False}}
+            ]
+        }).to_list(100)
         
-        # Get user profile for personalization
-        user_profile_doc = await db.user_profiles.find_one({"user_id": current_user.id})
+        # Try to use cached data first, then fallback to regular article endpoint approach
+        current_time = time.time()
         
-        # Create default user profile if none exists
-        if not user_profile_doc:
-            user_profile = UserProfile(
-                user_id=current_user.id,
-                preferred_genres=[],
-                disliked_genres=[],
-                reading_time_preference="medium",
-                content_freshness_preference="recent",
-                language_preference="en"
-            )
-        else:
-            user_profile = UserProfile(**user_profile_doc)
+        for source_doc in sources[:5]:  # Limit to first 5 sources for speed
+            cache_key = source_doc["url"]
+            feed = None
+            
+            # Try cached data first
+            if cache_key in RSS_CACHE and (current_time - RSS_CACHE[cache_key]['timestamp'] < CACHE_EXPIRY_SECONDS * 3):
+                feed = RSS_CACHE[cache_key]['feed']
+                # Using cached RSS data
+            else:
+                # If no cache, fetch quickly but with timeout
+                try:
+                    import feedparser
+                    import requests
+                    
+                    # Quick fetch with short timeout
+                    response = requests.get(source_doc["url"], timeout=3)
+                    if response.status_code == 200:
+                        feed = feedparser.parse(response.content)
+                        RSS_CACHE[cache_key] = {'feed': feed, 'timestamp': current_time}
+                        # Quick RSS fetch successful
+                except Exception as e:
+                    logging.warning(f"Failed to fetch {source_doc['name']} for curated articles: {e}")
+                    continue
+            
+            if feed:
+                # Get first 4 articles from each source
+                for entry in feed.entries[:4]:
+                    article_title = getattr(entry, 'title', "No Title")
+                    article_summary = getattr(entry, 'summary', getattr(entry, 'description', "No summary available"))
+                    
+                    # Get content - use simpler approach for speed
+                    article_content = article_summary
+                    if hasattr(entry, 'content') and entry.content:
+                        if isinstance(entry.content, list) and len(entry.content) > 0:
+                            article_content = entry.content[0].get('value', article_summary)
+                    
+                    # Clean HTML tags quickly
+                    import re
+                    article_content = re.sub(r'<[^>]+>', '', article_content).strip()
+                    
+                    # Use simple genre classification
+                    article_genre = "General"
+                    title_lower = article_title.lower()
+                    if any(keyword in title_lower for keyword in ['tech', 'ai', 'computer', 'software', 'digital']):
+                        article_genre = "Technology"
+                    elif any(keyword in title_lower for keyword in ['finance', 'market', 'economy', 'money', 'stock']):
+                        article_genre = "Finance"
+                    elif any(keyword in title_lower for keyword in ['sport', 'game', 'match', 'team']):
+                        article_genre = "Sports"
+                    
+                    # Simple image extraction
+                    image_url = None
+                    if hasattr(entry, 'links'):
+                        for link in entry.links:
+                            if 'image' in link.get('type', '').lower():
+                                image_url = link.get('href')
+                                break
+                    
+                    curated_articles.append(Article(
+                        id=str(uuid.uuid4()),
+                        title=article_title,
+                        summary=article_summary[:300] if len(article_summary) > 300 else article_summary,
+                        link=getattr(entry, 'link', ''),
+                        published=getattr(entry, 'published', ''),
+                        source_name=source_doc.get('name', 'Unknown'),
+                        content=article_content[:1000] if len(article_content) > 1000 else article_content,
+                        genre=article_genre,
+                        image_url=image_url
+                    ))
+                    
+                    # Limit total articles to avoid too many
+                    if len(curated_articles) >= 20:
+                        break
+            
+            if len(curated_articles) >= 20:
+                break
         
-        # Convert articles to Article objects for scoring
-        article_objects = []
-        for article_data in all_articles:
-            try:
-                article = Article(
-                    id=article_data.get("id", ""),
-                    title=article_data.get("title", ""),
-                    description=article_data.get("description", ""),
-                    url=article_data.get("url", ""),
-                    published_date=article_data.get("published_date", ""),
-                    source=article_data.get("source", ""),
-                    content=article_data.get("content", ""),
-                    genre=article_data.get("genre", "General")
-                )
-                article_objects.append(article)
-            except Exception as e:
-                logging.warning(f"Failed to create article object: {e}")
-                continue
-        
-        # Use auto-pick algorithm to select best articles for curation
-        curated_articles = await auto_pick_articles(
-            user_id=current_user.id,
-            all_articles=article_objects,
-            max_articles=20,  # Show more articles in main feed
-            preferred_genres=user_profile.preferred_genres
-        )
-        
-        # Convert back to dict format for response
-        curated_response = []
-        for article in curated_articles:
-            curated_response.append({
-                "id": article.id,
-                "title": article.title,
-                "description": article.description,
-                "url": article.url,
-                "published_date": article.published_date,
-                "source": article.source,
-                "content": article.content,
-                "genre": article.genre
-            })
-        
-        logging.info(f"Returning {len(curated_response)} curated articles for user {current_user.email}")
-        return curated_response
+        logging.info(f"Returning {len(curated_articles)} curated articles (cached data only) for user {current_user.email}")
+        return curated_articles
         
     except Exception as e:
         logging.error(f"Error getting curated articles for user {current_user.email}: {e}")
@@ -1531,11 +1700,11 @@ async def get_articles_internal(current_user: User, genre: Optional[str] = None,
 
             if cache_key in RSS_CACHE and (current_time - RSS_CACHE[cache_key]['timestamp'] < CACHE_EXPIRY_SECONDS):
                 feed = RSS_CACHE[cache_key]['feed']
-                logging.info(f"Using cached feed for {source_doc['name']}")
+                # Using cached RSS data
             else:
                 feed = feedparser.parse(source_doc["url"])
                 RSS_CACHE[cache_key] = {'feed': feed, 'timestamp': current_time}
-                logging.info(f"Fetched new feed for {source_doc['name']}")
+                # RSS feed fetched
 
             for entry in feed.entries[:10]:
                 article_title = getattr(entry, 'title', "No Title")
@@ -1559,6 +1728,9 @@ async def get_articles_internal(current_user: User, genre: Optional[str] = None,
                 article_content = re.sub(r'<[^>]+>', '', article_content)
                 article_content = article_content.strip()
                 
+                # Extract image URL from RSS entry
+                image_url = extract_image_from_entry(entry)
+                
                 article_genre = classify_genre(article_title, article_summary)
                 article = Article(
                     id=str(uuid.uuid4()),
@@ -1567,6 +1739,7 @@ async def get_articles_internal(current_user: User, genre: Optional[str] = None,
                     link=getattr(entry, 'link', ""),
                     published=time.strftime('%Y-%m-%dT%H:%M:%SZ', entry.published_parsed) if hasattr(entry, 'published_parsed') and entry.published_parsed else "",
                     source_name=source_doc["name"],
+                    image_url=image_url,
                     content=article_content,
                     genre=article_genre
                 )
@@ -1603,11 +1776,6 @@ async def create_audio(request: AudioCreationRequest, http_request: Request, cur
     
     # Enhanced logging for Japanese language bug investigation
     logging.info(f"🔍 JAPANESE BUG DEBUG - Article Count: {len(request.article_ids)} - Voice Lang: {request.voice_language}")
-    if len(request.article_ids) == 15:
-        logging.warning(f"⚠️ CRITICAL: Processing exactly 15 articles - this is the problematic case!")
-        logging.warning(f"⚠️ Voice Language Setting: {request.voice_language}")
-        logging.warning(f"⚠️ Voice Name Setting: {request.voice_name}")
-        logging.warning(f"⚠️ This combination has been known to intermittently generate English audio instead of Japanese")
     
     # Get article count for tracking (needed regardless of debug mode)
     article_count = len(request.article_ids)
@@ -1684,8 +1852,6 @@ async def create_audio(request: AudioCreationRequest, http_request: Request, cur
         # Enhanced logging for Japanese language bug tracking
         final_voice_lang_for_script = request.voice_language or "en-US"
         logging.info(f"🔍 SCRIPT GENERATION - Voice Lang Parameter: {final_voice_lang_for_script}")
-        if len(articles_content) == 15 and final_voice_lang_for_script == "ja-JP":
-            logging.warning(f"⚠️ CRITICAL: Generating script for 15 articles with Japanese language - monitoring for bug")
         
         # Generate script and title based on actual content with prompt style
         script = await summarize_articles_with_openai(
@@ -1707,12 +1873,7 @@ async def create_audio(request: AudioCreationRequest, http_request: Request, cur
         logging.info(f"🎤 TTS Parameters - Voice Language: {final_voice_language}, Voice Name: {request.voice_name or 'alloy'}")
         
         # Enhanced bug tracking for 15-article Japanese case
-        if len(articles_content) == 15 and final_voice_language == "ja-JP":
-            logging.warning(f"⚠️ CRITICAL TTS: About to convert 15-article Japanese script to speech")
-            logging.warning(f"⚠️ Script Length: {len(script)} chars")
-            logging.warning(f"⚠️ Script Preview: {script[:200]}...")
-            logging.warning(f"⚠️ Final Voice Language: {final_voice_language}")
-            logging.warning(f"⚠️ Final Voice Name: {request.voice_name or 'alloy'}")
+        # Debug logging removed for cleaner output
         
         audio_data = await convert_text_to_speech(
             script, 
@@ -2020,6 +2181,9 @@ async def get_auto_picked_articles(request: AutoPickRequest, current_user: User 
                     article_content = re.sub(r'<[^>]+>', '', article_content)
                     article_content = article_content.strip()
                     
+                    # Extract image URL from RSS entry
+                    image_url = extract_image_from_entry(entry)
+                    
                     article_genre = classify_genre(article_title, article_summary)
                     article = Article(
                         id=str(uuid.uuid4()),
@@ -2028,6 +2192,7 @@ async def get_auto_picked_articles(request: AutoPickRequest, current_user: User 
                         link=getattr(entry, 'link', ""),
                         published=time.strftime('%Y-%m-%dT%H:%M:%SZ', entry.published_parsed) if hasattr(entry, 'published_parsed') and entry.published_parsed else "",
                         source_name=source["name"],
+                        image_url=image_url,
                         content=article_content,
                         genre=article_genre
                     )
@@ -2286,6 +2451,9 @@ async def create_auto_picked_audio(request: AutoPickRequest, current_user: User 
                     article_content = re.sub(r'<[^>]+>', '', article_content)
                     article_content = article_content.strip()
                     
+                    # Extract image URL from RSS entry
+                    image_url = extract_image_from_entry(entry)
+                    
                     article_genre = classify_genre(article_title, article_summary)
                     article = Article(
                         id=str(uuid.uuid4()),
@@ -2294,6 +2462,7 @@ async def create_auto_picked_audio(request: AutoPickRequest, current_user: User 
                         link=getattr(entry, 'link', ""),
                         published=time.strftime('%Y-%m-%dT%H:%M:%SZ', entry.published_parsed) if hasattr(entry, 'published_parsed') and entry.published_parsed else "",
                         source_name=source["name"],
+                        image_url=image_url,
                         content=article_content,
                         genre=article_genre
                     )

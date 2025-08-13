@@ -30,12 +30,11 @@ class ConnectionService {
   private readonly HEALTH_CHECK_INTERVAL = 60000; // 60 seconds (reduced frequency)
   private readonly CONNECTION_TIMEOUT = 30000; // 30 seconds (increased for slow networks)
   private readonly BACKEND_URLS = [
-    'http://localhost:8003', // Primary development server (uvicorn) - your preferred port
-    process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:8003',
-    'http://127.0.0.1:8003', // Localhost alternative
-    'http://localhost:8002', // Alternative port
+    process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:8002', // Primary from .env
+    'http://localhost:8002', // Main development server
+    'http://127.0.0.1:8002', // Localhost alternative  
+    'http://localhost:8003', // Alternative port
     'http://localhost:8001', // Legacy fallback
-    'http://192.168.11.63:8003', // Current network IP
   ];
 
   private constructor() {
@@ -122,11 +121,8 @@ class ConnectionService {
       return defaultUrl;
     }
     
-    console.log('🔍 Searching for working backend URL...');
-    
     for (const url of this.BACKEND_URLS) {
       try {
-        console.log(`Testing: ${url}`);
         const startTime = Date.now();
         
         const response = await axios.get(`${url}/health`, {
@@ -137,7 +133,7 @@ class ConnectionService {
         const latency = Date.now() - startTime;
         
         if (response.status === 200) {
-          console.log(`✅ Found working backend: ${url} (${latency}ms)`);
+          console.log(`✅ Backend connected: ${url} (${latency}ms)`);
           this.connectionStatus = {
             isConnected: true,
             lastChecked: Date.now(),
@@ -155,7 +151,7 @@ class ConnectionService {
           return url;
         }
       } catch (error: any) {
-        console.log(`❌ ${url} failed: ${error.message}`);
+        // Silent failure - try next URL
         continue;
       }
     }
@@ -222,23 +218,19 @@ class ConnectionService {
           await this.ensureConnection();
         }
         
-        console.log(`📡 API Request attempt ${attempt + 1}/${config.maxRetries + 1}: ${requestConfig.method?.toUpperCase()} ${requestConfig.url}`);
-        
         const response = await this.axiosInstance(requestConfig);
         
         if (attempt > 0) {
-          console.log(`✅ Request succeeded on attempt ${attempt + 1}`);
+          console.log(`✅ Request retry succeeded on attempt ${attempt + 1}`);
         }
         
         return response.data;
         
       } catch (error: any) {
         lastError = error;
-        console.error(`❌ Request attempt ${attempt + 1} failed:`, error.message);
         
         // Don't retry if it's not a retryable error
         if (!config.retryCondition!(error)) {
-          console.log('🚫 Error is not retryable, giving up');
           break;
         }
         
@@ -248,13 +240,12 @@ class ConnectionService {
             config.baseDelay * Math.pow(config.backoffMultiplier, attempt),
             config.maxDelay
           );
-          console.log(`⏳ Waiting ${delay}ms before retry...`);
           await new Promise(resolve => setTimeout(resolve, delay));
         }
       }
     }
     
-    console.error(`🔥 All ${config.maxRetries + 1} attempts failed`);
+    console.error(`Network request failed after ${config.maxRetries + 1} attempts`);
     throw lastError;
   }
 

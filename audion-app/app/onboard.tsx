@@ -92,7 +92,7 @@ export default function OnboardScreen() {
         [
           {
             text: 'Get Started',
-            onPress: () => router.replace('/(tabs)/feed')
+            onPress: () => router.replace('/(tabs)/')
           }
         ]
       );
