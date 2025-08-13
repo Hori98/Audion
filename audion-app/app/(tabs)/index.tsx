@@ -5,10 +5,9 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  RefreshControl,
   SafeAreaView,
   Alert,
-  Image,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
@@ -20,6 +19,8 @@ import axios from 'axios';
 import { Article } from '../../types';
 import CacheService from '../../services/CacheService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import PreloadService from '../../services/PreloadService';
+import OptimizedArticleList from '../../components/OptimizedArticleList';
 
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:8003';
 const API = `${BACKEND_URL}/api`;
@@ -38,16 +39,32 @@ export default function MainScreen() {
 
   const genres = ['All', 'Breaking News', 'Technology', 'Business', 'Politics', 'World', 'Sports', 'Entertainment'];
 
-  // Feedベースの安定したuseFocusEffect
+  // 高速初期化：キャッシュを優先し、バックグラウンドで更新
   useFocusEffect(
     React.useCallback(() => {
-      const initializeData = async () => {
-        if (token && token !== '') {
-          await loadReadingHistory();
-          await fetchHomeArticles();
+      const initializeDataFast = async () => {
+        if (!token) return;
+
+        // 1. 即座にキャッシュされた記事を表示
+        const instantArticles = await PreloadService.getInstance().getInstantArticles();
+        if (instantArticles && instantArticles.length > 0) {
+          setArticles(instantArticles);
+          setLoading(false);
         }
+
+        // 2. 読書履歴をバックグラウンドで読み込み
+        loadReadingHistory();
+
+        // 3. 最新データを非同期で取得（UIをブロックしない）
+        setTimeout(() => {
+          fetchHomeArticles(false); // loading状態を変更せずに更新
+        }, 100);
+
+        // 4. プリロードサービスを初期化
+        PreloadService.getInstance().initialize(token);
       };
-      initializeData();
+      
+      initializeDataFast();
     }, [token])
   );
 
@@ -78,41 +95,71 @@ export default function MainScreen() {
     }
   };
 
-  // Feedベースの記事取得（全ソース対象）
-  const fetchHomeArticles = async () => {
-    setLoading(true);
+  // 最適化された記事取得（loading状態の制御を改善）
+  const fetchHomeArticles = async (shouldShowLoading = true) => {
+    if (shouldShowLoading) setLoading(true);
+    
     try {
       const filters = {
         ...(selectedGenre !== 'All' && { genre: selectedGenre }),
-        // Homeは全ソースを表示（sourceフィルターなし）
       };
 
-      // キャッシュをチェック
+      // キャッシュを最初にチェック（高速）
       const cachedArticles = await CacheService.getArticles(filters);
-      if (cachedArticles) {
-        setArticles(cachedArticles);
-        setLoading(false);
+      if (cachedArticles && cachedArticles.length > 0) {
+        const optimizedArticles = await PreloadService.getInstance().optimizeImageUrls(cachedArticles);
+        setArticles(optimizedArticles);
+        if (shouldShowLoading) setLoading(false);
+        
+        // キャッシュを使用した場合でも、バックグラウンドで最新データをチェック
+        setTimeout(async () => {
+          try {
+            const headers = { Authorization: `Bearer ${token}` };
+            const params: { genre?: string } = {};
+            if (selectedGenre !== 'All') {
+              params.genre = selectedGenre;
+            }
+            
+            const response = await axios.get(`${API}/articles`, { headers, params, timeout: 8000 });
+            
+            if (response.data && response.data.length > 0) {
+              const optimizedNew = await PreloadService.getInstance().optimizeImageUrls(response.data);
+              await CacheService.setArticles(optimizedNew, filters);
+              
+              // データが更新された場合のみ再描画
+              if (JSON.stringify(optimizedNew) !== JSON.stringify(cachedArticles)) {
+                setArticles(optimizedNew);
+              }
+            }
+          } catch (bgError) {
+            // バックグラウンド更新の失敗は無視
+          }
+        }, 1000);
+        
         return;
       }
 
-      // API呼び出し（Feedと同じエンドポイント）
+      // キャッシュがない場合のみAPI呼び出し
       const headers = { Authorization: `Bearer ${token}` };
       const params: { genre?: string } = {};
       if (selectedGenre !== 'All') {
         params.genre = selectedGenre;
       }
       
-      const response = await axios.get(`${API}/articles`, { headers, params });
+      const response = await axios.get(`${API}/articles`, { headers, params, timeout: 10000 });
       
-      // キャッシュに保存
-      await CacheService.setArticles(response.data, filters);
-      setArticles(response.data);
+      if (response.data && response.data.length > 0) {
+        const optimizedArticles = await PreloadService.getInstance().optimizeImageUrls(response.data);
+        await CacheService.setArticles(optimizedArticles, filters);
+        setArticles(optimizedArticles);
+      }
       
     } catch (error: any) {
-      console.error('Error fetching home articles:', error);
-      Alert.alert('Error', 'Failed to load articles. Please try again.');
+      if (articles.length === 0) {
+        Alert.alert('Error', 'Failed to load articles. Please check your connection.');
+      }
     } finally {
-      setLoading(false);
+      if (shouldShowLoading) setLoading(false);
     }
   };
 
@@ -277,100 +324,16 @@ export default function MainScreen() {
         ))}
       </ScrollView>
 
-      {/* Articles List */}
-      <ScrollView
-        style={styles.articlesList}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-        }
-        showsVerticalScrollIndicator={false}
-      >
-        {filteredArticles.length === 0 ? (
-          <View style={styles.emptyState}>
-            <Ionicons name="newspaper-outline" size={64} color={theme.textMuted} />
-            <Text style={[styles.emptyStateText, { color: theme.textSecondary }]}>
-              No articles available
-            </Text>
-            <Text style={[styles.emptyStateDescription, { color: theme.textMuted }]}>
-              Pull down to refresh and check for new content
-            </Text>
-          </View>
-        ) : (
-          filteredArticles.map((article, index) => (
-            <TouchableOpacity
-              key={article.id}
-              style={[styles.newsCard, { backgroundColor: theme.surface }]}
-              onPress={() => openArticleInBrowser(article)}
-              activeOpacity={0.7}
-            >
-              <View style={styles.newsCardContent}>
-                {/* Left side: Text content */}
-                <View style={styles.newsTextContent}>
-                  <View style={styles.newsCardHeader}>
-                    <View style={styles.sourceInfo}>
-                      <Text style={[styles.newsSource, { color: theme.primary }]}>
-                        {article.source_name || 'Unknown Source'}
-                      </Text>
-                      <View style={[styles.sourceDot, { backgroundColor: theme.textMuted }]} />
-                      <Text style={[styles.newsTime, { color: theme.textMuted }]}>
-                        {formatDate(article.published || '')}
-                      </Text>
-                    </View>
-                  </View>
-                  
-                  <Text style={[styles.newsTitle, { color: theme.text }]} numberOfLines={3}>
-                    {article.title || 'Untitled'}
-                  </Text>
-                  
-                  {article.summary && article.summary.trim() && (
-                    <Text 
-                      style={[styles.newsDescription, { color: theme.textSecondary }]}
-                      numberOfLines={2}
-                    >
-                      {article.summary.trim()}
-                    </Text>
-                  )}
-                  
-                  <View style={styles.newsFooter}>
-                    <Text style={[styles.readingTime, { color: theme.textMuted }]}>
-                      {getReadingTime(article.content)}
-                    </Text>
-                    
-                    <View style={styles.newsActions}>
-                      <TouchableOpacity style={styles.newsActionButton}>
-                        <Ionicons name="bookmark-outline" size={16} color={theme.textMuted} />
-                      </TouchableOpacity>
-                      <TouchableOpacity style={styles.newsActionButton}>
-                        <Ionicons name="share-outline" size={16} color={theme.textMuted} />
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                </View>
-
-                {/* Right side: Thumbnail image */}
-                <View style={styles.newsThumbnailContainer}>
-                  {article.image_url ? (
-                    <Image
-                      source={{ uri: article.image_url }}
-                      style={styles.newsThumbnail}
-                      resizeMode="cover"
-                      onError={() => {
-                        console.log('Failed to load image:', article.image_url);
-                      }}
-                    />
-                  ) : (
-                    <View style={[styles.placeholderThumbnail, { backgroundColor: theme.accent }]}>
-                      <Ionicons name="newspaper-outline" size={24} color={theme.textMuted} />
-                    </View>
-                  )}
-                </View>
-              </View>
-            </TouchableOpacity>
-          ))
-        )}
-        {/* Bottom padding for floating button */}
-        <View style={{ height: 100 }} />
-      </ScrollView>
+      {/* Optimized Articles List */}
+      <View style={{ flex: 1 }}>
+        <OptimizedArticleList
+          articles={filteredArticles}
+          onArticlePress={openArticleInBrowser}
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          loading={loading}
+        />
+      </View>
 
       {/* Floating Auto-Pick Button */}
       <TouchableOpacity
@@ -380,7 +343,7 @@ export default function MainScreen() {
         activeOpacity={0.8}
       >
         {creatingAudio ? (
-          <Ionicons name="hourglass-outline" size={24} color="#fff" />
+          <ActivityIndicator size="small" color="#fff" />
         ) : (
           <Ionicons name="flash" size={24} color="#fff" />
         )}
@@ -430,103 +393,6 @@ const styles = StyleSheet.create({
   genreChipText: {
     fontSize: 14,
     fontWeight: '500',
-  },
-  articlesList: {
-    flex: 1,
-    paddingHorizontal: 16,
-  },
-  emptyState: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 60,
-  },
-  emptyStateText: {
-    fontSize: 18,
-    fontWeight: '600',
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  emptyStateDescription: {
-    fontSize: 14,
-    textAlign: 'center',
-    paddingHorizontal: 40,
-  },
-  newsCard: {
-    padding: 16,
-    borderRadius: 12,
-    marginVertical: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  newsCardContent: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-  },
-  newsTextContent: {
-    flex: 1,
-    marginRight: 12,
-  },
-  newsCardHeader: {
-    marginBottom: 8,
-  },
-  newsThumbnailContainer: {
-    width: 80,
-    height: 80,
-    borderRadius: 8,
-    overflow: 'hidden',
-  },
-  newsThumbnail: {
-    width: '100%',
-    height: '100%',
-  },
-  placeholderThumbnail: {
-    width: '100%',
-    height: '100%',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderRadius: 8,
-  },
-  sourceInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  newsSource: {
-    fontSize: 12,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-  },
-  sourceDot: {
-    width: 3,
-    height: 3,
-    borderRadius: 1.5,
-    marginHorizontal: 8,
-  },
-  newsTime: {
-    fontSize: 12,
-  },
-  newsDescription: {
-    fontSize: 14,
-    lineHeight: 20,
-    marginBottom: 12,
-  },
-  newsFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  readingTime: {
-    fontSize: 12,
-  },
-  newsActions: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  newsActionButton: {
-    padding: 4,
   },
   floatingButton: {
     position: 'absolute',

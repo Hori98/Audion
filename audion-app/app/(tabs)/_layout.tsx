@@ -25,13 +25,7 @@ const CustomHeader = () => {
   const API = process.env.EXPO_PUBLIC_BACKEND_URL ? `${process.env.EXPO_PUBLIC_BACKEND_URL}/api` : 'http://localhost:8003/api';
   
   const handleSettingsPress = () => {
-    console.log('User avatar pressed - navigating to settings');
-    try {
-      router.push('/settings');
-      console.log('Successfully navigated to settings');
-    } catch (error) {
-      console.error('Error navigating to settings:', error);
-    }
+    router.push('/settings');
   };
 
   // Fetch user profile image from backend
@@ -39,7 +33,7 @@ const CustomHeader = () => {
     if (token) {
       fetchUserProfile();
     }
-  }, [token]); // fetchUserProfile is defined inline, so it's safe to omit
+  }, [token]);
 
   const fetchUserProfile = async () => {
     try {
@@ -50,7 +44,6 @@ const CustomHeader = () => {
         setUserProfileImage(response.data.profile_image);
       }
     } catch (error: any) {
-      console.error('Error fetching user profile for header:', error);
       // Profile endpoint might not exist yet, ignore error
     }
   };
@@ -108,7 +101,6 @@ const CustomHeader = () => {
 
       {/* Audion Logo (Center) */}
       <View style={{ flex: 1, alignItems: 'center' }}>
-        {/* Audion Text Logo */}
         <Text style={{
           fontSize: 20,
           fontWeight: 'bold',
