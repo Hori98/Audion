@@ -209,6 +209,12 @@ class NotificationService {
       return;
     }
 
+    // Web platform doesn't support native notifications
+    if (Platform.OS === 'web') {
+      console.log('📱 Web platform: Skipping native notification for:', audioTitle);
+      return;
+    }
+
     try {
       const title = '🎧 Your Audio is Ready!';
       const body = `"${audioTitle}" • ${articleCount} articles • Tap to listen`;

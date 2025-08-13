@@ -19,9 +19,12 @@ import CacheService from '../../services/CacheService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ErrorHandlingService } from '../../services/ErrorHandlingService';
 import AudioLimitService from '../../services/AudioLimitService';
+import AudioMetadataService from '../../services/AudioMetadataService';
+import NotificationService from '../../services/NotificationService';
 import { Article } from '../../types';
+import { getAPIPromptData, getPromptSettingsForMode } from '../../utils/promptUtils';
 
-const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:8003';
 const API = `${BACKEND_URL}/api`;
 
 interface RSSSource {
@@ -57,11 +60,7 @@ export default function FeedScreen() {
   // Removed: showSelectedModal state
   const [uiUpdateTrigger, setUiUpdateTrigger] = useState(0); // Force UI updates
   const [selectionMode, setSelectionMode] = useState(false); // Pattern B selection mode
-  const [tempPromptStyle, setTempPromptStyle] = useState<string>('standard'); // Temporary prompt override
-  const [showPromptModal, setShowPromptModal] = useState(false); // Prompt selection modal
-  const [customPromptModalVisible, setCustomPromptModalVisible] = useState(false);
-  const [customPromptText, setCustomPromptText] = useState('');
-  const [editingPromptId, setEditingPromptId] = useState<string | null>(null);
+
   const [fabRotation] = useState(new Animated.Value(0)); // FAB animation
   const [feedLikedArticles, setFeedLikedArticles] = useState<Set<string>>(new Set());
   const [feedDislikedArticles, setFeedDislikedArticles] = useState<Set<string>>(new Set());
@@ -77,7 +76,7 @@ export default function FeedScreen() {
     'All Articles', 'Unread', 'Read', 'This Week\'s Reads'
   ];
 
-  const [customPrompts, setCustomPrompts] = useState<any[]>([]);
+  // Removed duplicate custom prompts - using unified global system only
 
   // Built-in prompt options
   const builtInPrompts = [
@@ -87,123 +86,21 @@ export default function FeedScreen() {
     { id: 'insightful', name: 'Insightful', description: 'Deep analysis with context and implications', icon: 'bulb-outline', color: '#F59E0B' }
   ];
 
-  // Get all available prompts (built-in + custom)
-  const getAllPrompts = () => {
-    return [...builtInPrompts, ...customPrompts.map(prompt => ({
-      id: prompt.id,
-      name: prompt.name,
-      description: 'Custom prompt',
-      icon: 'create-outline',
-      color: theme.accent,
-      isCustom: true
-    }))];
-  };
+  // Removed - using unified global prompt system only
 
-  const promptStyles = getAllPrompts();
+  // Removed - using unified global prompt system only
 
-  // Load custom prompts from storage
-  const loadCustomPrompts = async () => {
-    try {
-      const stored = await AsyncStorage.getItem('custom_prompts');
-      if (stored) {
-        setCustomPrompts(JSON.parse(stored));
-      }
-    } catch (error) {
-      console.error('Error loading custom prompts:', error);
-    }
-  };
+  // Removed duplicate custom prompt loading - using unified global system only
 
-  // Save custom prompts to storage
-  const saveCustomPrompts = async (prompts: any[]) => {
-    try {
-      await AsyncStorage.setItem('custom_prompts', JSON.stringify(prompts));
-      setCustomPrompts(prompts);
-    } catch (error) {
-      console.error('Error saving custom prompts:', error);
-    }
-  };
+  // Removed duplicate custom prompt saving - using unified global system only
 
 
-  // Add new custom prompt
-  const addCustomPrompt = async () => {
-    if (!customPromptText.trim()) {
-      Alert.alert('Error', 'Please enter prompt text');
-      return;
-    }
-
-    const newPrompt = {
-      id: `custom_${Date.now()}`,
-      name: `Custom ${customPrompts.length + 1}`,
-      text: customPromptText.trim(),
-      created_at: new Date().toISOString()
-    };
-
-    const updatedPrompts = [...customPrompts, newPrompt];
-    await saveCustomPrompts(updatedPrompts);
-    
-    setCustomPromptText('');
-    setCustomPromptModalVisible(false);
-    Alert.alert('Success', 'Custom prompt created successfully!');
-  };
-
-  // Edit existing custom prompt
-  const editCustomPrompt = async () => {
-    if (!customPromptText.trim() || !editingPromptId) {
-      Alert.alert('Error', 'Please enter prompt text');
-      return;
-    }
-
-    const updatedPrompts = customPrompts.map(prompt =>
-      prompt.id === editingPromptId
-        ? { ...prompt, text: customPromptText.trim(), updated_at: new Date().toISOString() }
-        : prompt
-    );
-
-    await saveCustomPrompts(updatedPrompts);
-    
-    setCustomPromptText('');
-    setEditingPromptId(null);
-    setCustomPromptModalVisible(false);
-    Alert.alert('Success', 'Custom prompt updated successfully!');
-  };
-
-  // Delete custom prompt
-  const deleteCustomPrompt = async (promptId: string) => {
-    Alert.alert(
-      'Delete Custom Prompt',
-      'Are you sure you want to delete this custom prompt?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            const updatedPrompts = customPrompts.filter(prompt => prompt.id !== promptId);
-            await saveCustomPrompts(updatedPrompts);
-            Alert.alert('Success', 'Custom prompt deleted successfully!');
-          }
-        }
-      ]
-    );
-  };
-
-  // Open custom prompt modal for creation or editing
-  const openCustomPromptModal = (prompt?: any) => {
-    if (prompt) {
-      setEditingPromptId(prompt.id);
-      setCustomPromptText(prompt.text);
-    } else {
-      setEditingPromptId(null);
-      setCustomPromptText('');
-    }
-    setCustomPromptModalVisible(true);
-  };
+  // Removed duplicate custom prompt functions - using unified global system only
 
   useFocusEffect(
     React.useCallback(() => {
       const initializeData = async () => {
         if (token && token !== '') {
-          await loadCustomPrompts();
           await loadGlobalSelection();
           await loadArchivedArticles();
           await loadReadingHistory();
@@ -236,6 +133,20 @@ export default function FeedScreen() {
   useEffect(() => {
     // Force component re-render when selection or filters change
   }, [selectedArticleIds, articles, uiUpdateTrigger, selectedReadingFilter]);
+
+  // Initialize NotificationService on component mount
+  useEffect(() => {
+    const initNotifications = async () => {
+      try {
+        await NotificationService.getInstance().initialize();
+        console.log('✅ Feed: NotificationService initialized');
+      } catch (error) {
+        console.error('❌ Feed: Failed to initialize NotificationService:', error);
+      }
+    };
+    
+    initNotifications();
+  }, []);
 
   // Load global selection state from AsyncStorage
   const loadGlobalSelection = async () => {
@@ -719,11 +630,7 @@ export default function FeedScreen() {
     const newMode = !selectionMode;
     setSelectionMode(newMode);
     
-    // Load current prompt setting when entering selection mode
-    if (newMode) {
-      const currentPromptStyle = await AsyncStorage.getItem('unified_prompt_style') || 'standard';
-      setTempPromptStyle(currentPromptStyle);
-    }
+    // Removed: No longer need temporary prompt style - using unified global system only
     
     // Animate FAB rotation
     Animated.timing(fabRotation, {
@@ -745,17 +652,53 @@ export default function FeedScreen() {
       return;
     }
 
+    console.log('🎬 Starting audio creation with debug check...');
+    console.log('🧪 Debug mode enabled:', require('../../services/DebugService').default.isDebugModeEnabled());
+    console.log('🧪 Should bypass limits:', require('../../services/DebugService').default.shouldBypassSubscriptionLimits());
+
     setCreatingAudio(true);
     try {
-      // Load prompt settings - use temporary style if in manual mode, otherwise use saved settings
-      const savedPromptStyle = selectionMode ? tempPromptStyle : (await AsyncStorage.getItem('unified_prompt_style') || 'standard');
-      const savedCustomPrompt = await AsyncStorage.getItem('unified_custom_prompt') || '';
+      // Load prompt settings using unified system
+      let promptData;
+      if (selectionMode) {
+        // Use temporary override in selection mode with fallback to unified custom prompt
+        const { customPrompt } = await getPromptSettingsForMode('manual');
+        promptData = {
+          prompt_style: 'standard',
+          custom_prompt: customPrompt
+        };
+      } else {
+        // Use unified prompt settings for manual mode
+        promptData = await getAPIPromptData('manual');
+      }
       
       // Get selected articles using normalized IDs
       const selectedArticles = getSelectedArticles();
+      
+      // Validate against user limits before proceeding
+      const validation = await AudioLimitService.validateAudioCreation(token!, selectedArticles.length);
+      
+      if (!validation.isValid) {
+        Alert.alert('Audio Creation Limit', validation.errorMessage || 'Unable to create audio due to plan limits.');
+        setCreatingAudio(false);
+        return;
+      }
+      
       const articleIds = selectedArticles.map((article) => article.id);
       const articleTitles = selectedArticles.map((article) => article.title);
       const articleUrls = selectedArticles.map((article) => article.link);
+
+      // Debug voice language setting
+      console.log('🎤 Manual Pick Audio Creation - Voice Language:', currentVoiceLanguage);
+      console.log('🎤 Manual Pick Audio Creation - Prompt Data:', promptData);
+      
+      // Add debug headers if bypass is enabled
+      const headers: any = { Authorization: `Bearer ${token}` };
+      if (require('../../services/DebugService').default.shouldBypassSubscriptionLimits()) {
+        headers['X-Debug-Bypass-Limits'] = 'true';
+        headers['X-Debug-Mode'] = 'true';
+        console.log('🧪 Adding debug headers to API request');
+      }
 
       const response = await axios.post(
         `${API}/audio/create`,
@@ -763,12 +706,11 @@ export default function FeedScreen() {
           article_ids: articleIds,
           article_titles: articleTitles,
           article_urls: articleUrls,
-          prompt_style: savedPromptStyle,
-          custom_prompt: savedCustomPrompt,
+          ...promptData,
           voice_language: currentVoiceLanguage,
           voice_name: "alloy" // Default voice, can be made configurable later
         },
-        { headers: { Authorization: `Bearer ${token}` } }
+        { headers }
       );
 
 
@@ -793,9 +735,31 @@ export default function FeedScreen() {
       };
 
 
+      // Save prompt metadata for this audio
+      await AudioMetadataService.saveAudioMetadata({
+        audioId: response.data.id,
+        promptMode: 'manual',
+        promptStyle: promptData.prompt_style as any,
+        customPrompt: promptData.custom_prompt,
+        createdAt: new Date().toISOString(),
+        creationMethod: 'selection'
+      });
+
       // Show success modal instead of alert (exactly like Feed auto-pick)
       setCreatedAudio(response.data);
       setShowSuccessModal(true);
+      
+      // Send completion notification
+      try {
+        await NotificationService.getInstance().sendAudioReadyNotification(
+          response.data.title || 'Manual Selection Audio',
+          selectedArticles.length,
+          response.data.id
+        );
+        console.log('✅ Audio ready notification sent for manual selection');
+      } catch (notifError) {
+        console.error('❌ Failed to send audio ready notification:', notifError);
+      }
       
       // Background tasks immediately (like Feed auto-pick) - SKIP clearAllSelections to prevent modal interference
       recordInteractions();
@@ -833,142 +797,6 @@ export default function FeedScreen() {
           action: 'create_audio',
           source: 'Feed Screen',
           details: { selectedCount: selectedArticleIds.length }
-        });
-      }
-    } finally {
-      setCreatingAudio(false);
-    }
-  };;
-
-  const handleAutoPickFromFeed = async () => {
-    if (articles.length === 0) {
-      Alert.alert('No Articles', 'No articles available with current filter settings.');
-      return;
-    }
-
-
-    setCreatingAudio(true);
-    try {
-      // Use backend Auto-Pick algorithm with current filter constraints
-      const requestBody: any = {
-        max_articles: 10, // Feed-auto limit
-      };
-      
-      // Apply current filter constraints to Auto-Pick
-      if (selectedSource !== 'All') {
-        // Find the source ID for the selected source name
-        const selectedSourceObj = sources.find(source => source.name === selectedSource);
-        if (selectedSourceObj) {
-          requestBody.active_source_ids = [selectedSourceObj.id];
-        }
-      }
-      
-      // Apply genre filter using backend support
-      if (selectedGenre !== 'All') {
-        requestBody.preferred_genres = [selectedGenre];
-      }
-      
-      // Get personalized article selection from backend
-      const autoPickResponse = await axios.post(
-        `${API}/auto-pick`,
-        requestBody,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      
-      const availableArticles = autoPickResponse.data;
-      
-      if (availableArticles.length === 0) {
-        Alert.alert('No Articles', 'No suitable articles found with current filter settings.');
-        return;
-      }
-
-      // Get user's maximum articles limit and validate
-      const maxArticles = await AudioLimitService.getMaxArticlesForUser(token!);
-      const articlesToUse = Math.min(availableArticles.length, maxArticles);
-
-      // Validate against user limits before proceeding
-      const validation = await AudioLimitService.validateAudioCreation(token!, articlesToUse);
-      
-      if (!validation.isValid) {
-        Alert.alert('Audio Creation Limit', validation.errorMessage || 'Unable to create audio due to plan limits.');
-        setCreatingAudio(false);
-        return;
-      }
-      
-      const selectedArticles = availableArticles.slice(0, articlesToUse);
-      const articleIds = selectedArticles.map((article: Article) => article.id);
-      const articleTitles = selectedArticles.map((article: Article) => article.title);
-      const articleUrls = selectedArticles.map((article: Article) => article.link);
-
-
-      // Load prompt settings from unified prompt system
-      const savedPromptStyle = await AsyncStorage.getItem('unified_prompt_style') || 'standard';
-      const savedCustomPrompt = await AsyncStorage.getItem('unified_custom_prompt') || '';
-
-      const response = await axios.post(
-        `${API}/audio/create`,
-        {
-          article_ids: articleIds,
-          article_titles: articleTitles,
-          article_urls: articleUrls,
-          prompt_style: savedPromptStyle,
-          custom_prompt: savedCustomPrompt,
-          voice_language: currentVoiceLanguage,
-          voice_name: "alloy"
-        },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-
-      // Record user interactions for personalization
-      for (const article of availableArticles) {
-        try {
-          await axios.post(
-            `${API}/user-interaction`,
-            {
-              article_id: article.id,
-              interaction_type: 'created_audio',
-              genre: article.genre
-            },
-            { headers: { Authorization: `Bearer ${token}` } }
-          );
-        } catch (interactionError) {
-          console.error('Error recording interaction:', interactionError);
-        }
-      }
-
-      const filterInfo = [];
-      if (selectedSource !== 'All') filterInfo.push(`Source: ${selectedSource}`);
-      if (selectedGenre !== 'All') filterInfo.push(`Genre: ${selectedGenre}`);
-      const filterText = filterInfo.length > 0 ? ` (${filterInfo.join(', ')})` : '';
-
-      // Show success modal instead of alert
-      setCreatedAudio(response.data);
-      setShowSuccessModal(true);
-      
-      // Donate shortcut to Siri for auto-pick functionality
-      donateShortcut('auto-pick');
-    } catch (error: any) {
-      console.error('Error creating auto-picked audio:', error);
-      
-      // Handle limit exceeded errors
-      if (error.response?.status === 403 && error.response?.data?.type === 'limit_exceeded') {
-        const errorData = error.response.data;
-        Alert.alert(
-          'Limit Reached', 
-          errorData.message,
-          [
-            { text: 'OK', style: 'default' },
-            { text: 'View Usage', onPress: () => {
-              // TODO: Navigate to subscription/usage page
-              console.log('Usage info:', errorData.usage_info);
-            }}
-          ]
-        );
-      } else {
-        ErrorHandlingService.showError(error, { 
-          action: 'create_audio',
-          source: 'Feed Auto-pick',
-          details: { genre: selectedGenre, source: selectedSource }
         });
       }
     } finally {
@@ -1096,9 +924,25 @@ export default function FeedScreen() {
 
     setCreatingAudio(true);
     try {
-      // Load prompt settings
-      const savedPromptStyle = await AsyncStorage.getItem('unified_prompt_style') || 'standard';
-      const savedCustomPrompt = await AsyncStorage.getItem('unified_custom_prompt') || '';
+      // Validate against user limits before proceeding  
+      const validation = await AudioLimitService.validateAudioCreation(token!, 1);
+      
+      if (!validation.isValid) {
+        Alert.alert('Audio Creation Limit', validation.errorMessage || 'Unable to create audio due to plan limits.');
+        setCreatingAudio(false);
+        return;
+      }
+
+      // Load prompt settings using unified system for manual mode
+      const promptData = await getAPIPromptData('manual');
+
+      // Add debug headers if bypass is enabled
+      const headers: any = { Authorization: `Bearer ${token}` };
+      if (require('../../services/DebugService').default.shouldBypassSubscriptionLimits()) {
+        headers['X-Debug-Bypass-Limits'] = 'true';
+        headers['X-Debug-Mode'] = 'true';
+        console.log('🧪 Adding debug headers to single audio API request');
+      }
 
       const response = await axios.post(
         `${API}/audio/create`,
@@ -1106,10 +950,9 @@ export default function FeedScreen() {
           article_ids: [article.id],
           article_titles: [article.title],
           article_urls: [article.link],
-          prompt_style: savedPromptStyle,
-          custom_prompt: savedCustomPrompt
+          ...promptData
         },
-        { headers: { Authorization: `Bearer ${token}` } }
+        { headers }
       );
 
       // Record interaction for personalization
@@ -1127,9 +970,31 @@ export default function FeedScreen() {
         console.warn('Failed to record single audio interaction:', interactionError);
       }
 
+      // Save prompt metadata for this audio
+      await AudioMetadataService.saveAudioMetadata({
+        audioId: response.data.id,
+        promptMode: 'manual',
+        promptStyle: promptData.prompt_style as any,
+        customPrompt: promptData.custom_prompt,
+        createdAt: new Date().toISOString(),
+        creationMethod: 'single-article'
+      });
+
       // Show success modal
       setCreatedAudio(response.data);
       setShowSuccessModal(true);
+      
+      // Send completion notification
+      try {
+        await NotificationService.getInstance().sendAudioReadyNotification(
+          response.data.title || article.title,
+          1,
+          response.data.id
+        );
+        console.log('✅ Audio ready notification sent for single article');
+      } catch (notifError) {
+        console.error('❌ Failed to send audio ready notification:', notifError);
+      }
       
       // Donate shortcut for single audio creation
       donateShortcut('create-single-audio');
@@ -1176,13 +1041,29 @@ export default function FeedScreen() {
 
     setCreatingAudio(true);
     try {
-      // Load prompt settings
-      const savedPromptStyle = await AsyncStorage.getItem('unified_prompt_style') || 'standard';
-      const savedCustomPrompt = await AsyncStorage.getItem('unified_custom_prompt') || '';
+      // Validate against user limits before proceeding
+      const validation = await AudioLimitService.validateAudioCreation(token!, weeklyArticles.length);
+      
+      if (!validation.isValid) {
+        Alert.alert('Audio Creation Limit', validation.errorMessage || 'Unable to create audio due to plan limits.');
+        setCreatingAudio(false);
+        return;
+      }
+
+      // Load prompt settings using unified system for manual mode
+      const promptData = await getAPIPromptData('manual');
 
       const articleIds = weeklyArticles.map(article => article.id);
       const articleTitles = weeklyArticles.map(article => article.title);
       const articleUrls = weeklyArticles.map(article => article.link);
+
+      // Add debug headers if bypass is enabled
+      const headers: any = { Authorization: `Bearer ${token}` };
+      if (require('../../services/DebugService').default.shouldBypassSubscriptionLimits()) {
+        headers['X-Debug-Bypass-Limits'] = 'true';
+        headers['X-Debug-Mode'] = 'true';
+        console.log('🧪 Adding debug headers to weekly audio API request');
+      }
 
       const response = await axios.post(
         `${API}/audio/create`,
@@ -1190,12 +1071,11 @@ export default function FeedScreen() {
           article_ids: articleIds,
           article_titles: articleTitles,
           article_urls: articleUrls,
-          prompt_style: savedPromptStyle,
-          custom_prompt: savedCustomPrompt,
+          ...promptData,
           voice_language: currentVoiceLanguage,
           voice_name: "alloy"
         },
-        { headers: { Authorization: `Bearer ${token}` } }
+        { headers }
       );
 
       // Record interactions for all articles
@@ -1215,9 +1095,32 @@ export default function FeedScreen() {
         }
       }
 
+      // Save prompt metadata for this audio
+      await AudioMetadataService.saveAudioMetadata({
+        audioId: response.data.id,
+        promptMode: 'manual',
+        promptStyle: promptData.prompt_style as any,
+        customPrompt: promptData.custom_prompt,
+        createdAt: new Date().toISOString(),
+        creationMethod: 'weekly'
+      });
+
       // Show success modal
       setCreatedAudio(response.data);
       setShowSuccessModal(true);
+      
+      // Send completion notification
+      try {
+        const articleCount = response.data.article_count || 10; // Default for weekly
+        await NotificationService.getInstance().sendAudioReadyNotification(
+          response.data.title || 'Weekly Audio Digest',
+          articleCount,
+          response.data.id
+        );
+        console.log('✅ Audio ready notification sent for weekly digest');
+      } catch (notifError) {
+        console.error('❌ Failed to send audio ready notification:', notifError);
+      }
       
       donateShortcut('create-weekly-audio');
     } catch (error: any) {
@@ -1462,6 +1365,46 @@ export default function FeedScreen() {
             </Text>
           </View>
         )}
+
+        {/* Selected Articles List - Show when in selection mode and articles are selected */}
+        {selectionMode && selectedArticleIds.length > 0 && (
+          <View style={[styles.selectedArticlesList, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <Text style={[styles.selectedArticlesTitle, { color: theme.text }]}>
+              Selected Articles:
+            </Text>
+            <ScrollView 
+              style={styles.selectedArticlesScroll}
+              showsVerticalScrollIndicator={false}
+              nestedScrollEnabled={true}
+            >
+              {getSelectedArticles().map((article) => (
+                <View key={article.id} style={[styles.selectedArticleItem, { borderBottomColor: theme.border }]}>
+                  <View style={styles.selectedArticleContent}>
+                    <Text 
+                      style={[styles.selectedArticleTitle, { color: theme.text }]} 
+                      numberOfLines={2}
+                      ellipsizeMode="tail"
+                    >
+                      {article.title}
+                    </Text>
+                    <Text style={[styles.selectedArticleSource, { color: theme.textSecondary }]}>
+                      {article.source_name || article.source}
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    style={[styles.removeArticleButton, { backgroundColor: theme.error + '20' }]}
+                    onPress={() => toggleArticleSelection(article)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Remove ${article.title} from selection`}
+                    accessibilityHint="Tap to remove this article from your selection"
+                  >
+                    <Ionicons name="remove" size={16} color={theme.error} />
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </ScrollView>
+          </View>
+        )}
         
         <TouchableOpacity
           style={[
@@ -1492,33 +1435,6 @@ export default function FeedScreen() {
           </Text>
         </TouchableOpacity>
         
-        {/* Prompt Style Button - Show in selection mode */}
-        {selectionMode && (
-          <TouchableOpacity
-            style={[
-              styles.promptStyleButton,
-              { backgroundColor: theme.accent, borderColor: theme.primary }
-            ]}
-            onPress={() => setShowPromptModal(true)}
-            disabled={creatingAudio}
-            accessibilityRole="button"
-            accessibilityLabel="Change prompt style for this session"
-            accessibilityHint="Tap to temporarily change the AI prompt style for audio creation"
-          >
-            <Ionicons 
-              name={promptStyles.find(style => style.id === tempPromptStyle)?.icon || 'checkmark-circle-outline'} 
-              size={16} 
-              color={promptStyles.find(style => style.id === tempPromptStyle)?.color || theme.primary}
-              style={{ marginRight: 6 }} 
-            />
-            <Text style={[
-              styles.promptStyleButtonText, 
-              { color: theme.primary }
-            ]}>
-              {promptStyles.find(style => style.id === tempPromptStyle)?.name || 'Standard'}
-            </Text>
-          </TouchableOpacity>
-        )}
         
         {/* Weekly Audio Button - Show when This Week's Reads filter is active */}
         {selectedReadingFilter === 'This Week\'s Reads' && !selectionMode && (
@@ -1749,32 +1665,7 @@ export default function FeedScreen() {
       )}
 
       {/* Auto Pick - Main FAB - Always visible when not in selection mode */}
-      {!selectionMode && (
-        <>
-          <TouchableOpacity
-            style={[
-              styles.mainFAB, 
-              { 
-                backgroundColor: theme.primary,
-                bottom: showMiniPlayer ? 140 : 20,
-                right: 20
-              }
-            ]}
-            onPress={handleAutoPickFromFeed}
-            disabled={creatingAudio}
-            activeOpacity={0.8}
-            accessibilityRole="button"
-            accessibilityLabel="Auto-pick articles and create audio"
-            accessibilityHint="Automatically selects top articles from current filter and creates audio"
-          >
-            {creatingAudio ? (
-              <ActivityIndicator color="#fff" size={20} />
-            ) : (
-              <Ionicons name="sparkles" size={24} color="#fff" />
-            )}
-          </TouchableOpacity>
-        </>
-      )}
+      {/* Auto Pick FAB removed - Feed is Manual Pick only */}
 
       {/* Create Audio FAB - Show in selection mode when articles are selected */}
       {selectionMode && selectedArticleIds.length > 0 && (
@@ -1827,182 +1718,9 @@ export default function FeedScreen() {
         usageInfo={planUpgradeInfo.usageInfo}
       />
       
-      {/* Prompt Style Selection Modal */}
-      <Modal
-        visible={showPromptModal}
-        transparent={true}
-        animationType="slide"
-        onRequestClose={() => setShowPromptModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.promptModal, { backgroundColor: theme.surface }]}>
-            <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: theme.text }]}>
-                プロンプトスタイル選択
-              </Text>
-              <TouchableOpacity
-                onPress={() => setShowPromptModal(false)}
-                style={styles.modalCloseButton}
-              >
-                <Ionicons name="close" size={24} color={theme.textMuted} />
-              </TouchableOpacity>
-            </View>
-            
-            <Text style={[styles.modalSubtitle, { color: theme.textSecondary }]}>
-              この音声作成セッションでのみ適用されます
-            </Text>
-            
-            <View style={styles.promptStylesContainer}>
-              {promptStyles.map((style) => (
-                <TouchableOpacity
-                  key={style.id}
-                  style={[
-                    styles.promptStyleOption,
-                    {
-                      backgroundColor: tempPromptStyle === style.id ? style.color + '20' : theme.accent,
-                      borderColor: tempPromptStyle === style.id ? style.color : 'transparent',
-                      borderWidth: tempPromptStyle === style.id ? 2 : 0,
-                    }
-                  ]}
-                  onPress={() => {
-                    setTempPromptStyle(style.id);
-                    setShowPromptModal(false);
-                  }}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Select ${style.name} prompt style`}
-                  accessibilityState={{ selected: tempPromptStyle === style.id }}
-                >
-                  <View style={styles.promptStyleOptionContent}>
-                    <Ionicons
-                      name={style.icon}
-                      size={24}
-                      color={style.color}
-                      style={styles.promptStyleIcon}
-                    />
-                    <View style={styles.promptStyleTextContainer}>
-                      <Text style={[styles.promptStyleName, { color: theme.text }]}>
-                        {style.name}
-                      </Text>
-                      <Text style={[styles.promptStyleDescription, { color: theme.textSecondary }]}>
-                        {style.description}
-                      </Text>
-                    </View>
-                    <View style={styles.promptStyleRightSection}>
-                      {style.isCustom && (
-                        <View style={styles.promptActions}>
-                          <TouchableOpacity
-                            style={styles.promptActionButton}
-                            onPress={() => {
-                              setShowPromptModal(false);
-                              openCustomPromptModal(customPrompts.find(p => p.id === style.id));
-                            }}
-                          >
-                            <Ionicons name="create-outline" size={16} color={theme.primary} />
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            style={styles.promptActionButton}
-                            onPress={() => {
-                              setShowPromptModal(false);
-                              deleteCustomPrompt(style.id);
-                            }}
-                          >
-                            <Ionicons name="trash-outline" size={16} color={theme.error} />
-                          </TouchableOpacity>
-                        </View>
-                      )}
-                      {tempPromptStyle === style.id && (
-                        <Ionicons
-                          name="checkmark-circle"
-                          size={20}
-                          color={style.color}
-                          style={styles.promptStyleCheckmark}
-                        />
-                      )}
-                    </View>
-                  </View>
-                </TouchableOpacity>
-              ))}
-              
-              {/* Create Custom Prompt Button */}
-              <TouchableOpacity
-                style={[styles.addCustomPromptButton, { borderColor: theme.primary }]}
-                onPress={() => {
-                  setShowPromptModal(false);
-                  openCustomPromptModal();
-                }}
-              >
-                <Ionicons name="add-circle-outline" size={20} color={theme.primary} />
-                <Text style={[styles.addCustomPromptText, { color: theme.primary }]}>
-                  Create Custom Prompt
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
 
-      {/* Custom Prompt Modal */}
-      <Modal
-        visible={customPromptModalVisible}
-        animationType="slide"
-        presentationStyle="pageSheet"
-        onRequestClose={() => setCustomPromptModalVisible(false)}
-      >
-        <SafeAreaView style={[styles.modalContainer, { backgroundColor: theme.background }]}>
-          <View style={styles.modalHeader}>
-            <TouchableOpacity
-              onPress={() => setCustomPromptModalVisible(false)}
-              style={styles.modalBackButton}
-            >
-              <Ionicons name="arrow-back" size={24} color={theme.text} />
-            </TouchableOpacity>
-            <Text style={[styles.modalTitle, { color: theme.text }]}>
-              {editingPromptId ? 'Edit Custom Prompt' : 'Create Custom Prompt'}
-            </Text>
-            <TouchableOpacity
-              onPress={editingPromptId ? editCustomPrompt : addCustomPrompt}
-              style={styles.saveButton}
-            >
-              <Text style={[styles.saveButtonText, { color: theme.primary }]}>
-                {editingPromptId ? 'Update' : 'Create'}
-              </Text>
-            </TouchableOpacity>
-          </View>
 
-          <ScrollView style={styles.modalContent}>
-            <View style={styles.customPromptSection}>
-              <Text style={[styles.sectionTitle, { color: theme.text }]}>Prompt Instructions</Text>
-              <Text style={[styles.sectionSubtitle, { color: theme.textSecondary }]}>
-                Write your custom instructions for how the AI should generate and present the news content.
-              </Text>
-              
-              <View style={[styles.textInputContainer, { backgroundColor: theme.card, borderColor: theme.border }]}>
-                <TextInput
-                  style={[styles.customPromptInput, { color: theme.text, borderColor: theme.border }]}
-                  value={customPromptText}
-                  onChangeText={setCustomPromptText}
-                  placeholder="Enter your custom prompt instructions..."
-                  placeholderTextColor={theme.textMuted}
-                  multiline
-                  textAlignVertical="top"
-                  autoCapitalize="sentences"
-                  autoCorrect={true}
-                />
-              </View>
-              
-              <View style={styles.promptExamples}>
-                <Text style={[styles.examplesTitle, { color: theme.text }]}>Example Prompts:</Text>
-                <Text style={[styles.exampleText, { color: theme.textSecondary }]}>
-                  • &ldquo;Focus on technology and innovation news with detailed technical explanations&rdquo;{'\n'}
-                  • &ldquo;Present news in a casual, conversational tone suitable for commuting&rdquo;{'\n'}
-                  • &ldquo;Emphasize business implications and market analysis in all stories&rdquo;{'\n'}
-                  • &ldquo;Include historical context and background for better understanding&rdquo;
-                </Text>
-              </View>
-            </View>
-          </ScrollView>
-        </SafeAreaView>
-      </Modal>
+      {/* Removed: Custom Prompt Modal - using unified global system only */}
     </View>
   );
 }
@@ -2393,21 +2111,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   
-  // Prompt style button styles
-  promptStyleButton: {
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 20,
-    borderWidth: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginLeft: 8,
-  },
-  promptStyleButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
+
   weeklyAudioButton: {
     paddingVertical: 8,
     paddingHorizontal: 12,
@@ -2422,97 +2126,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
   },
-  
-  // Prompt modal styles
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-  },
-  promptModal: {
-    width: '100%',
-    maxWidth: 400,
-    borderRadius: 16,
-    padding: 24,
-    maxHeight: '80%',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-  },
-  modalCloseButton: {
-    padding: 4,
-  },
-  modalSubtitle: {
-    fontSize: 14,
-    marginBottom: 20,
-    textAlign: 'center',
-  },
-  promptStylesContainer: {
-    gap: 12,
-  },
-  promptStyleOption: {
-    padding: 16,
-    borderRadius: 12,
-    borderWidth: 2,
-  },
-  promptStyleOptionContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  promptStyleIcon: {
-    marginRight: 12,
-  },
-  promptStyleTextContainer: {
-    flex: 1,
-  },
-  promptStyleName: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    marginBottom: 2,
-  },
-  promptStyleDescription: {
-    fontSize: 14,
-  },
-  promptStyleCheckmark: {
-    marginLeft: 12,
-  },
-  addCustomPromptButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 16,
-    borderRadius: 12,
-    marginTop: 12,
-    borderWidth: 2,
-    borderStyle: 'dashed',
-  },
-  addCustomPromptText: {
-    fontSize: 16,
-    fontWeight: '500',
-    marginLeft: 8,
-  },
-  promptStyleRightSection: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  promptActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginRight: 8,
-  },
-  promptActionButton: {
-    padding: 4,
-  },
+
   modalContainer: {
     flex: 1,
   },
@@ -2575,5 +2189,48 @@ const styles = StyleSheet.create({
   },
   activeButton: {
     // Styles for active state
+  },
+  // Selected Articles List Styles
+  selectedArticlesList: {
+    marginBottom: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 12,
+    maxHeight: 200,
+  },
+  selectedArticlesTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  selectedArticlesScroll: {
+    maxHeight: 150,
+  },
+  selectedArticleItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    borderBottomWidth: 0.5,
+  },
+  selectedArticleContent: {
+    flex: 1,
+    marginRight: 12,
+  },
+  selectedArticleTitle: {
+    fontSize: 13,
+    fontWeight: '500',
+    lineHeight: 16,
+    marginBottom: 4,
+  },
+  selectedArticleSource: {
+    fontSize: 11,
+    fontWeight: '400',
+  },
+  removeArticleButton: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });

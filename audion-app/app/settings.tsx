@@ -48,7 +48,6 @@ export default function QuickSettingsScreen() {
   const [themeModalVisible, setThemeModalVisible] = useState(false);
   const [languageModalVisible, setLanguageModalVisible] = useState(false);
   const [voiceLanguageModalVisible, setVoiceLanguageModalVisible] = useState(false);
-  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
 
   const handleLogout = () => {
     Alert.alert(
@@ -139,13 +138,20 @@ export default function QuickSettingsScreen() {
       onPress: () => router.push('/auto-pick-settings')
     },
     {
+      id: 'prompt-settings',
+      title: 'プロンプト設定',
+      subtitle: '全ての音声作成方法のプロンプトスタイル設定',
+      icon: 'chatbubble-ellipses-outline',
+      type: 'navigation',
+      onPress: () => router.push('/prompt-settings')
+    },
+    {
       id: 'notifications',
       title: t('settings.pushNotifications'),
       subtitle: t('settings.notificationSubtitle'),
       icon: 'notifications-outline',
-      type: 'toggle',
-      value: notificationsEnabled,
-      onToggle: setNotificationsEnabled
+      type: 'navigation',
+      onPress: () => router.push('/notification-settings')
     }
   ];
 
@@ -157,6 +163,14 @@ export default function QuickSettingsScreen() {
       icon: 'person-outline',
       type: 'navigation',
       onPress: () => Alert.alert('開発中', 'アカウント設定は開発中です')
+    },
+    {
+      id: 'subscription',
+      title: 'Subscription Limits',
+      subtitle: 'View your plan limits and usage',
+      icon: 'diamond-outline',
+      type: 'navigation',
+      onPress: () => router.push('/subscription-limits')
     },
     {
       id: 'developer',

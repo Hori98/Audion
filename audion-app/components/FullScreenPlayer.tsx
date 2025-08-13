@@ -58,7 +58,7 @@ export default function FullScreenPlayer() {
     }
   }, [openDirectToScript, showFullScreenPlayer]);
   
-  const API = process.env.EXPO_PUBLIC_BACKEND_URL ? `${process.env.EXPO_PUBLIC_BACKEND_URL}/api` : 'http://localhost:8000/api';
+  const API = process.env.EXPO_PUBLIC_BACKEND_URL ? `${process.env.EXPO_PUBLIC_BACKEND_URL}/api` : 'http://localhost:8003/api';
 
   // スクロール検知: 再生ボタンが画面外に出たらヘッダーにミニプレイヤー表示
   const handleScroll = (event: any) => {
@@ -566,11 +566,6 @@ export default function FullScreenPlayer() {
               <Text style={[styles.sourcesSectionTitle, { color: theme.text }]}>📰 News Sources</Text>
               <View style={styles.sourcesContainer}>
                 {currentAudio.chapters.map((chapter: any, index: number) => {
-                  console.log(`Rendering chapter ${index}:`, {
-                    title: chapter.title,
-                    original_url: chapter.original_url,
-                    hasUrl: !!chapter.original_url
-                  });
                   const isCurrentChapter = position >= chapter.start_time && position < chapter.end_time;
                   return (
                     <TouchableOpacity

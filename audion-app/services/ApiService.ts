@@ -12,7 +12,7 @@ class ApiService {
   private authErrorHandler?: () => Promise<void>;
 
   constructor() {
-    const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+    const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:8003';
     
     this.instance = axios.create({
       baseURL: `${BACKEND_URL}/api`,

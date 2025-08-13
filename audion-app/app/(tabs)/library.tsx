@@ -9,6 +9,7 @@ import { format } from 'date-fns';
 import { Ionicons } from '@expo/vector-icons';
 import LoadingIndicator from '../../components/LoadingIndicator';
 import DownloadButton from '../../components/DownloadButton';
+import AudioMetadataService from '../../services/AudioMetadataService';
 
 interface RecentAudioItem {
   id: string;
@@ -18,6 +19,12 @@ interface RecentAudioItem {
   created_at: string;
   summary?: string;
   articles?: any[];
+  promptMetadata?: {
+    promptMode: string;
+    promptStyle: string;
+    creationMethod: string;
+    customPrompt?: string;
+  };
 }
 
 export default function RecentScreen() {
@@ -46,7 +53,30 @@ export default function RecentScreen() {
         headers: { Authorization: `Bearer ${token}` },
         params: { limit: 10 } // Get more items for better experience
       });
-      setRecentAudio(response.data || []);
+      
+      const audioItems = response.data || [];
+      
+      // Load metadata for each audio item
+      const audioWithMetadata = await Promise.all(
+        audioItems.map(async (audio: RecentAudioItem) => {
+          const metadata = await AudioMetadataService.getAudioMetadata(audio.id);
+          return {
+            ...audio,
+            promptMetadata: metadata ? {
+              promptMode: metadata.promptMode,
+              promptStyle: metadata.promptStyle,
+              creationMethod: metadata.creationMethod,
+              customPrompt: metadata.customPrompt
+            } : undefined
+          };
+        })
+      );
+      
+      setRecentAudio(audioWithMetadata);
+      
+      // Clean up metadata for audio items that no longer exist
+      const activeAudioIds = audioItems.map((audio: RecentAudioItem) => audio.id);
+      await AudioMetadataService.cleanupMetadata(activeAudioIds);
     } catch (error) {
       console.error('Error fetching recent audio:', error);
     } finally {
@@ -169,6 +199,14 @@ export default function RecentScreen() {
                           <Ionicons name="newspaper-outline" size={12} color={theme.textSecondary} />
                           <Text style={[styles.audioDate, { color: theme.textSecondary }]}>
                             {audio.articles.length}記事
+                          </Text>
+                        </View>
+                      )}
+                      {audio.promptMetadata && (
+                        <View style={styles.metaRow}>
+                          <Ionicons name="settings-outline" size={12} color={theme.accent} />
+                          <Text style={[styles.promptInfo, { color: theme.accent }]}>
+                            {AudioMetadataService.getPromptModeDisplayName(audio.promptMetadata.promptMode, audio.promptMetadata.creationMethod)} • {AudioMetadataService.getPromptStyleDisplayName(audio.promptMetadata.promptStyle)}
                           </Text>
                         </View>
                       )}
@@ -301,6 +339,10 @@ const createStyles = (theme: any) => StyleSheet.create({
   audioDate: {
     fontSize: 12,
     color: theme.textSecondary,
+  },
+  promptInfo: {
+    fontSize: 11,
+    fontWeight: '500',
   },
   playButton: {
     padding: 8,

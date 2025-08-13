@@ -1,4 +1,5 @@
-from fastapi import FastAPI, HTTPException, Depends, status
+from fastapi import FastAPI, HTTPException, Depends, status, Request
+from fastapi.staticfiles import StaticFiles
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.responses import FileResponse
 from dotenv import load_dotenv
@@ -76,6 +77,11 @@ async def lifespan(app: FastAPI):
             await db.audio_creations.create_index([("user_id", 1), ("created_at", -1)])
             await db.user_profiles.create_index("user_id", unique=True)
             await db.user_profiles.create_index([("user_id", 1), ("updated_at", -1)])
+            # Subscription indexes
+            await db.user_subscriptions.create_index("user_id", unique=True)
+            await db.user_subscriptions.create_index([("user_id", 1), ("plan", 1)])
+            await db.daily_usage.create_index([("user_id", 1), ("date", 1)], unique=True)
+            await db.daily_usage.create_index([("date", 1)])
             await db.preset_categories.create_index("name", unique=True)
             await db.deleted_audio.create_index([("user_id", 1), ("deleted_at", -1)])
             await db.deleted_audio.create_index("permanent_delete_at")
@@ -117,6 +123,12 @@ async def lifespan(app: FastAPI):
 
 # Create the main app
 app = FastAPI(lifespan=lifespan)
+
+# Mount static files for audio serving
+backend_dir = Path(__file__).parent
+audio_dir = backend_dir / "audio_files"
+audio_dir.mkdir(exist_ok=True)  # Ensure audio directory exists
+app.mount("/audio", StaticFiles(directory=str(audio_dir)), name="audio")
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -162,8 +174,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-@app.get("/api/health", tags=["Health Check"])
-def health_check():
+@app.get("/api/simple-health", tags=["Health Check"])
+def simple_health_check():
     return {"status": "ok"}
 
 @app.get("/", tags=["Health Check"])
@@ -655,39 +667,58 @@ async def generate_audio_title_with_openai(articles_content: List[str]) -> str:
         logging.error(f"OpenAI title generation error: {e}")
         return f"AI News Summary - {datetime.now().strftime('%Y-%m-%d')}"
 
-def get_system_message_by_prompt_style(prompt_style: str = "recommended", custom_prompt: str = None, voice_language: str = "en-US") -> str:
+def get_system_message_by_prompt_style(prompt_style: str = "recommended", custom_prompt: str = None, voice_language: str = "en-US", target_length: int = None) -> str:
     """Get system message based on prompt style and voice language"""
     
-    # Define prompts by language
+    # Calculate target word range based on character target (roughly 5 chars per word)
+    if target_length:
+        target_words = target_length // 5
+        word_range = f"{max(50, target_words - 50)}-{target_words + 50}語" if voice_language == "ja-JP" else f"{max(50, target_words - 50)}-{target_words + 50} words"
+    else:
+        # Fallback to default ranges
+        word_range = "200-300語" if voice_language == "ja-JP" else "200-300 words"
+    
+    # Define prompts by language with dynamic length
     if voice_language == "ja-JP":
         # Japanese prompts
         prompt_styles_ja = {
-            "strict": "正確で事実に基づいた日本語ニュース原稿を作成してください。推測や主観は避け、確認された情報のみを報告し、200-250語で簡潔にまとめてください。単一ナレーター向けに、スピーカーラベルや対話形式は使用せず、自然な日本語の話し言葉で構成してください。",
-            "recommended": "専門的でクリアな日本語ニュース原稿を単一ナレーター向けに作成してください。重要情報を分かりやすく整理し、200-300語で自然な日本語の話し言葉で構成してください。スピーカーラベルや対話形式は使用せず、音声ナレーション用の日本語原稿として作成してください。",
-            "friendly": "分かりやすく親しみやすい日本語ニュース原稿を作成してください。専門用語は簡単に説明し、背景情報も含めて初心者でも理解できるよう250-350語で丁寧に日本語で解説してください。単一ナレーター向けに、スピーカーラベルは使用せず、自然で親しみやすい日本語の話し言葉で構成してください。",
-            "insight": "ニュースの背景分析と今後への影響を重視した日本語原稿を作成してください。事実に加えて、専門的な洞察や市場・社会への意味も含め、300-400語で深い理解を提供する日本語原稿を作成してください。単一ナレーター向けに、分析的で洞察に富んだ日本語の話し言葉で構成してください。",
-            "custom": custom_prompt or "専門的でクリアな日本語ニュース原稿を単一ナレーター向けに作成してください。重要情報を分かりやすく整理し、200-300語で自然な日本語の話し言葉で構成してください。"
+            "strict": f"正確で事実に基づいた日本語ニュース原稿を作成してください。推測や主観は避け、確認された情報のみを報告し、{word_range}で簡潔にまとめてください。単一ナレーター向けに、スピーカーラベルや対話形式は使用せず、自然な日本語の話し言葉で構成してください。",
+            "recommended": f"専門的でクリアな日本語ニュース原稿を単一ナレーター向けに作成してください。重要情報を分かりやすく整理し、{word_range}で自然な日本語の話し言葉で構成してください。スピーカーラベルや対話形式は使用せず、音声ナレーション用の日本語原稿として作成してください。",
+            "friendly": f"分かりやすく親しみやすい日本語ニュース原稿を作成してください。専門用語は簡単に説明し、背景情報も含めて初心者でも理解できるよう{word_range}で丁寧に日本語で解説してください。単一ナレーター向けに、スピーカーラベルは使用せず、自然で親しみやすい日本語の話し言葉で構成してください。",
+            "insight": f"ニュースの背景分析と今後への影響を重視した日本語原稿を作成してください。事実に加えて、専門的な洞察や市場・社会への意味も含め、{word_range}で深い理解を提供する日本語原稿を作成してください。単一ナレーター向けに、分析的で洞察に富んだ日本語の話し言葉で構成してください。",
+            "custom": custom_prompt or f"専門的でクリアな日本語ニュース原稿を単一ナレーター向けに作成してください。重要情報を分かりやすく整理し、{word_range}で自然な日本語の話し言葉で構成してください。"
         }
         return prompt_styles_ja.get(prompt_style, prompt_styles_ja["recommended"])
     else:
         # English prompts
         prompt_styles_en = {
-            "strict": "Create an accurate, fact-based English news script. Avoid speculation or personal opinions, report only verified information, and keep it concise at 200-250 words. Format for a single narrator without speaker labels or dialogue, using natural spoken English.",
-            "recommended": "Create a professional and clear English news script for a single narrator. Organize important information clearly and structure it in 200-300 words using natural spoken English. Do not use speaker labels or dialogue format - create as an audio narration script.",
-            "friendly": "Create an easy-to-understand and approachable English news script. Explain technical terms simply and include background information so beginners can understand, providing a comprehensive explanation in 250-350 words. Format for a single narrator without speaker labels, using natural and friendly spoken English.",
-            "insight": "Create an English news script focusing on background analysis and future implications. Include facts plus professional insights and market/social significance, providing deep understanding in 300-400 words. Format for a single narrator with analytical and insightful spoken English.",
-            "custom": custom_prompt or "Create a professional and clear English news script for a single narrator. Organize important information clearly and structure it in 200-300 words using natural spoken English."
+            "strict": f"Create an accurate, fact-based English news script. Avoid speculation or personal opinions, report only verified information, and keep it concise at {word_range}. Format for a single narrator without speaker labels or dialogue, using natural spoken English.",
+            "recommended": f"Create a professional and clear English news script for a single narrator. Organize important information clearly and structure it in {word_range} using natural spoken English. Do not use speaker labels or dialogue format - create as an audio narration script.",
+            "friendly": f"Create an easy-to-understand and approachable English news script. Explain technical terms simply and include background information so beginners can understand, providing a comprehensive explanation in {word_range}. Format for a single narrator without speaker labels, using natural and friendly spoken English.",
+            "insight": f"Create an English news script focusing on background analysis and future implications. Include facts plus professional insights and market/social significance, providing deep understanding in {word_range}. Format for a single narrator with analytical and insightful spoken English.",
+            "custom": custom_prompt or f"Create a professional and clear English news script for a single narrator. Organize important information clearly and structure it in {word_range} using natural spoken English."
         }
         return prompt_styles_en.get(prompt_style, prompt_styles_en["recommended"])
 
-async def summarize_articles_with_openai(articles_content: List[str], prompt_style: str = "recommended", custom_prompt: str = None, voice_language: str = "en-US") -> str:
+async def summarize_articles_with_openai(articles_content: List[str], prompt_style: str = "recommended", custom_prompt: str = None, voice_language: str = "en-US", target_length: int = None) -> str:
     try:
         if not OPENAI_API_KEY or OPENAI_API_KEY == "your-openai-key":
             return "Breaking news today as technology companies continue to shape our digital landscape. Recent developments include major updates to artificial intelligence systems and significant changes in social media platforms. Industry analysts report growing investments in sustainable technology solutions, while cybersecurity experts emphasize the importance of data protection in an increasingly connected world. These developments signal continued innovation across the tech sector."
         client = openai.AsyncOpenAI(api_key=OPENAI_API_KEY)
-        system_message = get_system_message_by_prompt_style(prompt_style, custom_prompt, voice_language)
+        system_message = get_system_message_by_prompt_style(prompt_style, custom_prompt, voice_language, target_length)
         combined_content = "\n\n--- Article ---\n\n".join(articles_content)
-        user_message = f"Please create a single-narrator news script summarizing these articles:\n\n{combined_content}\n\nWrite only the script content without any speaker labels, host names, or dialogue markers."
+        user_message = f"""Please create a single-narrator news script based on these articles. 
+
+Important requirements:
+- Base the script ENTIRELY on the provided article content
+- Include specific facts, quotes, and details from the articles
+- Maintain accuracy to the source material
+- Present information in an engaging narrative format
+- Write only the script content without speaker labels, host names, or dialogue markers
+
+Articles to transform into audio script:
+
+{combined_content}"""
         chat_completion = await client.chat.completions.create(
             messages=[{"role": "system", "content": system_message}, {"role": "user", "content": user_message}],
             model="gpt-4o",
@@ -698,7 +729,9 @@ async def summarize_articles_with_openai(articles_content: List[str], prompt_sty
         return "An error occurred during summarization. We apologize for the technical difficulty and are working to resolve the issue. Please try again shortly for the latest news updates."
 
 def create_mock_audio_file() -> tuple[str, int]:
-    dummy_audio_url = "http://localhost:8001/audio_files/SampleAudio_0.4mb.mp3"
+    # Use environment variable or default port for consistency
+    server_port = os.getenv('SERVER_PORT', '8000')
+    dummy_audio_url = f"http://localhost:{server_port}/audio/SampleAudio_0.4mb.mp3"
     dummy_duration = 30
     return dummy_audio_url, dummy_duration
 
@@ -739,6 +772,21 @@ async def convert_text_to_speech(text: str, voice_language: str = "en-US", voice
         
         # Log voice settings
         logging.info(f"Using voice language: {voice_language}, voice: {voice_name}")
+        
+        # Enhanced bug tracking for Japanese language issue
+        if voice_language == "ja-JP":
+            script_preview = text[:100] + "..." if len(text) > 100 else text
+            logging.warning(f"🎌 JAPANESE TTS CALL - Language: {voice_language}, Voice: {voice_name}")
+            logging.warning(f"🎌 Script Preview: {script_preview}")
+            logging.warning(f"🎌 Full Script Length: {len(text)} characters")
+            if "English" in text[:500] or any(word in text[:500] for word in ["the", "and", "in", "on", "at"]):
+                logging.error(f"🚨 POTENTIAL BUG: Japanese language requested but script contains English words!")
+                logging.error(f"🚨 Script start: {text[:200]}")
+        
+        # Check for script language consistency
+        if voice_language == "ja-JP" and not any(char in text[:200] for char in "あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよらりるれろわをんがぎぐげござじずぜぞだぢづでどばびぶべぼぱぴぷぺぽ"):
+            logging.error(f"🚨 SCRIPT LANGUAGE MISMATCH: Japanese TTS requested but no Japanese characters found in script!")
+            logging.error(f"🚨 Script language appears to be: {'English' if any(word in text[:200] for word in ['the', 'and', 'is', 'are', 'of']) else 'Unknown'}")
         
         client = openai.AsyncOpenAI(api_key=OPENAI_API_KEY)
         response = await client.audio.speech.create(
@@ -794,7 +842,8 @@ async def convert_text_to_speech(text: str, voice_language: str = "en-US", voice
                 with open(audio_path, 'wb') as f:
                     f.write(audio_content)
                 
-                public_url = f"http://localhost:8000/audio/{audio_filename}"
+                server_port = os.getenv('SERVER_PORT', '8000')
+                public_url = f"http://localhost:{server_port}/audio/{audio_filename}"
                 logging.info(f"Fallback: Audio saved locally at {public_url}")
         else:
             logging.info(f"AWS condition failed - KEY:{bool(AWS_ACCESS_KEY_ID)} SECRET:{bool(AWS_SECRET_ACCESS_KEY)} NOT_DEFAULT:{AWS_ACCESS_KEY_ID != 'your-aws-access-key' if AWS_ACCESS_KEY_ID else False}")
@@ -807,7 +856,8 @@ async def convert_text_to_speech(text: str, voice_language: str = "en-US", voice
             with open(audio_path, 'wb') as f:
                 f.write(audio_content)
             
-            public_url = f"http://localhost:8000/audio/{audio_filename}"
+            server_port = os.getenv('SERVER_PORT', '8000')
+            public_url = f"http://localhost:{server_port}/audio/{audio_filename}"
             logging.info(f"Audio saved locally: {public_url}")
         
         return {"url": public_url, "duration": duration}
@@ -1384,6 +1434,80 @@ async def post_articles(request: dict, current_user: User = Depends(get_current_
     source = request.get("source")
     return await get_articles_internal(current_user, genre, source)
 
+@app.get("/api/articles/curated", response_model=List[Article], tags=["Articles"])
+async def get_curated_articles(current_user: User = Depends(get_current_user)):
+    """Get curated articles for the main news feed - automatically selects diverse, high-quality content"""
+    try:
+        # Get all user's articles first
+        all_articles = await get_articles_internal(current_user)
+        
+        if not all_articles:
+            return []
+        
+        # Get user profile for personalization
+        user_profile_doc = await db.user_profiles.find_one({"user_id": current_user.id})
+        
+        # Create default user profile if none exists
+        if not user_profile_doc:
+            user_profile = UserProfile(
+                user_id=current_user.id,
+                preferred_genres=[],
+                disliked_genres=[],
+                reading_time_preference="medium",
+                content_freshness_preference="recent",
+                language_preference="en"
+            )
+        else:
+            user_profile = UserProfile(**user_profile_doc)
+        
+        # Convert articles to Article objects for scoring
+        article_objects = []
+        for article_data in all_articles:
+            try:
+                article = Article(
+                    id=article_data.get("id", ""),
+                    title=article_data.get("title", ""),
+                    description=article_data.get("description", ""),
+                    url=article_data.get("url", ""),
+                    published_date=article_data.get("published_date", ""),
+                    source=article_data.get("source", ""),
+                    content=article_data.get("content", ""),
+                    genre=article_data.get("genre", "General")
+                )
+                article_objects.append(article)
+            except Exception as e:
+                logging.warning(f"Failed to create article object: {e}")
+                continue
+        
+        # Use auto-pick algorithm to select best articles for curation
+        curated_articles = await auto_pick_articles(
+            user_id=current_user.id,
+            all_articles=article_objects,
+            max_articles=20,  # Show more articles in main feed
+            preferred_genres=user_profile.preferred_genres
+        )
+        
+        # Convert back to dict format for response
+        curated_response = []
+        for article in curated_articles:
+            curated_response.append({
+                "id": article.id,
+                "title": article.title,
+                "description": article.description,
+                "url": article.url,
+                "published_date": article.published_date,
+                "source": article.source,
+                "content": article.content,
+                "genre": article.genre
+            })
+        
+        logging.info(f"Returning {len(curated_response)} curated articles for user {current_user.email}")
+        return curated_response
+        
+    except Exception as e:
+        logging.error(f"Error getting curated articles for user {current_user.email}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch curated articles")
+
 async def get_articles_internal(current_user: User, genre: Optional[str] = None, source: Optional[str] = None):
     # Get only active sources (is_active is not explicitly False or doesn't exist)
     source_filter = {
@@ -1416,17 +1540,44 @@ async def get_articles_internal(current_user: User, genre: Optional[str] = None,
             for entry in feed.entries[:10]:
                 article_title = getattr(entry, 'title', "No Title")
                 article_summary = getattr(entry, 'summary', getattr(entry, 'description', "No summary available"))
+                
+                # Get full content from RSS entry (try multiple fields for better content)
+                article_content = ""
+                if hasattr(entry, 'content') and entry.content:
+                    # Use the first content entry if available
+                    if isinstance(entry.content, list) and len(entry.content) > 0:
+                        article_content = entry.content[0].get('value', '')
+                    else:
+                        article_content = str(entry.content)
+                
+                # Fallback to summary/description if no full content
+                if not article_content or len(article_content.strip()) < 100:
+                    article_content = getattr(entry, 'summary', getattr(entry, 'description', "No content available"))
+                
+                # Clean HTML tags from content
+                import re
+                article_content = re.sub(r'<[^>]+>', '', article_content)
+                article_content = article_content.strip()
+                
                 article_genre = classify_genre(article_title, article_summary)
-                all_articles.append(Article(
+                article = Article(
                     id=str(uuid.uuid4()),
                     title=article_title,
                     summary=article_summary,
                     link=getattr(entry, 'link', ""),
                     published=time.strftime('%Y-%m-%dT%H:%M:%SZ', entry.published_parsed) if hasattr(entry, 'published_parsed') and entry.published_parsed else "",
                     source_name=source_doc["name"],
-                    content=getattr(entry, 'summary', getattr(entry, 'description', "No content available")),
+                    content=article_content,
                     genre=article_genre
-                ))
+                )
+                all_articles.append(article)
+                
+                # Update or insert article in database with full content
+                await db.articles.update_one(
+                    {"title": article_title, "source_name": source_doc["name"]},
+                    {"$set": article.dict()},
+                    upsert=True
+                )
         except Exception as e:
             logging.warning(f"Error parsing RSS feed {source_doc['url']}: {e}")
             continue
@@ -1439,50 +1590,133 @@ async def get_articles_internal(current_user: User, genre: Optional[str] = None,
     return sorted(all_articles, key=lambda x: x.published, reverse=True)[:50]
 
 @app.post("/api/audio/create", response_model=AudioCreation, tags=["Audio"])
-async def create_audio(request: AudioCreationRequest, current_user: User = Depends(get_current_user)):
+async def create_audio(request: AudioCreationRequest, http_request: Request, current_user: User = Depends(get_current_user)):
     logging.info(f"=== AUDIO CREATION REQUEST RECEIVED ===")
     logging.info(f"User: {current_user.email}")
     logging.info(f"Article IDs: {request.article_ids}")
     logging.info(f"Article titles: {request.article_titles}")
     logging.info(f"Article URLs: {request.article_urls}")
     logging.info(f"Custom title: {request.custom_title}")
+    logging.info(f"🎤 Voice Language: {request.voice_language}")
+    logging.info(f"📝 Prompt Style: {request.prompt_style}")
+    logging.info(f"✏️ Custom Prompt: {request.custom_prompt[:100] if request.custom_prompt else 'None'}...")
     
-    # ✅ CHECK AUDIO CREATION LIMITS FIRST
+    # Enhanced logging for Japanese language bug investigation
+    logging.info(f"🔍 JAPANESE BUG DEBUG - Article Count: {len(request.article_ids)} - Voice Lang: {request.voice_language}")
+    if len(request.article_ids) == 15:
+        logging.warning(f"⚠️ CRITICAL: Processing exactly 15 articles - this is the problematic case!")
+        logging.warning(f"⚠️ Voice Language Setting: {request.voice_language}")
+        logging.warning(f"⚠️ Voice Name Setting: {request.voice_name}")
+        logging.warning(f"⚠️ This combination has been known to intermittently generate English audio instead of Japanese")
+    
+    # Get article count for tracking (needed regardless of debug mode)
     article_count = len(request.article_ids)
-    can_create, error_message, usage_info = await check_audio_creation_limits(current_user.id, article_count)
     
-    if not can_create:
-        logging.warning(f"Audio creation blocked for user {current_user.email}: {error_message}")
-        raise HTTPException(status_code=429, detail={
-            "message": error_message,
-            "usage_info": usage_info,
-            "code": "LIMIT_EXCEEDED"
-        })
+    # 🧪 CHECK DEBUG HEADERS FOR BYPASS
+    debug_bypass = http_request.headers.get("x-debug-bypass-limits", "").lower() == "true"
+    debug_mode = http_request.headers.get("x-debug-mode", "").lower() == "true"
     
-    logging.info(f"Audio creation approved: {usage_info['plan']} plan, {article_count} articles")
+    if debug_bypass and debug_mode:
+        logging.info("🧪 DEBUG MODE: Bypassing audio creation limits")
+    else:
+        # ✅ CHECK AUDIO CREATION LIMITS FIRST
+        can_create, error_message, usage_info = await check_audio_creation_limits(current_user.id, article_count)
+        
+        if not can_create:
+            logging.warning(f"Audio creation blocked for user {current_user.email}: {error_message}")
+            raise HTTPException(status_code=429, detail={
+                "message": error_message,
+                "usage_info": usage_info,
+                "code": "LIMIT_EXCEEDED"
+            })
+        
+        logging.info(f"Audio creation approved: {usage_info['plan']} plan, {article_count} articles")
     
     try:
         # Get actual article content from database
         articles_content = []
-        for article_id in request.article_ids:
+        for i, article_id in enumerate(request.article_ids):
             article = await db.articles.find_one({"id": article_id})
             if article:
-                content = f"Title: {article['title']}\nSummary: {article['summary']}\nSource: {article['source_name']}"
+                # Use full content instead of just summary
+                full_content = article.get('content', article.get('summary', 'No content available'))
+                
+                # If content is too short (likely only summary), try to use additional provided data
+                if len(full_content) < 200 and request.article_urls and i < len(request.article_urls):
+                    logging.warning(f"Article {article['title']} has short content ({len(full_content)} chars), this may be from old database format")
+                    # Use title + summary + URL info as fallback
+                    full_content = f"{article.get('title', '')}\n\n{article.get('summary', '')}\n\nOriginal article: {request.article_urls[i] if i < len(request.article_urls) else 'URL not available'}"
+                
+                # Store original full content for dynamic length calculation later
+                # No truncation at individual article level - will optimize at script level
+                
+                content = f"Title: {article['title']}\nSource: {article['source_name']}\nContent: {full_content}"
                 articles_content.append(content)
+                logging.info(f"Added article content: {article['title']} (Content length: {len(full_content)} chars)")
+            else:
+                logging.error(f"Article with ID {article_id} not found in database")
+                # Add fallback content if article not found
+                if request.article_titles and i < len(request.article_titles):
+                    fallback_content = f"Title: {request.article_titles[i]}\nContent: Article content not available in database, but title and source information preserved."
+                    articles_content.append(fallback_content)
+                    logging.info(f"Added fallback content for: {request.article_titles[i]}")
+        
+        if not articles_content:
+            raise HTTPException(status_code=400, detail="No valid articles found for audio creation")
+        
+        # Log articles content being sent to AI for debugging
+        logging.info(f"=== ARTICLES CONTENT FOR AI PROCESSING ===")
+        for i, content in enumerate(articles_content):
+            content_preview = content[:300] + "..." if len(content) > 300 else content
+            logging.info(f"Article {i+1} preview: {content_preview}")
+        
+        # Get user's subscription plan for dynamic length calculation
+        subscription = await db.subscriptions.find_one({"user_id": current_user.id})
+        user_plan = subscription.get("plan", "free") if subscription else "free"
+        
+        # Calculate optimal script length based on actual article content
+        optimal_script_length = await calculate_optimal_script_length(
+            articles_content, 
+            user_plan, 
+            article_count
+        )
+        
+        # Enhanced logging for Japanese language bug tracking
+        final_voice_lang_for_script = request.voice_language or "en-US"
+        logging.info(f"🔍 SCRIPT GENERATION - Voice Lang Parameter: {final_voice_lang_for_script}")
+        if len(articles_content) == 15 and final_voice_lang_for_script == "ja-JP":
+            logging.warning(f"⚠️ CRITICAL: Generating script for 15 articles with Japanese language - monitoring for bug")
         
         # Generate script and title based on actual content with prompt style
         script = await summarize_articles_with_openai(
             articles_content, 
             prompt_style=request.prompt_style or "recommended", 
             custom_prompt=request.custom_prompt,
-            voice_language=request.voice_language or "en-US"
+            voice_language=final_voice_lang_for_script,
+            target_length=optimal_script_length
         )
+        
+        # Log generated script for debugging
+        script_preview = script[:500] + "..." if len(script) > 500 else script
+        logging.info(f"=== GENERATED SCRIPT PREVIEW ===")
+        logging.info(f"Script preview: {script_preview}")
         generated_title = await generate_audio_title_with_openai(articles_content)
         
         # Use user's voice language settings for TTS
+        final_voice_language = request.voice_language or "en-US"
+        logging.info(f"🎤 TTS Parameters - Voice Language: {final_voice_language}, Voice Name: {request.voice_name or 'alloy'}")
+        
+        # Enhanced bug tracking for 15-article Japanese case
+        if len(articles_content) == 15 and final_voice_language == "ja-JP":
+            logging.warning(f"⚠️ CRITICAL TTS: About to convert 15-article Japanese script to speech")
+            logging.warning(f"⚠️ Script Length: {len(script)} chars")
+            logging.warning(f"⚠️ Script Preview: {script[:200]}...")
+            logging.warning(f"⚠️ Final Voice Language: {final_voice_language}")
+            logging.warning(f"⚠️ Final Voice Name: {request.voice_name or 'alloy'}")
+        
         audio_data = await convert_text_to_speech(
             script, 
-            voice_language=request.voice_language or "en-US",
+            voice_language=final_voice_language,
             voice_name=request.voice_name or "alloy"
         )
         audio_url = audio_data['url']
@@ -1768,17 +2002,43 @@ async def get_auto_picked_articles(request: AutoPickRequest, current_user: User 
                 for entry in feed.entries[:20]:  # Get more articles for better selection
                     article_title = getattr(entry, 'title', "No Title")
                     article_summary = getattr(entry, 'summary', getattr(entry, 'description', "No summary available"))
+                    
+                    # Get full content from RSS entry (try multiple fields for better content)
+                    article_content = ""
+                    if hasattr(entry, 'content') and entry.content:
+                        # Use the first content entry if available
+                        if isinstance(entry.content, list) and len(entry.content) > 0:
+                            article_content = entry.content[0].get('value', '')
+                        else:
+                            article_content = str(entry.content)
+                    
+                    # Fallback to summary/description if no full content
+                    if not article_content or len(article_content.strip()) < 100:
+                        article_content = getattr(entry, 'summary', getattr(entry, 'description', "No content available"))
+                    
+                    # Clean HTML tags from content
+                    article_content = re.sub(r'<[^>]+>', '', article_content)
+                    article_content = article_content.strip()
+                    
                     article_genre = classify_genre(article_title, article_summary)
-                    all_articles.append(Article(
+                    article = Article(
                         id=str(uuid.uuid4()),
                         title=article_title,
                         summary=article_summary,
                         link=getattr(entry, 'link', ""),
                         published=time.strftime('%Y-%m-%dT%H:%M:%SZ', entry.published_parsed) if hasattr(entry, 'published_parsed') and entry.published_parsed else "",
                         source_name=source["name"],
-                        content=getattr(entry, 'summary', getattr(entry, 'description', "No content available")),
+                        content=article_content,
                         genre=article_genre
-                    ))
+                    )
+                    all_articles.append(article)
+                    
+                    # Update or insert article in database with full content  
+                    await db.articles.update_one(
+                        {"title": article_title, "source_name": source["name"]},
+                        {"$set": article.dict()},
+                        upsert=True
+                    )
             except Exception as e:
                 logging.warning(f"Error parsing RSS feed {source['url']}: {e}")
                 continue
@@ -1821,6 +2081,40 @@ async def record_user_interaction(interaction: UserInteraction, current_user: Us
     except Exception as e:
         logging.error(f"Error recording interaction: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/reading-history", tags=["User"])
+async def sync_reading_history(current_user: User = Depends(get_current_user)):
+    """Sync reading history (placeholder endpoint for frontend compatibility)"""
+    # This is a placeholder endpoint to prevent 404 errors
+    # The functionality is already handled by /api/user-interaction
+    return {"message": "Reading history sync completed", "status": "ok"}
+
+@app.get("/api/reading-history", tags=["User"])
+async def get_reading_history(current_user: User = Depends(get_current_user)):
+    """Get reading history (placeholder endpoint for frontend compatibility)"""
+    if not db_connected:
+        return {"history": [], "message": "Database unavailable"}
+    
+    try:
+        # Get user profile which contains interaction history
+        user_profile = await get_or_create_user_profile(current_user.id)
+        
+        # Convert interactions to reading history format
+        reading_history = []
+        for interaction in user_profile.interaction_history[-50:]:  # Last 50 interactions
+            if interaction.get('interaction_type') in ['completed', 'partial_play', 'play_started']:
+                reading_history.append({
+                    'audio_id': interaction.get('audio_id'),
+                    'article_id': interaction.get('article_id'),
+                    'interaction_type': interaction.get('interaction_type'),
+                    'timestamp': interaction.get('timestamp'),
+                    'duration_listened': interaction.get('duration_listened', 0)
+                })
+        
+        return {"history": reading_history, "total": len(reading_history)}
+    except Exception as e:
+        logging.error(f"Error getting reading history: {e}")
+        return {"history": [], "error": str(e)}
 
 @app.post("/api/audio-interaction", tags=["Auto-Pick"])
 async def record_audio_interaction(
@@ -1974,17 +2268,43 @@ async def create_auto_picked_audio(request: AutoPickRequest, current_user: User 
                 for entry in feed.entries[:20]:
                     article_title = getattr(entry, 'title', "No Title")
                     article_summary = getattr(entry, 'summary', getattr(entry, 'description', "No summary available"))
+                    
+                    # Get full content from RSS entry (try multiple fields for better content)
+                    article_content = ""
+                    if hasattr(entry, 'content') and entry.content:
+                        # Use the first content entry if available
+                        if isinstance(entry.content, list) and len(entry.content) > 0:
+                            article_content = entry.content[0].get('value', '')
+                        else:
+                            article_content = str(entry.content)
+                    
+                    # Fallback to summary/description if no full content
+                    if not article_content or len(article_content.strip()) < 100:
+                        article_content = getattr(entry, 'summary', getattr(entry, 'description', "No content available"))
+                    
+                    # Clean HTML tags from content
+                    article_content = re.sub(r'<[^>]+>', '', article_content)
+                    article_content = article_content.strip()
+                    
                     article_genre = classify_genre(article_title, article_summary)
-                    all_articles.append(Article(
+                    article = Article(
                         id=str(uuid.uuid4()),
                         title=article_title,
                         summary=article_summary,
                         link=getattr(entry, 'link', ""),
                         published=time.strftime('%Y-%m-%dT%H:%M:%SZ', entry.published_parsed) if hasattr(entry, 'published_parsed') and entry.published_parsed else "",
                         source_name=source["name"],
-                        content=getattr(entry, 'summary', getattr(entry, 'description', "No content available")),
+                        content=article_content,
                         genre=article_genre
-                    ))
+                    )
+                    all_articles.append(article)
+                    
+                    # Update or insert article in database with full content
+                    await db.articles.update_one(
+                        {"title": article_title, "source_name": source["name"]},
+                        {"$set": article.dict()},
+                        upsert=True
+                    )
             except Exception as e:
                 logging.warning(f"Error parsing RSS feed {source['url']}: {e}")
                 continue
@@ -2002,11 +2322,23 @@ async def create_auto_picked_audio(request: AutoPickRequest, current_user: User 
         
         # Create audio from picked articles
         articles_content = [f"Title: {article.title}\nSummary: {article.summary}\nSource: {article.source_name}" for article in picked_articles]
+        # Get user's subscription plan for dynamic length calculation
+        subscription = await db.subscriptions.find_one({"user_id": user_id})
+        user_plan = subscription.get("plan", "free") if subscription else "free"
+        
+        # Calculate optimal script length based on actual article content
+        optimal_script_length = await calculate_optimal_script_length(
+            articles_content, 
+            user_plan, 
+            len(articles_content)
+        )
+        
         script = await summarize_articles_with_openai(
             articles_content, 
             prompt_style="recommended",  # Auto-pick uses default recommended style for now
             custom_prompt=None,
-            voice_language="en-US"  # TODO: Auto-pick should use user's voice language preference
+            voice_language="en-US",  # TODO: Auto-pick should use user's voice language preference
+            target_length=optimal_script_length
         )
         generated_title = await generate_audio_title_with_openai(articles_content)
         
@@ -2631,11 +2963,23 @@ async def setup_user_onboard(request: OnboardRequest, current_user: User = Depen
                 if sample_articles:
                     # Generate welcome audio
                     articles_content = [f"Title: {article['title']}\nSummary: {article['summary']}" for article in sample_articles]
+                    # Get user's subscription plan for dynamic length calculation
+                    subscription = await db.subscriptions.find_one({"user_id": user_id})
+                    user_plan = subscription.get("plan", "free") if subscription else "free"
+                    
+                    # Calculate optimal script length based on actual article content
+                    optimal_script_length = await calculate_optimal_script_length(
+                        articles_content, 
+                        user_plan, 
+                        len(articles_content)
+                    )
+                    
                     script = await summarize_articles_with_openai(
                         articles_content, 
                         prompt_style="friendly",  # Welcome audio uses friendly style
                         custom_prompt=None,
-                        voice_language="en-US"  # TODO: Welcome audio should use user's voice language preference
+                        voice_language="en-US",  # TODO: Welcome audio should use user's voice language preference
+                        target_length=optimal_script_length
                     )
                     generated_title = f"Welcome to {first_category['display_name']} News"
                     
@@ -3211,81 +3555,151 @@ async def serve_profile_image(filename: str):
         raise HTTPException(status_code=500, detail="Failed to serve profile image")
 
 # ===== Audio Limit Management Functions =====
+# NOTE: Subscription system now handled by the new SUBSCRIPTION_PLANS configuration above
 
-AUDIO_LIMIT_CONFIGS = {
-    "free": AudioLimitConfig(plan="free", max_daily_audio_count=3, max_audio_articles=3, description="Free tier - 3 articles per audio, 3 audios per day"),
-    "premium": AudioLimitConfig(plan="premium", max_daily_audio_count=15, max_audio_articles=10, description="Premium tier - 10 articles per audio, 15 audios per day"),
-    "pro": AudioLimitConfig(plan="pro", max_daily_audio_count=50, max_audio_articles=30, description="Pro tier - 30 articles per audio, 50 audios per day"),
-    # Test configurations for validation
-    "test_3": AudioLimitConfig(plan="test_3", max_daily_audio_count=10, max_audio_articles=3, description="Test: 3 articles per audio"),
-    "test_5": AudioLimitConfig(plan="test_5", max_daily_audio_count=10, max_audio_articles=5, description="Test: 5 articles per audio"),
-    "test_10": AudioLimitConfig(plan="test_10", max_daily_audio_count=10, max_audio_articles=10, description="Test: 10 articles per audio"),
-    "test_15": AudioLimitConfig(plan="test_15", max_daily_audio_count=10, max_audio_articles=15, description="Test: 15 articles per audio"),
-    "test_30": AudioLimitConfig(plan="test_30", max_daily_audio_count=10, max_audio_articles=30, description="Test: 30 articles per audio"),
-    "test_60": AudioLimitConfig(plan="test_60", max_daily_audio_count=10, max_audio_articles=60, description="Test: 60 articles per audio"),
-}
+# NOTE: get_or_create_subscription function is now defined above in the new subscription system
 
-async def get_or_create_user_subscription(user_id: str) -> UserSubscription:
-    """Get or create user subscription with default free plan"""
-    if not db_connected:
-        # Default limits when database is unavailable
-        return UserSubscription(user_id=user_id, plan="free", max_daily_audio_count=3, max_audio_articles=3)
-    
-    subscription = await db.user_subscriptions.find_one({"user_id": user_id})
-    if not subscription:
-        # Create default free subscription
-        new_subscription = UserSubscription(user_id=user_id)
-        await db.user_subscriptions.insert_one(new_subscription.dict())
-        return new_subscription
-    
-    return UserSubscription(**subscription)
+# NOTE: get_or_create_daily_usage function is now defined above in the new subscription system
 
-async def get_or_create_daily_usage(user_id: str, date_str: str) -> DailyAudioUsage:
-    """Get or create daily usage record for user"""
-    if not db_connected:
-        return DailyAudioUsage(user_id=user_id, date=date_str)
+async def get_max_article_content_length(user_id: str, article_count: int) -> int:
+    """Get maximum article content length based on user's subscription plan and article count"""
+    try:
+        user = await db.users.find_one({"id": user_id})
+        if not user:
+            return 1500  # Conservative default for unknown users
+            
+        subscription = await db.subscriptions.find_one({"user_id": user_id})
+        if not subscription:
+            return 1500  # Free tier default
+        
+        plan = subscription.get("plan", "free")
+        
+        # Base content length by plan
+        base_limits = {
+            "free": 1500,
+            "basic": 2500, 
+            "premium": 4000,
+            "test_3": 2000,
+            "test_5": 2500,
+            "test_10": 3000,
+            "test_15": 3500,
+            "test_30": 4000,
+            "test_60": 5000
+        }
+        
+        base_limit = base_limits.get(plan, 1500)
+        
+        # Adjust based on article count (more articles = less content per article to manage total size)
+        if article_count <= 3:
+            return base_limit
+        elif article_count <= 10:
+            return int(base_limit * 0.8)
+        else:
+            return int(base_limit * 0.6)
+            
+    except Exception as e:
+        logging.error(f"Error getting article content length limit: {e}")
+        return 1500  # Conservative fallback
+
+async def calculate_optimal_script_length(articles_content: List[str], user_plan: str, article_count: int) -> int:
+    """Calculate optimal script length based on actual article content length"""
     
-    usage = await db.daily_audio_usage.find_one({"user_id": user_id, "date": date_str})
-    if not usage:
-        new_usage = DailyAudioUsage(user_id=user_id, date=date_str)
-        await db.daily_audio_usage.insert_one(new_usage.dict())
-        return new_usage
+    # Content length blocks - optimized for quality and avoiding hallucination
+    CONTENT_LENGTH_BLOCKS = [
+        {"input_range": (0, 800), "output_target": 600, "description": "短い要約記事向け"},
+        {"input_range": (801, 2500), "output_target": 1200, "description": "標準記事向け"}, 
+        {"input_range": (2501, 6000), "output_target": 2000, "description": "長文記事向け"},
+        {"input_range": (6001, 12000), "output_target": 3000, "description": "詳細記事向け"},
+        {"input_range": (12001, float('inf')), "output_target": 4000, "description": "超長文記事向け"}
+    ]
     
-    return DailyAudioUsage(**usage)
+    try:
+        # Calculate total input length and average per article
+        total_input_length = sum(len(content) for content in articles_content)
+        avg_article_length = total_input_length / len(articles_content) if articles_content else 500
+        
+        # Find matching content block
+        base_target = 600  # default for very short content
+        matched_block = None
+        for block in CONTENT_LENGTH_BLOCKS:
+            if block["input_range"][0] <= avg_article_length <= block["input_range"][1]:
+                base_target = block["output_target"]
+                matched_block = block
+                break
+        
+        # Article count factor (slight compression for many articles)
+        article_count_factor = max(0.7, 1 - (article_count - 1) * 0.03)
+        
+        # Plan multiplier for quality/length scaling
+        plan_multipliers = {
+            "free": 0.8,
+            "basic": 1.0, 
+            "premium": 1.3,
+            "test_3": 0.8,
+            "test_5": 0.9,
+            "test_10": 1.0,
+            "test_15": 1.1,
+            "test_30": 1.2,
+            "test_60": 1.3
+        }
+        plan_multiplier = plan_multipliers.get(user_plan, 0.8)
+        
+        # Calculate optimal length per article, then multiply by count
+        optimal_per_article = int(base_target * article_count_factor * plan_multiplier)
+        total_optimal_length = optimal_per_article * article_count
+        
+        # Apply reasonable bounds
+        min_length = 300 * article_count  # Minimum 300 chars per article
+        max_length = 5000 * article_count  # Maximum 5000 chars per article
+        
+        final_length = max(min_length, min(total_optimal_length, max_length))
+        
+        # Debug logging
+        logging.info(f"📊 Dynamic script length calculation:")
+        logging.info(f"   Articles: {article_count}, Avg length: {avg_article_length:.0f} chars")
+        logging.info(f"   Matched block: {matched_block['description'] if matched_block else 'Default'}")
+        logging.info(f"   Base target: {base_target}, Plan: {user_plan} (×{plan_multiplier})")
+        logging.info(f"   Final length: {final_length} chars ({final_length/article_count:.0f} per article)")
+        
+        return final_length
+        
+    except Exception as e:
+        logging.error(f"Error calculating optimal script length: {e}")
+        # Fallback to original logic
+        return await get_max_article_content_length("", article_count)
 
 async def check_audio_creation_limits(user_id: str, article_count: int) -> Tuple[bool, str, dict]:
     """Check if user can create audio with given article count
     Returns: (can_create, error_message, usage_info)"""
     
-    subscription = await get_or_create_user_subscription(user_id)
-    today_str = datetime.utcnow().strftime('%Y-%m-%d')
-    daily_usage = await get_or_create_daily_usage(user_id, today_str)
+    subscription = await get_or_create_subscription(user_id)
+    daily_usage = await get_or_create_daily_usage(user_id)
     
-    # Get plan limits
-    plan_config = AUDIO_LIMIT_CONFIGS.get(subscription.plan, AUDIO_LIMIT_CONFIGS["free"])
+    # Get plan limits from new SUBSCRIPTION_PLANS config
+    plan_config = SUBSCRIPTION_PLANS.get(subscription['plan'], SUBSCRIPTION_PLANS["free"])
     
     usage_info = {
-        "plan": subscription.plan,
-        "max_daily_audio_count": plan_config.max_daily_audio_count,
-        "max_audio_articles": plan_config.max_audio_articles,
-        "daily_audio_count": daily_usage.audio_count,
-        "remaining_daily_audio": max(0, plan_config.max_daily_audio_count - daily_usage.audio_count),
+        "plan": subscription['plan'],
+        "max_daily_audio_count": subscription['max_daily_audio_count'],
+        "max_audio_articles": subscription['max_audio_articles'],
+        "daily_audio_count": daily_usage['audio_count'],
+        "remaining_daily_audio": max(0, subscription['max_daily_audio_count'] - daily_usage['audio_count']),
         "can_create_audio": True,
         "article_limit_exceeded": False,
         "daily_limit_exceeded": False
     }
     
     # Check daily audio creation limit
-    if daily_usage.audio_count >= plan_config.max_daily_audio_count:
+    if daily_usage['audio_count'] >= subscription['max_daily_audio_count']:
         usage_info["daily_limit_exceeded"] = True
         usage_info["can_create_audio"] = False
-        return False, f"Daily audio limit reached ({plan_config.max_daily_audio_count} audios per day). Upgrade your plan for more.", usage_info
+        return False, f"Daily audio limit reached ({subscription['max_daily_audio_count']} audios per day). Upgrade your plan for more.", usage_info
     
     # Check articles per audio limit
-    if article_count > plan_config.max_audio_articles:
+    if article_count > subscription['max_audio_articles']:
         usage_info["article_limit_exceeded"] = True
         usage_info["can_create_audio"] = False
-        return False, f"Too many articles selected. Your {subscription.plan} plan allows up to {plan_config.max_audio_articles} articles per audio.", usage_info
+        return False, f"Too many articles selected. Your plan allows {subscription['max_audio_articles']} articles per audio.", usage_info
     
     return True, "", usage_info
 
@@ -3294,19 +3708,8 @@ async def record_audio_creation(user_id: str, article_count: int):
     if not db_connected:
         return
     
-    today_str = datetime.utcnow().strftime('%Y-%m-%d')
-    
-    await db.daily_audio_usage.update_one(
-        {"user_id": user_id, "date": today_str},
-        {
-            "$inc": {
-                "audio_count": 1,
-                "total_articles_processed": article_count
-            },
-            "$set": {"updated_at": datetime.utcnow()}
-        },
-        upsert=True
-    )
+    # Use the new increment_daily_usage function
+    await increment_daily_usage(user_id, article_count)
 
 # ===== Audio Limit API Endpoints =====
 
@@ -3601,6 +4004,305 @@ async def get_archive_folders(current_user: User = Depends(get_current_user)):
         
     except Exception as e:
         logging.error(f"Get archive folders error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Subscription Management Models
+class UserSubscription(BaseModel):
+    id: str
+    user_id: str
+    plan: str
+    max_daily_audio_count: int
+    max_audio_articles: int
+    created_at: str
+    expires_at: Optional[str] = None
+
+class DailyUsage(BaseModel):
+    id: str
+    user_id: str
+    date: str
+    audio_count: int
+    total_articles_processed: int
+    created_at: str
+    updated_at: str
+
+class PlanConfig(BaseModel):
+    plan: str
+    max_daily_audio_count: int
+    max_audio_articles: int
+    description: str
+
+class SubscriptionInfo(BaseModel):
+    subscription: UserSubscription
+    daily_usage: DailyUsage
+    plan_config: PlanConfig
+    remaining_daily_audio: int
+
+class LimitCheckResult(BaseModel):
+    can_create: bool
+    error_message: str
+    usage_info: Dict
+
+class PlanUpdateRequest(BaseModel):
+    plan: str
+
+# Subscription Plan Configurations
+SUBSCRIPTION_PLANS = {
+    'free': {
+        'max_daily_audio_count': 3,
+        'max_audio_articles': 3,
+        'description': 'Free plan - 3 articles per audio, 3 audios per day'
+    },
+    'premium': {
+        'max_daily_audio_count': 10,
+        'max_audio_articles': 15,
+        'description': 'Premium plan - 15 articles per audio, 10 audios per day'
+    },
+    'test_3': {
+        'max_daily_audio_count': 999,
+        'max_audio_articles': 3,
+        'description': 'Test plan - 3 articles per audio, unlimited daily'
+    },
+    'test_5': {
+        'max_daily_audio_count': 999,
+        'max_audio_articles': 5,
+        'description': 'Test plan - 5 articles per audio, unlimited daily'
+    },
+    'test_10': {
+        'max_daily_audio_count': 999,
+        'max_audio_articles': 10,
+        'description': 'Test plan - 10 articles per audio, unlimited daily'
+    },
+    'test_15': {
+        'max_daily_audio_count': 999,
+        'max_audio_articles': 15,
+        'description': 'Test plan - 15 articles per audio, unlimited daily'
+    },
+    'test_30': {
+        'max_daily_audio_count': 999,
+        'max_audio_articles': 30,
+        'description': 'Test plan - 30 articles per audio, unlimited daily'
+    },
+    'test_60': {
+        'max_daily_audio_count': 999,
+        'max_audio_articles': 60,
+        'description': 'Test plan - 60 articles per audio, unlimited daily'
+    }
+}
+
+# Subscription Management Helper Functions
+async def get_or_create_subscription(user_id: str):
+    """Get user subscription or create default free subscription"""
+    try:
+        # Try to find existing subscription
+        subscription = await db.user_subscriptions.find_one({"user_id": user_id})
+        
+        if not subscription:
+            # Create default free subscription
+            new_subscription = {
+                "id": str(uuid.uuid4()),
+                "user_id": user_id,
+                "plan": "free",
+                "max_daily_audio_count": SUBSCRIPTION_PLANS['free']['max_daily_audio_count'],
+                "max_audio_articles": SUBSCRIPTION_PLANS['free']['max_audio_articles'],
+                "created_at": datetime.utcnow().isoformat(),
+                "expires_at": None
+            }
+            await db.user_subscriptions.insert_one(new_subscription)
+            subscription = new_subscription
+            
+        return subscription
+    except Exception as e:
+        logging.error(f"Error getting or creating subscription: {e}")
+        raise e
+
+async def get_or_create_daily_usage(user_id: str):
+    """Get today's usage or create new record"""
+    try:
+        today = datetime.utcnow().date().isoformat()
+        
+        # Try to find today's usage
+        usage = await db.daily_usage.find_one({
+            "user_id": user_id,
+            "date": today
+        })
+        
+        if not usage:
+            # Create new daily usage record
+            new_usage = {
+                "id": str(uuid.uuid4()),
+                "user_id": user_id,
+                "date": today,
+                "audio_count": 0,
+                "total_articles_processed": 0,
+                "created_at": datetime.utcnow().isoformat(),
+                "updated_at": datetime.utcnow().isoformat()
+            }
+            await db.daily_usage.insert_one(new_usage)
+            usage = new_usage
+            
+        return usage
+    except Exception as e:
+        logging.error(f"Error getting or creating daily usage: {e}")
+        raise e
+
+async def increment_daily_usage(user_id: str, article_count: int):
+    """Increment user's daily usage counts"""
+    try:
+        today = datetime.utcnow().date().isoformat()
+        
+        await db.daily_usage.update_one(
+            {"user_id": user_id, "date": today},
+            {
+                "$inc": {
+                    "audio_count": 1,
+                    "total_articles_processed": article_count
+                },
+                "$set": {
+                    "updated_at": datetime.utcnow().isoformat()
+                }
+            },
+            upsert=True
+        )
+    except Exception as e:
+        logging.error(f"Error incrementing daily usage: {e}")
+        raise e
+
+# Subscription Management Endpoints
+@app.get("/api/user/subscription", response_model=SubscriptionInfo, tags=["Subscription"])
+async def get_subscription_info(current_user: User = Depends(get_current_user)):
+    """Get user's subscription info and current usage"""
+    try:
+        if not db_connected:
+            raise HTTPException(status_code=503, detail="Database service unavailable")
+            
+        # Get subscription and usage
+        subscription = await get_or_create_subscription(current_user.id)
+        daily_usage = await get_or_create_daily_usage(current_user.id)
+        
+        # Get plan configuration
+        plan_config = SUBSCRIPTION_PLANS.get(subscription['plan'], SUBSCRIPTION_PLANS['free'])
+        
+        # Calculate remaining daily audio
+        remaining_daily_audio = max(0, subscription['max_daily_audio_count'] - daily_usage['audio_count'])
+        
+        return SubscriptionInfo(
+            subscription=UserSubscription(**subscription),
+            daily_usage=DailyUsage(**daily_usage),
+            plan_config=PlanConfig(plan=subscription['plan'], **plan_config),
+            remaining_daily_audio=remaining_daily_audio
+        )
+        
+    except Exception as e:
+        logging.error(f"Get subscription info error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/user/audio-limits/check", response_model=LimitCheckResult, tags=["Subscription"])
+async def check_audio_limits(
+    article_count: int,
+    current_user: User = Depends(get_current_user)
+):
+    """Check if user can create audio with specified number of articles"""
+    try:
+        if not db_connected:
+            raise HTTPException(status_code=503, detail="Database service unavailable")
+            
+        # Get subscription and usage
+        subscription = await get_or_create_subscription(current_user.id)
+        daily_usage = await get_or_create_daily_usage(current_user.id)
+        
+        # Get plan configuration
+        plan_config = SUBSCRIPTION_PLANS.get(subscription['plan'], SUBSCRIPTION_PLANS['free'])
+        
+        # Calculate remaining daily audio
+        remaining_daily_audio = max(0, subscription['max_daily_audio_count'] - daily_usage['audio_count'])
+        
+        # Check limits
+        can_create_audio = remaining_daily_audio > 0
+        article_limit_exceeded = article_count > subscription['max_audio_articles']
+        daily_limit_exceeded = remaining_daily_audio <= 0
+        
+        can_create = can_create_audio and not article_limit_exceeded
+        
+        # Generate error message
+        error_message = ""
+        if daily_limit_exceeded:
+            error_message = f"Daily limit reached. You can create {subscription['max_daily_audio_count']} audios per day."
+        elif article_limit_exceeded:
+            error_message = f"Article limit exceeded. Your plan allows {subscription['max_audio_articles']} articles per audio."
+        
+        usage_info = {
+            "plan": subscription['plan'],
+            "max_daily_audio_count": subscription['max_daily_audio_count'],
+            "max_audio_articles": subscription['max_audio_articles'],
+            "daily_audio_count": daily_usage['audio_count'],
+            "remaining_daily_audio": remaining_daily_audio,
+            "can_create_audio": can_create_audio,
+            "article_limit_exceeded": article_limit_exceeded,
+            "daily_limit_exceeded": daily_limit_exceeded
+        }
+        
+        return LimitCheckResult(
+            can_create=can_create,
+            error_message=error_message,
+            usage_info=usage_info
+        )
+        
+    except Exception as e:
+        logging.error(f"Check audio limits error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/user/subscription/update-plan", tags=["Subscription"])
+async def update_subscription_plan(
+    request: PlanUpdateRequest,
+    current_user: User = Depends(get_current_user)
+):
+    """Update user's subscription plan (for testing/admin purposes)"""
+    try:
+        if not db_connected:
+            raise HTTPException(status_code=503, detail="Database service unavailable")
+            
+        # Validate plan exists
+        if request.plan not in SUBSCRIPTION_PLANS:
+            raise HTTPException(status_code=400, detail=f"Invalid plan: {request.plan}")
+        
+        plan_config = SUBSCRIPTION_PLANS[request.plan]
+        
+        # Update subscription
+        await db.user_subscriptions.update_one(
+            {"user_id": current_user.id},
+            {
+                "$set": {
+                    "plan": request.plan,
+                    "max_daily_audio_count": plan_config['max_daily_audio_count'],
+                    "max_audio_articles": plan_config['max_audio_articles'],
+                    "updated_at": datetime.utcnow().isoformat()
+                }
+            },
+            upsert=True
+        )
+        
+        return {"message": f"Plan updated to {request.plan} successfully"}
+        
+    except Exception as e:
+        logging.error(f"Update subscription plan error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/user/subscription/usage/increment", tags=["Subscription"])
+async def increment_usage(
+    article_count: int,
+    current_user: User = Depends(get_current_user)
+):
+    """Increment user's daily usage (called after successful audio creation)"""
+    try:
+        if not db_connected:
+            raise HTTPException(status_code=503, detail="Database service unavailable")
+            
+        await increment_daily_usage(current_user.id, article_count)
+        
+        return {"message": "Usage incremented successfully"}
+        
+    except Exception as e:
+        logging.error(f"Increment usage error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 # Lifespan events now handled above
