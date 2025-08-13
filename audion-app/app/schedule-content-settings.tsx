@@ -24,14 +24,36 @@ interface ScheduleSettings {
   genres: string[];
   maxArticles: number;
   audioLength: 'short' | 'medium' | 'long';
+  
+  // 🎯 Core Personalization Settings
+  contentPersonalization: {
+    summaryDepth: 'brief' | 'detailed' | 'comprehensive';
+    insightLevel: 'none' | 'basic' | 'advanced' | 'expert';
+    contextualAdaptation: boolean;
+    timeBasedTone: boolean; // Morning vs Evening tone
+  };
+  
+  // 🎨 Content Structure & Delivery
+  deliveryFormat: {
+    introOutro: boolean;
+    betweenArticleTransitions: boolean;
+    genreGrouping: boolean;
+    priorityOrdering: 'chronological' | 'importance' | 'personalized';
+    includeSourceAttribution: boolean;
+  };
+  
   notifications: {
     enabled: boolean;
     preNotification: boolean;
     completionNotification: boolean;
   };
+  
+  // 📊 Advanced Personalization
   personalization: {
     learningEnabled: boolean;
-    contextAdaptation: boolean;
+    genreBalance: 'auto' | 'manual';
+    diversityControl: number; // 0-1 scale
+    freshnessPriority: number; // 0-1 scale
   };
 }
 
@@ -43,14 +65,33 @@ const defaultSettings: ScheduleSettings = {
   genres: ['All'],
   maxArticles: 10,
   audioLength: 'medium',
+  
+  contentPersonalization: {
+    summaryDepth: 'detailed',
+    insightLevel: 'basic',
+    contextualAdaptation: true,
+    timeBasedTone: true,
+  },
+  
+  deliveryFormat: {
+    introOutro: true,
+    betweenArticleTransitions: true,
+    genreGrouping: true,
+    priorityOrdering: 'personalized',
+    includeSourceAttribution: true,
+  },
+  
   notifications: {
     enabled: true,
     preNotification: false,
     completionNotification: true,
   },
+  
   personalization: {
     learningEnabled: true,
-    contextAdaptation: false,
+    genreBalance: 'auto',
+    diversityControl: 0.7,
+    freshnessPriority: 0.6,
   },
 };
 
@@ -75,6 +116,25 @@ const audioLengthOptions = [
 ];
 
 const maxArticleOptions = [5, 10, 15, 20, 25];
+
+const summaryDepthOptions = [
+  { value: 'brief', label: 'Brief', description: 'Key points only (30s per article)', icon: 'flash-outline' },
+  { value: 'detailed', label: 'Detailed', description: 'Full coverage (60s per article)', icon: 'document-text-outline' },
+  { value: 'comprehensive', label: 'Comprehensive', description: 'In-depth analysis (90s per article)', icon: 'library-outline' },
+];
+
+const insightLevelOptions = [
+  { value: 'none', label: 'No Insights', description: 'News facts only' },
+  { value: 'basic', label: 'Basic Insights', description: 'Simple context & implications' },
+  { value: 'advanced', label: 'Advanced Insights', description: 'Historical context & analysis' },
+  { value: 'expert', label: 'Expert Insights', description: 'Deep analysis & predictions' },
+];
+
+const priorityOrderingOptions = [
+  { value: 'chronological', label: 'Chronological', description: 'Newest articles first' },
+  { value: 'importance', label: 'Importance', description: 'Breaking news priority' },
+  { value: 'personalized', label: 'Personalized', description: 'Your interests first' },
+];
 
 export default function ScheduleContentSettings() {
   const { theme } = useTheme();
@@ -193,6 +253,198 @@ export default function ScheduleContentSettings() {
     </View>
   );
 
+  const renderContentPersonalizationSection = () => (
+    <View style={[styles.section, { backgroundColor: theme.card, borderColor: theme.border }]}>
+      <View style={styles.sectionHeader}>
+        <View style={styles.sectionTitleContainer}>
+          <Ionicons name="bulb-outline" size={24} color={theme.primary} style={styles.sectionIcon} />
+          <View>
+            <Text style={[styles.sectionTitle, { color: theme.text }]}>Content Personalization</Text>
+            <Text style={[styles.sectionDescription, { color: theme.textSecondary }]}>
+              Customize content analysis and depth for scheduled delivery
+            </Text>
+          </View>
+        </View>
+      </View>
+
+      {/* Prompt Settings Link */}
+      <View style={styles.optionGroup}>
+        <TouchableOpacity
+          onPress={() => router.push('/prompt-settings')}
+          style={[styles.promptSettingsLink, { backgroundColor: theme.accent, borderColor: theme.primary }]}
+        >
+          <Ionicons name="chatbubble-ellipses-outline" size={20} color={theme.primary} />
+          <Text style={[styles.promptSettingsText, { color: theme.primary }]}>
+            Configure Prompt Settings for Schedule Delivery
+          </Text>
+          <Ionicons name="chevron-forward" size={20} color={theme.primary} />
+        </TouchableOpacity>
+      </View>
+
+      {/* Summary Depth */}
+      <View style={styles.optionGroup}>
+        <Text style={[styles.optionGroupTitle, { color: theme.text }]}>Summary Depth</Text>
+        {summaryDepthOptions.map((option) => (
+          <TouchableOpacity
+            key={option.value}
+            style={[
+              styles.optionButton,
+              {
+                backgroundColor: settings.contentPersonalization.summaryDepth === option.value ? theme.accent : theme.surface,
+                borderColor: settings.contentPersonalization.summaryDepth === option.value ? theme.primary : theme.border,
+              },
+            ]}
+            onPress={() => updateNestedSetting('contentPersonalization', 'summaryDepth', option.value)}
+          >
+            <View style={styles.optionContent}>
+              <View style={styles.optionHeader}>
+                <Ionicons name={option.icon as any} size={20} color={theme.primary} />
+                <Text style={[styles.optionTitle, { color: theme.text }]}>{option.label}</Text>
+              </View>
+              <Text style={[styles.optionDescription, { color: theme.textSecondary }]}>{option.description}</Text>
+            </View>
+            {settings.contentPersonalization.summaryDepth === option.value && (
+              <Ionicons name="checkmark-circle" size={24} color={theme.primary} />
+            )}
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      {/* Insight Level */}
+      <View style={styles.optionGroup}>
+        <Text style={[styles.optionGroupTitle, { color: theme.text }]}>Insight Level</Text>
+        {insightLevelOptions.map((option) => (
+          <TouchableOpacity
+            key={option.value}
+            style={[
+              styles.optionButton,
+              {
+                backgroundColor: settings.contentPersonalization.insightLevel === option.value ? theme.accent : theme.surface,
+                borderColor: settings.contentPersonalization.insightLevel === option.value ? theme.primary : theme.border,
+              },
+            ]}
+            onPress={() => updateNestedSetting('contentPersonalization', 'insightLevel', option.value)}
+          >
+            <View style={styles.optionContent}>
+              <Text style={[styles.optionTitle, { color: theme.text }]}>{option.label}</Text>
+              <Text style={[styles.optionDescription, { color: theme.textSecondary }]}>{option.description}</Text>
+            </View>
+            {settings.contentPersonalization.insightLevel === option.value && (
+              <Ionicons name="checkmark-circle" size={24} color={theme.primary} />
+            )}
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      {/* Advanced Options */}
+      <View style={styles.optionGroup}>
+        <Text style={[styles.optionGroupTitle, { color: theme.text }]}>Advanced Options</Text>
+        <View style={styles.subOption}>
+          <Text style={[styles.subOptionText, { color: theme.text }]}>Contextual adaptation</Text>
+          <Switch
+            value={settings.contentPersonalization.contextualAdaptation}
+            onValueChange={(value) => updateNestedSetting('contentPersonalization', 'contextualAdaptation', value)}
+            trackColor={{ false: theme.textMuted, true: theme.primary }}
+            thumbColor={settings.contentPersonalization.contextualAdaptation ? '#fff' : '#f4f3f4'}
+          />
+        </View>
+        <View style={styles.subOption}>
+          <Text style={[styles.subOptionText, { color: theme.text }]}>Time-based tone adjustment</Text>
+          <Switch
+            value={settings.contentPersonalization.timeBasedTone}
+            onValueChange={(value) => updateNestedSetting('contentPersonalization', 'timeBasedTone', value)}
+            trackColor={{ false: theme.textMuted, true: theme.primary }}
+            thumbColor={settings.contentPersonalization.timeBasedTone ? '#fff' : '#f4f3f4'}
+          />
+        </View>
+      </View>
+    </View>
+  );
+
+  const renderDeliveryFormatSection = () => (
+    <View style={[styles.section, { backgroundColor: theme.card, borderColor: theme.border }]}>
+      <View style={styles.sectionHeader}>
+        <View style={styles.sectionTitleContainer}>
+          <Ionicons name="construct-outline" size={24} color={theme.primary} style={styles.sectionIcon} />
+          <View>
+            <Text style={[styles.sectionTitle, { color: theme.text }]}>Delivery Format</Text>
+            <Text style={[styles.sectionDescription, { color: theme.textSecondary }]}>
+              Structure and organize your audio content delivery
+            </Text>
+          </View>
+        </View>
+      </View>
+
+      {/* Priority Ordering */}
+      <View style={styles.optionGroup}>
+        <Text style={[styles.optionGroupTitle, { color: theme.text }]}>Article Priority</Text>
+        {priorityOrderingOptions.map((option) => (
+          <TouchableOpacity
+            key={option.value}
+            style={[
+              styles.optionButton,
+              {
+                backgroundColor: settings.deliveryFormat.priorityOrdering === option.value ? theme.accent : theme.surface,
+                borderColor: settings.deliveryFormat.priorityOrdering === option.value ? theme.primary : theme.border,
+              },
+            ]}
+            onPress={() => updateNestedSetting('deliveryFormat', 'priorityOrdering', option.value)}
+          >
+            <View style={styles.optionContent}>
+              <Text style={[styles.optionTitle, { color: theme.text }]}>{option.label}</Text>
+              <Text style={[styles.optionDescription, { color: theme.textSecondary }]}>{option.description}</Text>
+            </View>
+            {settings.deliveryFormat.priorityOrdering === option.value && (
+              <Ionicons name="checkmark-circle" size={24} color={theme.primary} />
+            )}
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      {/* Format Options */}
+      <View style={styles.optionGroup}>
+        <Text style={[styles.optionGroupTitle, { color: theme.text }]}>Format Options</Text>
+        <View style={styles.subOption}>
+          <Text style={[styles.subOptionText, { color: theme.text }]}>Include intro/outro</Text>
+          <Switch
+            value={settings.deliveryFormat.introOutro}
+            onValueChange={(value) => updateNestedSetting('deliveryFormat', 'introOutro', value)}
+            trackColor={{ false: theme.textMuted, true: theme.primary }}
+            thumbColor={settings.deliveryFormat.introOutro ? '#fff' : '#f4f3f4'}
+          />
+        </View>
+        <View style={styles.subOption}>
+          <Text style={[styles.subOptionText, { color: theme.text }]}>Article transitions</Text>
+          <Switch
+            value={settings.deliveryFormat.betweenArticleTransitions}
+            onValueChange={(value) => updateNestedSetting('deliveryFormat', 'betweenArticleTransitions', value)}
+            trackColor={{ false: theme.textMuted, true: theme.primary }}
+            thumbColor={settings.deliveryFormat.betweenArticleTransitions ? '#fff' : '#f4f3f4'}
+          />
+        </View>
+        <View style={styles.subOption}>
+          <Text style={[styles.subOptionText, { color: theme.text }]}>Group by genre</Text>
+          <Switch
+            value={settings.deliveryFormat.genreGrouping}
+            onValueChange={(value) => updateNestedSetting('deliveryFormat', 'genreGrouping', value)}
+            trackColor={{ false: theme.textMuted, true: theme.primary }}
+            thumbColor={settings.deliveryFormat.genreGrouping ? '#fff' : '#f4f3f4'}
+          />
+        </View>
+        <View style={styles.subOption}>
+          <Text style={[styles.subOptionText, { color: theme.text }]}>Source attribution</Text>
+          <Switch
+            value={settings.deliveryFormat.includeSourceAttribution}
+            onValueChange={(value) => updateNestedSetting('deliveryFormat', 'includeSourceAttribution', value)}
+            trackColor={{ false: theme.textMuted, true: theme.primary }}
+            thumbColor={settings.deliveryFormat.includeSourceAttribution ? '#fff' : '#f4f3f4'}
+          />
+        </View>
+      </View>
+    </View>
+  );
+
+  // Other render functions (frequency, timeSlot, audioLength, maxArticles) remain the same...
   const renderFrequencySection = () => (
     <View style={[styles.section, { backgroundColor: theme.card, borderColor: theme.border }]}>
       <Text style={[styles.sectionTitle, { color: theme.text }]}>Delivery Frequency</Text>
@@ -358,6 +610,9 @@ export default function ScheduleContentSettings() {
               </View>
             )}
 
+            {renderContentPersonalizationSection()}
+            {renderDeliveryFormatSection()}
+            
             {renderToggleSection(
               'AI Personalization',
               'Learn from your preferences to improve content selection',
@@ -366,12 +621,24 @@ export default function ScheduleContentSettings() {
               'bulb'
             )}
 
-            {renderToggleSection(
-              'Context Adaptation',
-              'Adjust content based on your location and activity',
-              settings.personalization.contextAdaptation,
-              (value) => updateNestedSetting('personalization', 'contextAdaptation', value),
-              'location'
+            {settings.personalization.learningEnabled && (
+              <View style={[styles.subSection, { backgroundColor: theme.card, borderColor: theme.border }]}>
+                <View style={styles.subOption}>
+                  <Text style={[styles.subOptionText, { color: theme.text }]}>Genre balance</Text>
+                  <TouchableOpacity
+                    style={[styles.optionButton, { 
+                      backgroundColor: settings.personalization.genreBalance === 'auto' ? theme.accent : theme.surface,
+                      borderColor: settings.personalization.genreBalance === 'auto' ? theme.primary : theme.border,
+                    }]}
+                    onPress={() => updateNestedSetting('personalization', 'genreBalance', 
+                      settings.personalization.genreBalance === 'auto' ? 'manual' : 'auto')}
+                  >
+                    <Text style={[styles.optionTitle, { color: theme.text }]}>
+                      {settings.personalization.genreBalance === 'auto' ? 'Auto Balance' : 'Manual Control'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
             )}
           </>
         )}
@@ -518,5 +785,32 @@ const styles = StyleSheet.create({
   },
   bottomSpacer: {
     height: 32,
+  },
+  optionGroup: {
+    marginTop: 16,
+  },
+  optionGroupTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 12,
+    paddingHorizontal: 4,
+  },
+  optionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  promptSettingsLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 2,
+    gap: 12,
+  },
+  promptSettingsText: {
+    fontSize: 16,
+    fontWeight: '600',
+    flex: 1,
   },
 });

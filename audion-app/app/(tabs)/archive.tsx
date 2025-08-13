@@ -15,15 +15,41 @@ import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { useTranslation } from 'react-i18next';
-import { format } from 'date-fns';
+import { format, isValid, parseISO } from 'date-fns';
 import { useFocusEffect } from '@react-navigation/native';
 import * as WebBrowser from 'expo-web-browser';
 import { Ionicons } from '@expo/vector-icons';
 import { ErrorHandlingService } from '../../services/ErrorHandlingService';
 import LoadingIndicator from '../../components/LoadingIndicator';
 
-const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:8003';
 const API = `${BACKEND_URL}/api`;
+
+// Safe date formatting helper
+const formatSafeDate = (dateString: string, formatString: string): string => {
+  if (!dateString) return 'Unknown date';
+  
+  try {
+    // Try parsing ISO string first
+    let date = parseISO(dateString);
+    
+    // If that fails, try new Date()
+    if (!isValid(date)) {
+      date = new Date(dateString);
+    }
+    
+    // If still invalid, return fallback
+    if (!isValid(date)) {
+      console.warn('Invalid date encountered:', dateString);
+      return 'Invalid date';
+    }
+    
+    return format(date, formatString);
+  } catch (error) {
+    console.warn('Error formatting date:', dateString, error);
+    return 'Invalid date';
+  }
+};
 
 interface ArchivedArticle {
   id: string;
@@ -513,7 +539,7 @@ export default function ArchiveScreen() {
                       </View>
                     )}
                     <Text style={[styles.archivedDate, { color: theme.textMuted }]}>
-                      {format(new Date(article.archived_at), 'MMM dd')}
+                      {formatSafeDate(article.archived_at, 'MMM dd')}
                     </Text>
                   </View>
                 </View>
@@ -530,7 +556,7 @@ export default function ArchiveScreen() {
 
                 <View style={styles.articleFooter}>
                   <Text style={[styles.publishedDate, { color: theme.textMuted }]}>
-                    {format(new Date(article.published_at), 'MMM dd, yyyy')}
+                    {formatSafeDate(article.published_at, 'MMM dd, yyyy')}
                   </Text>
                   {article.folder && article.folder !== 'default' && (
                     <View style={[styles.folderTag, { backgroundColor: theme.secondary }]}>

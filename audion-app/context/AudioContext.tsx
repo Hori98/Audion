@@ -103,7 +103,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   const [downloadProgress, setDownloadProgress] = useState<Map<string, number>>(new Map());
   const [downloadingAudios, setDownloadingAudios] = useState<Set<string>>(new Set());
   
-  const API = process.env.EXPO_PUBLIC_BACKEND_URL ? `${process.env.EXPO_PUBLIC_BACKEND_URL}/api` : 'http://localhost:8000/api';
+  const API = process.env.EXPO_PUBLIC_BACKEND_URL ? `${process.env.EXPO_PUBLIC_BACKEND_URL}/api` : 'http://localhost:8003/api';
 
   // Helper function to update current chapter based on playback position
   const updateCurrentChapter = (audioItem: AudioItem, currentPosition: number) => {
@@ -218,7 +218,8 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       console.error('Error playing audio:', error);
       
       // If local file failed, try remote as fallback
-      if (localPath && error) {
+      const localPathForFallback = await DownloadService.getLocalPath(audioItem.id);
+      if (localPathForFallback && error) {
         console.log('🔄 Local playback failed, trying remote fallback...');
         try {
           const { sound: fallbackSound } = await Audio.Sound.createAsync(

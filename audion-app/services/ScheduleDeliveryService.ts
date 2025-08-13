@@ -2,8 +2,11 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
 import * as TaskManager from 'expo-task-manager';
 import axios from 'axios';
+import { getAPIPromptData } from '../utils/promptUtils';
+import AudioMetadataService from './AudioMetadataService';
+import DebugService from './DebugService';
 
-const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:8003';
 const API = `${BACKEND_URL}/api`;
 
 const SCHEDULE_DELIVERY_TASK = 'SCHEDULE_DELIVERY_TASK';
@@ -253,6 +256,17 @@ class ScheduleDeliveryService {
         return { success: false, error: 'No suitable articles found for scheduled delivery' };
       }
 
+      // Load prompt settings using unified system for schedule mode
+      const promptData = await getAPIPromptData('schedule');
+
+      // Add debug headers if bypass is enabled
+      const headers: any = { Authorization: `Bearer ${token}` };
+      if (DebugService.shouldBypassSubscriptionLimits()) {
+        headers['X-Debug-Bypass-Limits'] = 'true';
+        headers['X-Debug-Mode'] = 'true';
+        console.log('🧪 Adding debug headers to scheduled audio API request');
+      }
+
       // Create audio from selected articles
       const audioResponse = await axios.post(
         `${API}/audio/create`,
@@ -260,15 +274,24 @@ class ScheduleDeliveryService {
           article_ids: articles.map((a: any) => a.id),
           article_titles: articles.map((a: any) => a.title),
           article_urls: articles.map((a: any) => a.link),
-          prompt_style: 'standard', // TODO: Make configurable
-          custom_prompt: '',
+          ...promptData,
           scheduled_delivery: true,
         },
         { 
-          headers: { Authorization: `Bearer ${token}` },
+          headers,
           timeout: 300000, // 5 minute timeout for audio creation
         }
       );
+
+      // Save prompt metadata for scheduled audio
+      await AudioMetadataService.saveAudioMetadata({
+        audioId: audioResponse.data.id,
+        promptMode: 'schedule',
+        promptStyle: promptData.prompt_style as any,
+        customPrompt: promptData.custom_prompt,
+        createdAt: new Date().toISOString(),
+        creationMethod: 'scheduled'
+      });
 
       return {
         success: true,

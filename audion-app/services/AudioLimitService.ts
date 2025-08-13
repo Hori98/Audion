@@ -4,6 +4,7 @@
  */
 
 import axios from 'axios';
+import DebugService from './DebugService';
 
 export interface SubscriptionInfo {
   subscription: {
@@ -55,7 +56,7 @@ class AudioLimitService {
   constructor() {
     this.baseURL = process.env.EXPO_PUBLIC_BACKEND_URL 
       ? `${process.env.EXPO_PUBLIC_BACKEND_URL}/api`
-      : 'http://localhost:8001/api';
+      : 'http://localhost:8003/api';
   }
 
   static getInstance(): AudioLimitService {
@@ -79,6 +80,25 @@ class AudioLimitService {
    * Check if user can create audio with specified number of articles
    */
   async checkAudioLimits(token: string, articleCount: number): Promise<LimitCheckResult> {
+    // 🧪 Debug: Bypass subscription limits if enabled
+    if (DebugService.shouldBypassSubscriptionLimits()) {
+      console.log('🧪 Debug: Bypassing audio creation limits');
+      return {
+        can_create: true,
+        error_message: '',
+        usage_info: {
+          plan: 'DEBUG',
+          max_daily_audio_count: 999,
+          max_audio_articles: 999,
+          daily_audio_count: 0,
+          remaining_daily_audio: 999,
+          can_create_audio: true,
+          article_limit_exceeded: false,
+          daily_limit_exceeded: false,
+        }
+      };
+    }
+
     const response = await axios.get(`${this.baseURL}/user/audio-limits/check`, {
       params: { article_count: articleCount },
       headers: { Authorization: `Bearer ${token}` }
@@ -101,6 +121,12 @@ class AudioLimitService {
    * Get maximum articles allowed for user's current plan
    */
   async getMaxArticlesForUser(token: string): Promise<number> {
+    // 🧪 Debug: Bypass subscription limits if enabled
+    if (DebugService.shouldBypassSubscriptionLimits()) {
+      console.log('🧪 Debug: Returning unlimited article count');
+      return 999;
+    }
+
     try {
       const subscriptionInfo = await this.getSubscriptionInfo(token);
       return subscriptionInfo.plan_config.max_audio_articles;
@@ -119,6 +145,13 @@ class AudioLimitService {
     maxAllowed?: number;
     remainingDaily?: number;
   }> {
+    console.log(`🔍 AudioLimitService: Validating creation for ${articleCount} articles`);
+    
+    // Load debug settings to ensure they are current
+    await DebugService.loadDebugSettings();
+    console.log('🧪 AudioLimitService: Debug bypass enabled?', DebugService.shouldBypassSubscriptionLimits());
+    console.log('🧪 AudioLimitService: Current debug settings:', DebugService.getCurrentSettings());
+    
     try {
       const result = await this.checkAudioLimits(token, articleCount);
       

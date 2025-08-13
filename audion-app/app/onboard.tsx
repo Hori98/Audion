@@ -37,7 +37,7 @@ export default function OnboardScreen() {
   const [settingUp, setSettingUp] = useState(false);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
 
-  const API = process.env.EXPO_PUBLIC_BACKEND_URL ? `${process.env.EXPO_PUBLIC_BACKEND_URL}/api` : 'http://localhost:8000/api';
+  const API = process.env.EXPO_PUBLIC_BACKEND_URL ? `${process.env.EXPO_PUBLIC_BACKEND_URL}/api` : 'http://localhost:8003/api';
 
   useEffect(() => {
     fetchPresetCategories();

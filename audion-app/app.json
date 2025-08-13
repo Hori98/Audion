@@ -101,6 +101,14 @@
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "cli": {
+      "appVersionSource": "remote"
+    },
+    "extra": {
+      "devServer": {
+        "port": 8081
+      }
     }
   }
 }

@@ -23,7 +23,7 @@ const CustomHeader = () => {
   const insets = useSafeAreaInsets();
   const [userProfileImage, setUserProfileImage] = useState<string | null>(null);
   
-  const API = process.env.EXPO_PUBLIC_BACKEND_URL ? `${process.env.EXPO_PUBLIC_BACKEND_URL}/api` : 'http://localhost:8000/api';
+  const API = process.env.EXPO_PUBLIC_BACKEND_URL ? `${process.env.EXPO_PUBLIC_BACKEND_URL}/api` : 'http://localhost:8003/api';
   
   const handleSettingsPress = () => {
     console.log('User avatar pressed - navigating to settings');
@@ -144,6 +144,13 @@ export default function AppLayout() {
         headerShown: true,
       }}>
       <Tabs.Screen
+        name="main"
+        options={{
+          tabBarLabel: 'Home',
+          tabBarIcon: ({ color, size }) => <Ionicons name="home-outline" color={color} size={size} />,
+        }}
+      />
+      <Tabs.Screen
         name="feed"
         options={{
           tabBarLabel: 'Feed',
@@ -155,13 +162,6 @@ export default function AppLayout() {
         options={{
           tabBarLabel: 'Archive',
           tabBarIcon: ({ color, size }) => <Ionicons name="bookmark-outline" color={color} size={size} />,
-        }}
-      />
-      <Tabs.Screen
-        name="discover"
-        options={{
-          tabBarLabel: 'Discover',
-          tabBarIcon: ({ color, size }) => <Ionicons name="compass-outline" color={color} size={size} />,
         }}
       />
       <Tabs.Screen
