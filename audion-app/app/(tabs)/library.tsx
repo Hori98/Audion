@@ -10,6 +10,7 @@ import { Ionicons } from '@expo/vector-icons';
 import LoadingIndicator from '../../components/LoadingIndicator';
 import DownloadButton from '../../components/DownloadButton';
 import AudioMetadataService from '../../services/AudioMetadataService';
+import SearchBar from '../../components/SearchBar';
 
 interface RecentAudioItem {
   id: string;
@@ -35,6 +36,7 @@ export default function RecentScreen() {
   const [recentAudio, setRecentAudio] = useState<RecentAudioItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [searchQuery, setSearchQuery] = useState(''); // Search functionality
 
   const API = process.env.EXPO_PUBLIC_BACKEND_URL ? `${process.env.EXPO_PUBLIC_BACKEND_URL}/api` : 'http://localhost:8003/api';
 
@@ -142,8 +144,26 @@ export default function RecentScreen() {
     return <LoadingIndicator />;
   }
 
+  // Filter audio based on search query
+  const filteredAudio = recentAudio.filter(audio => {
+    if (!searchQuery.trim()) return true;
+    
+    const query = searchQuery.toLowerCase().trim();
+    return (
+      audio.title?.toLowerCase().includes(query) ||
+      audio.summary?.toLowerCase().includes(query)
+    );
+  });
+
   return (
     <View style={styles.container}>
+      {/* Search Bar */}
+      <SearchBar
+        value={searchQuery}
+        onChangeText={setSearchQuery}
+        placeholder="Search audio library..."
+      />
+      
       <ScrollView 
         style={styles.content}
         refreshControl={
@@ -156,7 +176,7 @@ export default function RecentScreen() {
           <Text style={styles.headerSubtitle}>最新10件表示・引き下げで更新</Text>
         </View>
 
-        {recentAudio.length === 0 ? (
+        {filteredAudio.length === 0 ? (
           <View style={styles.emptyState}>
             <Ionicons name="musical-notes-outline" size={48} color={theme.textMuted} />
             <Text style={styles.emptyText}>
@@ -166,7 +186,7 @@ export default function RecentScreen() {
           </View>
         ) : (
           <View style={styles.audioList}>
-            {recentAudio.map((audio) => (
+            {filteredAudio.map((audio) => (
               <View key={audio.id} style={styles.audioItem}>
                 <TouchableOpacity
                   style={styles.audioContent}

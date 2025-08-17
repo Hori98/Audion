@@ -118,6 +118,22 @@ class NotificationService {
         vibrationPattern: [0, 250, 250, 250],
         lightColor: '#4F46E5',
       });
+
+      await Notifications.setNotificationChannelAsync('breaking-news', {
+        name: 'Breaking News',
+        description: 'Important breaking news notifications',
+        importance: Notifications.AndroidImportance.HIGH,
+        vibrationPattern: [0, 500, 200, 500],
+        lightColor: '#FF0000',
+      });
+
+      await Notifications.setNotificationChannelAsync('bookmarks', {
+        name: 'Bookmarks',
+        description: 'Bookmark-related notifications',
+        importance: Notifications.AndroidImportance.LOW,
+        vibrationPattern: [0, 150],
+        lightColor: '#4F46E5',
+      });
     }
 
     return true;
@@ -410,8 +426,263 @@ class NotificationService {
     }
   }
 
+  // ============ NEW FEATURES ============
+
+  async sendBreakingNewsNotification(article: any) {
+    const settings = await this.getNotificationSettings();
+    if (!settings.enabled) return;
+
+    try {
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title: `🚨 Breaking: ${article.source_name}`,
+          body: article.title,
+          data: {
+            type: 'breaking_news',
+            articleId: article.id,
+            articleData: JSON.stringify(article),
+          },
+          categoryIdentifier: 'breaking-news',
+        },
+        trigger: null, // Show immediately
+      });
+    } catch (error) {
+      console.error('Error sending breaking news notification:', error);
+    }
+  }
+
+  async sendBookmarkReminderNotification(bookmarkedArticles: any[]) {
+    const settings = await this.getNotificationSettings();
+    if (!settings.enabled) return;
+
+    try {
+      const count = bookmarkedArticles.length;
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title: '📚 Reading Reminder',
+          body: `You have ${count} saved article${count > 1 ? 's' : ''} waiting to be read`,
+          data: {
+            type: 'bookmark_reminder',
+            count: count,
+          },
+          categoryIdentifier: 'bookmarks',
+        },
+        trigger: null,
+      });
+    } catch (error) {
+      console.error('Error sending bookmark reminder:', error);
+    }
+  }
+
+  async sendShareCompleteNotification(platform: string, articleTitle: string) {
+    try {
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title: '✅ Shared Successfully',
+          body: `"${articleTitle}" was shared to ${platform}`,
+          data: {
+            type: 'share_complete',
+            platform: platform,
+          },
+        },
+        trigger: null,
+      });
+    } catch (error) {
+      console.error('Error sending share complete notification:', error);
+    }
+  }
+
+  async sendDailyDigestNotification(articleCount: number) {
+    const settings = await this.getNotificationSettings();
+    if (!settings.enabled) return;
+
+    try {
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title: '📰 Your Daily News Digest',
+          body: `${articleCount} new articles are ready for you to explore`,
+          data: {
+            type: 'daily_digest',
+            articleCount: articleCount,
+          },
+        },
+        trigger: null,
+      });
+    } catch (error) {
+      console.error('Error sending daily digest notification:', error);
+    }
+  }
+
+  async sendReadingHabitReminder(insights: any[]) {
+    const settings = await this.getNotificationSettings();
+    if (!settings.enabled) return;
+
+    try {
+      // Find the most actionable insight
+      const motivationInsight = insights.find(i => i.type === 'motivation');
+      const suggestionInsight = insights.find(i => i.type === 'suggestion');
+      const achievementInsight = insights.find(i => i.type === 'achievement');
+      
+      const insight = motivationInsight || suggestionInsight || achievementInsight;
+      
+      if (insight) {
+        await Notifications.scheduleNotificationAsync({
+          content: {
+            title: '📚 Reading Habit Reminder',
+            body: `${insight.message} ${insight.action}`,
+            data: {
+              type: 'reading_habit_reminder',
+              insightType: insight.type,
+            },
+          },
+          trigger: null,
+        });
+      }
+    } catch (error) {
+      console.error('Error sending reading habit reminder:', error);
+    }
+  }
+
+  async sendStreakMotivationNotification(streakDays: number) {
+    const settings = await this.getNotificationSettings();
+    if (!settings.enabled) return;
+
+    try {
+      let title = '🔥 Reading Streak!';
+      let body = '';
+      
+      if (streakDays === 0) {
+        title = '📖 Start Your Reading Journey';
+        body = 'Begin a new reading streak today with personalized article recommendations!';
+      } else if (streakDays < 7) {
+        body = `You're on a ${streakDays}-day streak! Keep the momentum going.`;
+      } else if (streakDays < 30) {
+        body = `Incredible ${streakDays}-day reading streak! You're building an amazing habit.`;
+      } else {
+        body = `Outstanding ${streakDays}-day streak! You're a reading champion! 🏆`;
+      }
+
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title,
+          body,
+          data: {
+            type: 'streak_motivation',
+            streakDays: streakDays,
+          },
+        },
+        trigger: null,
+      });
+    } catch (error) {
+      console.error('Error sending streak motivation:', error);
+    }
+  }
+
+  async schedulePersonalizedReadingReminder(optimalHour: number) {
+    const settings = await this.getNotificationSettings();
+    if (!settings.enabled) return;
+
+    try {
+      // Cancel existing personalized reminders
+      await Notifications.cancelScheduledNotificationAsync('personalized-reading-reminder');
+
+      // Schedule at optimal time
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title: '⏰ Perfect Reading Time',
+          body: 'Based on your habits, now is your ideal time to read! Check out today\'s picks.',
+          data: {
+            type: 'personalized_reading_reminder',
+            optimalTime: true,
+          },
+        },
+        trigger: {
+          hour: Math.floor(optimalHour),
+          minute: Math.floor((optimalHour % 1) * 60),
+          repeats: true,
+        },
+        identifier: 'personalized-reading-reminder',
+      });
+    } catch (error) {
+      console.error('Error scheduling personalized reading reminder:', error);
+    }
+  }
+
+  // Schedule recurring bookmark reminders
+  async scheduleBookmarkReminders() {
+    const settings = await this.getNotificationSettings();
+    if (!settings.enabled) return;
+
+    try {
+      // Cancel existing bookmark reminders
+      await Notifications.cancelScheduledNotificationAsync('bookmark-reminder-weekly');
+
+      // Schedule weekly reminder
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title: '📚 Weekly Reading Reminder',
+          body: 'Don\'t forget to check your saved articles!',
+          data: {
+            type: 'bookmark_reminder_weekly',
+          },
+        },
+        trigger: {
+          weekday: 7, // Sunday
+          hour: 10,
+          minute: 0,
+          repeats: true,
+        },
+        identifier: 'bookmark-reminder-weekly',
+      });
+    } catch (error) {
+      console.error('Error scheduling bookmark reminders:', error);
+    }
+  }
+
+  // Enhanced notification response handler
+  private handleNotificationResponse(data: any) {
+    console.log('Notification tapped with data:', data);
+    
+    switch (data?.type) {
+      case 'audio_ready':
+        this.handleAudioReadyTap(data.audioId);
+        break;
+      case 'schedule_error':
+        this.handleScheduleErrorTap();
+        break;
+      case 'breaking_news':
+        this.handleBreakingNewsTap(data.articleId, data.articleData);
+        break;
+      case 'bookmark_reminder':
+      case 'bookmark_reminder_weekly':
+        this.handleBookmarkReminderTap();
+        break;
+      case 'daily_digest':
+        this.handleDailyDigestTap();
+        break;
+      default:
+        console.log('Unknown notification type:', data?.type);
+    }
+  }
+
+  private handleBreakingNewsTap(articleId: string, articleData?: string) {
+    console.log('Handle breaking news tap:', articleId);
+    // Navigate to article detail
+    // This should be handled by the navigation service
+  }
+
+  private handleBookmarkReminderTap() {
+    console.log('Handle bookmark reminder tap');
+    // Navigate to bookmarks/library
+  }
+
+  private handleDailyDigestTap() {
+    console.log('Handle daily digest tap');
+    // Navigate to home screen
+  }
+
   // Test method for development
-  async testNotification(type: 'audio_ready' | 'schedule_error' | 'pre_notification' = 'audio_ready') {
+  async testNotification(type: 'audio_ready' | 'schedule_error' | 'pre_notification' | 'breaking_news' | 'bookmark_reminder' = 'audio_ready') {
     switch (type) {
       case 'audio_ready':
         await this.sendAudioReadyNotification('Test Audio Digest', 5, 'test-audio-id');
@@ -421,6 +692,16 @@ class NotificationService {
         break;
       case 'pre_notification':
         await this.sendPreDeliveryNotification('08:00', 5);
+        break;
+      case 'breaking_news':
+        await this.sendBreakingNewsNotification({
+          id: 'test-123',
+          title: 'Test Breaking News Article',
+          source_name: 'Test Source',
+        });
+        break;
+      case 'bookmark_reminder':
+        await this.sendBookmarkReminderNotification([{}, {}, {}]); // 3 articles
         break;
     }
     console.log(`Test notification sent: ${type}`);

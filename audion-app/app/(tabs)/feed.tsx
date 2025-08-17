@@ -21,8 +21,12 @@ import { ErrorHandlingService } from '../../services/ErrorHandlingService';
 import AudioLimitService from '../../services/AudioLimitService';
 import AudioMetadataService from '../../services/AudioMetadataService';
 import NotificationService from '../../services/NotificationService';
+import ArchiveService from '../../services/ArchiveService';
 import { Article } from '../../types';
 import { getAPIPromptData, getPromptSettingsForMode } from '../../utils/promptUtils';
+import SearchBar from '../../components/SearchBar';
+import SearchUtils from '../../utils/searchUtils';
+import BookmarkService from '../../services/BookmarkService';
 
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:8003';
 const API = `${BACKEND_URL}/api`;
@@ -66,6 +70,18 @@ export default function FeedScreen() {
   const [feedDislikedArticles, setFeedDislikedArticles] = useState<Set<string>>(new Set());
   const [archivedArticles, setArchivedArticles] = useState<Set<string>>(new Set()); // Track archived articles
   const [readingHistory, setReadingHistory] = useState<Map<string, Date>>(new Map()); // Track reading history by article ID
+  const [searchQuery, setSearchQuery] = useState(''); // Search functionality
+  const [readLaterStatus, setReadLaterStatus] = useState<Map<string, boolean>>(new Map());
+
+  // 検索クエリ変更時の処理（履歴保存含む）
+  const handleSearchChange = async (query: string) => {
+    setSearchQuery(query);
+    
+    // 検索実行時に履歴を保存（空でない場合）
+    if (query.trim() && query.length > 2) {
+      await SearchUtils.saveSearchHistory(query, 'feed_search_history');
+    }
+  };
 
   const genres = [
     'All', 'Technology', 'Finance', 'Sports', 'Politics', 'Health',
@@ -76,8 +92,6 @@ export default function FeedScreen() {
     'All Articles', 'Unread', 'Read', 'This Week\'s Reads'
   ];
 
-  // Removed duplicate custom prompts - using unified global system only
-
   // Built-in prompt options
   const builtInPrompts = [
     { id: 'standard', name: 'Standard', description: 'Balanced approach with comprehensive coverage', icon: 'checkmark-circle-outline', color: theme.primary },
@@ -86,17 +100,6 @@ export default function FeedScreen() {
     { id: 'insightful', name: 'Insightful', description: 'Deep analysis with context and implications', icon: 'bulb-outline', color: '#F59E0B' }
   ];
 
-  // Removed - using unified global prompt system only
-
-  // Removed - using unified global prompt system only
-
-  // Removed duplicate custom prompt loading - using unified global system only
-
-  // Removed duplicate custom prompt saving - using unified global system only
-
-
-  // Removed duplicate custom prompt functions - using unified global system only
-
   useFocusEffect(
     React.useCallback(() => {
       const initializeData = async () => {
@@ -104,6 +107,7 @@ export default function FeedScreen() {
           await loadGlobalSelection();
           await loadArchivedArticles();
           await loadReadingHistory();
+          await loadReadLaterStatus();
           // Force refresh sources to get latest changes from sources screen
           await fetchSources(true);
           await fetchArticles();
@@ -172,12 +176,10 @@ export default function FeedScreen() {
   // Load archived articles from backend
   const loadArchivedArticles = async () => {
     try {
-      const response = await axios.get(`${API}/archive/articles`, {
-        headers: { Authorization: `Bearer ${token}` },
-        params: { page: 1, limit: 1000 } // Get all archived articles for quick lookup
-      });
+      if (!token) return;
       
-      const archivedIds = new Set(response.data.articles.map((article: any) => article.original_article_id));
+      await ArchiveService.getInstance().initialize(token);
+      const archivedIds = new Set(ArchiveService.getInstance().getArchivedArticleIds());
       setArchivedArticles(archivedIds);
     } catch (error) {
       console.warn('Error loading archived articles:', error);
@@ -215,6 +217,53 @@ export default function FeedScreen() {
     }
   };
 
+  // Load Read Later status for all articles
+  const loadReadLaterStatus = async () => {
+    if (!token) return;
+    
+    try {
+      const bookmarks = await BookmarkService.getInstance().getBookmarks(token);
+      const statusMap = new Map<string, boolean>();
+      
+      // Update status map based on bookmarks with read_later flag
+      bookmarks.forEach(bookmark => {
+        if (bookmark.read_later) {
+          statusMap.set(bookmark.article_id, true);
+        }
+      });
+      
+      setReadLaterStatus(statusMap);
+    } catch (error) {
+      console.warn('Error loading read later status:', error);
+    }
+  };
+
+  // Handle Read Later toggle
+  const handleReadLaterToggle = async (article: Article, event: any) => {
+    event.stopPropagation(); // Prevent article press
+    
+    if (!token) return;
+    
+    try {
+      const isCurrentlyReadLater = await BookmarkService.getInstance().toggleReadLater(token, article);
+      
+      // Update local state
+      setReadLaterStatus(prev => {
+        const newMap = new Map(prev);
+        if (isCurrentlyReadLater) {
+          newMap.set(article.id, true);
+        } else {
+          newMap.delete(article.id);
+        }
+        return newMap;
+      });
+      
+    } catch (error) {
+      console.error('Error toggling read later:', error);
+      Alert.alert('エラー', '後で読む機能でエラーが発生しました');
+    }
+  };
+
   // Record article reading
   const recordArticleReading = async (article: Article) => {
     try {
@@ -249,7 +298,7 @@ export default function FeedScreen() {
   // Generate normalized ID for article deduplication
   const generateNormalizedId = (article: Article): string => {
     // Use title + source + published date to create a unique identifier
-    const key = `${article.title.trim()}_${(article.source_name || article.source || 'unknown').trim()}_${article.published || article.published_at}`;
+    const key = `${article.title?.trim() || ''}_${(article.source_name || article.source || 'unknown').trim()}_${article.published || article.published_at || ''}`;
     // Simple hash function to create shorter ID
     let hash = 0;
     for (let i = 0; i < key.length; i++) {
@@ -273,11 +322,11 @@ export default function FeedScreen() {
     return readDate >= weekStart;
   };
 
-  // Filter articles based on reading status
+  // Filter articles based on reading status and search query (using SearchUtils)
   const getFilteredArticles = (): Article[] => {
     let filteredArticles = articles;
 
-    // Apply reading filter
+    // Apply reading filter first
     switch (selectedReadingFilter) {
       case 'Unread':
         filteredArticles = articles.filter(article => !readingHistory.has(article.id));
@@ -294,7 +343,12 @@ export default function FeedScreen() {
         break;
     }
 
-    return filteredArticles;
+    // Apply search, genre, and source filters using SearchUtils
+    return SearchUtils.filterArticles(filteredArticles, {
+      searchQuery: searchQuery.trim(),
+      genre: selectedGenre,
+      source: selectedSource,
+    });
   };
 
   // Normalize articles to prevent duplicates across filters
@@ -630,8 +684,6 @@ export default function FeedScreen() {
     const newMode = !selectionMode;
     setSelectionMode(newMode);
     
-    // Removed: No longer need temporary prompt style - using unified global system only
-    
     // Animate FAB rotation
     Animated.timing(fabRotation, {
       toValue: newMode ? 1 : 0,
@@ -713,7 +765,6 @@ export default function FeedScreen() {
         { headers }
       );
 
-
       // Record user interactions for personalization (async to avoid blocking UI)
       const recordInteractions = async () => {
         for (const article of selectedArticles) {
@@ -733,7 +784,6 @@ export default function FeedScreen() {
           }
         }
       };
-
 
       // Save prompt metadata for this audio
       await AudioMetadataService.saveAudioMetadata({
@@ -934,7 +984,7 @@ export default function FeedScreen() {
       }
 
       // Load prompt settings using unified system for manual mode
-      const promptData = await getAPIPromptData('manual');
+      const promptData = await getAPIPromptData('create-audio');
 
       // Add debug headers if bypass is enabled
       const headers: any = { Authorization: `Bearer ${token}` };
@@ -997,7 +1047,7 @@ export default function FeedScreen() {
       }
       
       // Donate shortcut for single audio creation
-      donateShortcut('create-single-audio');
+      donateShortcut('create-audio');
     } catch (error: any) {
       console.error('Error creating single audio:', error);
       
@@ -1051,7 +1101,7 @@ export default function FeedScreen() {
       }
 
       // Load prompt settings using unified system for manual mode
-      const promptData = await getAPIPromptData('manual');
+      const promptData = await getAPIPromptData('create-audio');
 
       const articleIds = weeklyArticles.map(article => article.id);
       const articleTitles = weeklyArticles.map(article => article.title);
@@ -1122,7 +1172,7 @@ export default function FeedScreen() {
         console.error('❌ Failed to send audio ready notification:', notifError);
       }
       
-      donateShortcut('create-weekly-audio');
+      donateShortcut('create-audio');
     } catch (error: any) {
       console.error('Error creating weekly audio:', error);
       
@@ -1215,8 +1265,6 @@ export default function FeedScreen() {
   };
 
 
-
-
   if (loading) {
     return (
       <LoadingIndicator 
@@ -1229,6 +1277,13 @@ export default function FeedScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
+      {/* Search Bar */}
+      <SearchBar
+        value={searchQuery}
+        onChangeText={handleSearchChange}
+        placeholder="Search articles..."
+      />
+      
       {/* Source Filter Buttons */}
       <ScrollView 
         horizontal 
@@ -1393,7 +1448,7 @@ export default function FeedScreen() {
                   </View>
                   <TouchableOpacity
                     style={[styles.removeArticleButton, { backgroundColor: theme.error + '20' }]}
-                    onPress={() => toggleArticleSelection(article)}
+                    onPress={() => toggleArticleSelection(article.id)}
                     accessibilityRole="button"
                     accessibilityLabel={`Remove ${article.title} from selection`}
                     accessibilityHint="Tap to remove this article from your selection"
@@ -1609,6 +1664,26 @@ export default function FeedScreen() {
                       color={archivedArticles.has(article.id) ? theme.primary : theme.textMuted}
                     />
                   </TouchableOpacity>
+
+                  {/* Read Later Button */}
+                  <TouchableOpacity 
+                    onPress={(event) => handleReadLaterToggle(article, event)}
+                    style={[
+                      styles.feedReadLaterButton, 
+                      { backgroundColor: readLaterStatus.get(article.id) ? theme.primary : theme.accent },
+                      readLaterStatus.get(article.id) && styles.activeButton
+                    ]}
+                    accessibilityRole="button"
+                    accessibilityLabel={readLaterStatus.get(article.id) ? `Remove from Read Later: ${article.title}` : `Add to Read Later: ${article.title}`}
+                    accessibilityHint={readLaterStatus.get(article.id) ? "Tap to remove this article from your Read Later list" : "Tap to save this article to your Read Later list"}
+                    accessibilityState={{ selected: readLaterStatus.get(article.id) }}
+                  >
+                    <Ionicons 
+                      name={readLaterStatus.get(article.id) ? "time" : "time-outline"} 
+                      size={14} 
+                      color={readLaterStatus.get(article.id) ? "#fff" : theme.textMuted}
+                    />
+                  </TouchableOpacity>
                   
                   <TouchableOpacity 
                     onPress={() => handleFeedLikeArticle(article)}
@@ -1664,9 +1739,6 @@ export default function FeedScreen() {
         </View>
       )}
 
-      {/* Auto Pick - Main FAB - Always visible when not in selection mode */}
-      {/* Auto Pick FAB removed - Feed is Manual Pick only */}
-
       {/* Create Audio FAB - Show in selection mode when articles are selected */}
       {selectionMode && selectedArticleIds.length > 0 && (
         <TouchableOpacity
@@ -1717,10 +1789,6 @@ export default function FeedScreen() {
         errorMessage={planUpgradeInfo.errorMessage}
         usageInfo={planUpgradeInfo.usageInfo}
       />
-      
-
-
-      {/* Removed: Custom Prompt Modal - using unified global system only */}
     </View>
   );
 }
@@ -2102,6 +2170,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  feedReadLaterButton: {
+    padding: 4,
+    borderRadius: 14,
+    width: 28,
+    height: 28,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   feedDislikeButton: {
     padding: 4,
     borderRadius: 14,
@@ -2110,8 +2186,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  
-
   weeklyAudioButton: {
     paddingVertical: 8,
     paddingHorizontal: 12,
@@ -2126,7 +2200,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
   },
-
   modalContainer: {
     flex: 1,
   },

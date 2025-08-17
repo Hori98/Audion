@@ -89,7 +89,7 @@ export class CacheService {
   // Specialized methods for RSS content
   async setArticles(articles: Article[], filters: { genre?: string; source?: string } = {}): Promise<void> {
     const key = this.getArticlesCacheKey(filters);
-    await this.set<Article[]>(key, articles, 5); // 5 minutes cache for articles
+    await this.set<Article[]>(key, articles, 30); // 30 minutes cache for articles
   }
 
   async getArticles(filters: { genre?: string; source?: string } = {}): Promise<Article[] | null> {
@@ -106,7 +106,7 @@ export class CacheService {
   }
 
   async setAutoPickedArticles(articles: Article[] | { articles: Article[]; timestamp: number; active_sources: string[] }): Promise<void> {
-    await this.set('auto_picked_articles', articles, 10); // 10 minutes cache for auto-picked
+    await this.set('auto_picked_articles', articles, 60); // 1 hour cache for auto-picked
   }
 
   async getAutoPickedArticles(): Promise<Article[] | { articles: Article[]; timestamp: number; active_sources: string[] } | null> {
