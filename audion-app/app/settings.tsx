@@ -18,6 +18,7 @@ import { useLanguage } from '../context/LanguageContext';
 import { useTranslation } from 'react-i18next';
 import DebugMenu from '../components/DebugMenu';
 import DebugService from '../services/DebugService';
+import CacheService from '../services/CacheService';
 
 interface QuickSettingItem {
   id: string;
@@ -61,6 +62,32 @@ export default function QuickSettingsScreen() {
           onPress: () => {
             logout();
             router.replace('/');
+          }
+        }
+      ]
+    );
+  };
+
+  const handleClearCache = () => {
+    console.log('🗑️ [DEBUG] Cache clear button pressed');
+    Alert.alert(
+      'キャッシュクリア',
+      'アプリのキャッシュをクリアしますか？これにより、最新のニュースを取得できます。',
+      [
+        { text: 'キャンセル', style: 'cancel' },
+        { 
+          text: 'クリア', 
+          style: 'destructive',
+          onPress: async () => {
+            console.log('🗑️ [DEBUG] Starting cache clear process...');
+            try {
+              await CacheService.clear();
+              console.log('🗑️ [DEBUG] Cache cleared successfully');
+              Alert.alert('完了', 'キャッシュをクリアしました。アプリを再起動して最新のニュースを取得してください。');
+            } catch (error) {
+              console.error('🗑️ [DEBUG] Cache clear error:', error);
+              Alert.alert('エラー', 'キャッシュのクリアに失敗しました。');
+            }
           }
         }
       ]
@@ -152,6 +179,14 @@ export default function QuickSettingsScreen() {
       icon: 'notifications-outline',
       type: 'navigation',
       onPress: () => router.push('/notification-settings')
+    },
+    {
+      id: 'clear-cache',
+      title: 'キャッシュクリア',
+      subtitle: '記事とデータのキャッシュをクリアして最新情報を取得',
+      icon: 'trash-outline',
+      type: 'action',
+      onPress: handleClearCache
     }
   ];
 
@@ -198,7 +233,19 @@ export default function QuickSettingsScreen() {
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.backButton}
-          onPress={() => router.back()}
+          onPress={() => {
+            try {
+              if (router.canGoBack()) {
+                router.back();
+              } else {
+                // フォールバック: ホーム画面に移動
+                router.replace('/(tabs)/');
+              }
+            } catch (error) {
+              console.warn('Navigation error:', error);
+              router.replace('/(tabs)/');
+            }
+          }}
         >
           <Ionicons name="arrow-back" size={24} color={theme.text} />
         </TouchableOpacity>
@@ -234,8 +281,13 @@ export default function QuickSettingsScreen() {
               <TouchableOpacity
                 key={setting.id}
                 style={[styles.settingItem, { backgroundColor: theme.card }]}
-                onPress={setting.onPress}
-                disabled={!setting.onPress && setting.type !== 'toggle'}
+                onPress={() => {
+                  console.log(`🔧 [DEBUG] Setting pressed: ${setting.id}, type: ${setting.type}`);
+                  if (setting.onPress) {
+                    setting.onPress();
+                  }
+                }}
+                disabled={!setting.onPress}
               >
                 <View style={styles.settingLeft}>
                   <View style={[styles.iconContainer, { backgroundColor: theme.accent }]}>
@@ -265,7 +317,7 @@ export default function QuickSettingsScreen() {
                       thumbColor={setting.value ? '#fff' : theme.background}
                     />
                   )}
-                  {setting.type === 'navigation' && (
+                  {(setting.type === 'navigation' || setting.type === 'action') && (
                     <Ionicons name="chevron-forward" size={20} color={theme.textMuted} />
                   )}
                 </View>
@@ -284,8 +336,13 @@ export default function QuickSettingsScreen() {
               <TouchableOpacity
                 key={setting.id}
                 style={[styles.settingItem, { backgroundColor: theme.card }]}
-                onPress={setting.onPress}
-                disabled={!setting.onPress && setting.type !== 'toggle'}
+                onPress={() => {
+                  console.log(`🔧 [DEBUG] Setting pressed: ${setting.id}, type: ${setting.type}`);
+                  if (setting.onPress) {
+                    setting.onPress();
+                  }
+                }}
+                disabled={!setting.onPress}
               >
                 <View style={styles.settingLeft}>
                   <View style={[styles.iconContainer, { backgroundColor: theme.accent }]}>
@@ -315,7 +372,7 @@ export default function QuickSettingsScreen() {
                       thumbColor={setting.value ? '#fff' : theme.background}
                     />
                   )}
-                  {setting.type === 'navigation' && (
+                  {(setting.type === 'navigation' || setting.type === 'action') && (
                     <Ionicons name="chevron-forward" size={20} color={theme.textMuted} />
                   )}
                 </View>
@@ -334,8 +391,13 @@ export default function QuickSettingsScreen() {
               <TouchableOpacity
                 key={setting.id}
                 style={[styles.settingItem, { backgroundColor: theme.card }]}
-                onPress={setting.onPress}
-                disabled={!setting.onPress && setting.type !== 'toggle'}
+                onPress={() => {
+                  console.log(`🔧 [DEBUG] Setting pressed: ${setting.id}, type: ${setting.type}`);
+                  if (setting.onPress) {
+                    setting.onPress();
+                  }
+                }}
+                disabled={!setting.onPress}
               >
                 <View style={styles.settingLeft}>
                   <View style={[styles.iconContainer, { backgroundColor: theme.accent }]}>
@@ -365,7 +427,7 @@ export default function QuickSettingsScreen() {
                       thumbColor={setting.value ? '#fff' : theme.background}
                     />
                   )}
-                  {setting.type === 'navigation' && (
+                  {(setting.type === 'navigation' || setting.type === 'action') && (
                     <Ionicons name="chevron-forward" size={20} color={theme.textMuted} />
                   )}
                 </View>

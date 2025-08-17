@@ -27,3 +27,4 @@ openai
 feedparser
 aiofiles
 mutagen
+beautifulsoup4

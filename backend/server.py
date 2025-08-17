@@ -31,7 +31,7 @@ import math
 
 # Global cache for RSS feeds
 RSS_CACHE = {}
-CACHE_EXPIRY_SECONDS = 300  # Cache for 5 minutes
+CACHE_EXPIRY_SECONDS = 300  # Cache for 5 minutes for better responsiveness
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -252,6 +252,29 @@ class Article(BaseModel):
     content: Optional[str] = None
     genre: Optional[str] = None
     image_url: Optional[str] = None
+
+class Bookmark(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    user_id: str
+    article_id: str
+    article_title: str
+    article_summary: str
+    article_link: str
+    article_source: str
+    article_image_url: Optional[str] = None
+    bookmarked_at: datetime = Field(default_factory=datetime.utcnow)
+    tags: List[str] = []
+    notes: Optional[str] = None
+
+class BookmarkCreate(BaseModel):
+    article_id: str
+    article_title: str
+    article_summary: str
+    article_link: str
+    article_source: str
+    article_image_url: Optional[str] = None
+    tags: List[str] = []
+    notes: Optional[str] = None
 
 class AudioCreation(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -1593,7 +1616,7 @@ async def get_curated_articles(current_user: User = Depends(get_current_user)):
         # Try to use cached data first, then fallback to regular article endpoint approach
         current_time = time.time()
         
-        for source_doc in sources[:5]:  # Limit to first 5 sources for speed
+        for source_doc in sources[:10]:  # Optimize to 10 sources for better performance
             cache_key = source_doc["url"]
             feed = None
             
@@ -1678,6 +1701,9 @@ async def get_curated_articles(current_user: User = Depends(get_current_user)):
         raise HTTPException(status_code=500, detail="Failed to fetch curated articles")
 
 async def get_articles_internal(current_user: User, genre: Optional[str] = None, source: Optional[str] = None):
+    start_time = time.time()
+    logging.info(f"🚀 [PERF] Starting article fetch for user {current_user.email}, genre: {genre}, source: {source}")
+    
     # Get only active sources (is_active is not explicitly False or doesn't exist)
     source_filter = {
         "user_id": current_user.id,
@@ -1691,22 +1717,56 @@ async def get_articles_internal(current_user: User, genre: Optional[str] = None,
     if source and source != "All":
         source_filter["name"] = source
     
+    sources_start = time.time()
     sources = await db.rss_sources.find(source_filter).to_list(100)
+    sources_time = time.time() - sources_start
+    logging.info(f"🗂️ [PERF] Found {len(sources)} sources in {sources_time:.2f}s")
+    
+    # Check for duplicate sources
+    source_urls = [s["url"] for s in sources]
+    source_names = [s["name"] for s in sources]
+    unique_urls = set(source_urls)
+    unique_names = set(source_names)
+    
+    if len(source_urls) != len(unique_urls):
+        logging.warning(f"⚠️ [DUPLICATES] Found {len(source_urls) - len(unique_urls)} duplicate URLs in RSS sources")
+    if len(source_names) != len(unique_names):
+        logging.warning(f"⚠️ [DUPLICATES] Found {len(source_names) - len(unique_names)} duplicate names in RSS sources")
+    
     all_articles = []
-    for source_doc in sources:
+    fetch_start = time.time()
+    
+    # Use asyncio gather for parallel RSS fetching (max 5 concurrent)
+    async def fetch_source_articles(i, source_doc):
+        source_start = time.time()
+        source_name = source_doc.get("name", "Unknown")
+        articles = []
+        
         try:
             cache_key = source_doc["url"]
             current_time = time.time()
 
             if cache_key in RSS_CACHE and (current_time - RSS_CACHE[cache_key]['timestamp'] < CACHE_EXPIRY_SECONDS):
                 feed = RSS_CACHE[cache_key]['feed']
-                # Using cached RSS data
+                logging.info(f"📄 [PERF] {i+1}/{len(sources)} {source_name}: Using cached data")
             else:
-                feed = feedparser.parse(source_doc["url"])
+                # Use timeout to prevent hanging on slow RSS feeds
+                import signal
+                def timeout_handler(signum, frame):
+                    raise TimeoutError("RSS feed timeout")
+                
+                signal.signal(signal.SIGALRM, timeout_handler)
+                signal.alarm(3)  # 3 second timeout
+                try:
+                    rss_fetch_start = time.time()
+                    feed = feedparser.parse(source_doc["url"])
+                    rss_fetch_time = time.time() - rss_fetch_start
+                    logging.info(f"🌐 [PERF] {i+1}/{len(sources)} {source_name}: RSS fetched in {rss_fetch_time:.2f}s, {len(feed.entries)} entries")
+                finally:
+                    signal.alarm(0)  # Cancel the alarm
                 RSS_CACHE[cache_key] = {'feed': feed, 'timestamp': current_time}
-                # RSS feed fetched
 
-            for entry in feed.entries[:10]:
+            for entry in feed.entries[:20]:  # Optimize to 20 articles per source for better performance
                 article_title = getattr(entry, 'title', "No Title")
                 article_summary = getattr(entry, 'summary', getattr(entry, 'description', "No summary available"))
                 
@@ -1718,17 +1778,18 @@ async def get_articles_internal(current_user: User, genre: Optional[str] = None,
                         article_content = entry.content[0].get('value', '')
                     else:
                         article_content = str(entry.content)
-                
-                # Fallback to summary/description if no full content
-                if not article_content or len(article_content.strip()) < 100:
-                    article_content = getattr(entry, 'summary', getattr(entry, 'description', "No content available"))
-                
-                # Clean HTML tags from content
-                import re
-                article_content = re.sub(r'<[^>]+>', '', article_content)
-                article_content = article_content.strip()
-                
-                # Extract image URL from RSS entry
+                elif hasattr(entry, 'description'):
+                    article_content = entry.description
+                else:
+                    article_content = article_summary
+
+                # Clean up content
+                if article_content:
+                    from bs4 import BeautifulSoup
+                    soup = BeautifulSoup(article_content, 'html.parser')
+                    article_content = soup.get_text(strip=True)
+
+                # Extract image URL from entry
                 image_url = extract_image_from_entry(entry)
                 
                 article_genre = classify_genre(article_title, article_summary)
@@ -1743,7 +1804,7 @@ async def get_articles_internal(current_user: User, genre: Optional[str] = None,
                     content=article_content,
                     genre=article_genre
                 )
-                all_articles.append(article)
+                articles.append(article)
                 
                 # Update or insert article in database with full content
                 await db.articles.update_one(
@@ -1752,15 +1813,37 @@ async def get_articles_internal(current_user: User, genre: Optional[str] = None,
                     upsert=True
                 )
         except Exception as e:
-            logging.warning(f"Error parsing RSS feed {source_doc['url']}: {e}")
-            continue
+            logging.warning(f"❌ [PERF] {i+1}/{len(sources)} {source_name}: Error parsing RSS feed - {e}")
+        finally:
+            source_time = time.time() - source_start
+            logging.info(f"⏱️ [PERF] {i+1}/{len(sources)} {source_name}: Completed in {source_time:.2f}s, {len(articles)} articles")
+            
+        return articles
     
-    logging.info(f"Fetched {len(all_articles)} articles before filtering.")
+    # Process sources in batches for better performance  
+    batch_size = 5
+    for batch_start in range(0, len(sources), batch_size):
+        batch = sources[batch_start:batch_start + batch_size]
+        batch_tasks = [fetch_source_articles(batch_start + i, source) for i, source in enumerate(batch)]
+        batch_results = await asyncio.gather(*batch_tasks, return_exceptions=True)
+        
+        for result in batch_results:
+            if isinstance(result, list):
+                all_articles.extend(result)
+            elif isinstance(result, Exception):
+                logging.warning(f"Batch processing error: {result}")
+        
+        logging.info(f"🔄 [PERF] Processed batch {batch_start//batch_size + 1}/{math.ceil(len(sources)/batch_size)}")
+    
+    
+    fetch_time = time.time() - fetch_start
+    total_time = time.time() - start_time
+    logging.info(f"🏁 [PERF] Fetched {len(all_articles)} articles before filtering in {fetch_time:.2f}s (total: {total_time:.2f}s)")
     if genre:
         all_articles = [article for article in all_articles if article.genre and article.genre.lower() == genre.lower()]
         logging.info(f"Filtered to {len(all_articles)} articles for genre: {genre}")
 
-    return sorted(all_articles, key=lambda x: x.published, reverse=True)[:50]
+    return sorted(all_articles, key=lambda x: x.published, reverse=True)[:200]
 
 @app.post("/api/audio/create", response_model=AudioCreation, tags=["Audio"])
 async def create_audio(request: AudioCreationRequest, http_request: Request, current_user: User = Depends(get_current_user)):
@@ -2157,7 +2240,17 @@ async def get_auto_picked_articles(request: AutoPickRequest, current_user: User 
                 if cache_key in RSS_CACHE and (current_time - RSS_CACHE[cache_key]['timestamp'] < CACHE_EXPIRY_SECONDS):
                     feed = RSS_CACHE[cache_key]['feed']
                 else:
-                    feed = feedparser.parse(source["url"])
+                    # Use timeout to prevent hanging on slow RSS feeds
+                    import signal
+                    def timeout_handler(signum, frame):
+                        raise TimeoutError("RSS feed timeout")
+                    
+                    signal.signal(signal.SIGALRM, timeout_handler)
+                    signal.alarm(3)  # 3 second timeout
+                    try:
+                        feed = feedparser.parse(source["url"])
+                    finally:
+                        signal.alarm(0)  # Cancel the alarm
                     RSS_CACHE[cache_key] = {'feed': feed, 'timestamp': current_time}
 
                 for entry in feed.entries[:20]:  # Get more articles for better selection
@@ -2280,6 +2373,114 @@ async def get_reading_history(current_user: User = Depends(get_current_user)):
     except Exception as e:
         logging.error(f"Error getting reading history: {e}")
         return {"history": [], "error": str(e)}
+
+# ============ BOOKMARK API ENDPOINTS ============
+
+@app.post("/api/bookmarks", response_model=Bookmark, tags=["Bookmarks"])
+async def create_bookmark(bookmark_data: BookmarkCreate, current_user: User = Depends(get_current_user)):
+    """Create a new bookmark"""
+    if not db_connected:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    
+    try:
+        # Check if bookmark already exists
+        existing_bookmark = await db.bookmarks.find_one({
+            "user_id": current_user.id,
+            "article_id": bookmark_data.article_id
+        })
+        
+        if existing_bookmark:
+            raise HTTPException(status_code=409, detail="Article already bookmarked")
+        
+        # Create new bookmark
+        bookmark = Bookmark(
+            user_id=current_user.id,
+            **bookmark_data.dict()
+        )
+        
+        await db.bookmarks.insert_one(bookmark.dict())
+        return bookmark
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error creating bookmark: {e}")
+        raise HTTPException(status_code=500, detail="Failed to create bookmark")
+
+@app.get("/api/bookmarks", response_model=List[Bookmark], tags=["Bookmarks"])
+async def get_bookmarks(current_user: User = Depends(get_current_user)):
+    """Get all bookmarks for the current user"""
+    if not db_connected:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    
+    try:
+        bookmarks = []
+        async for bookmark_doc in db.bookmarks.find({"user_id": current_user.id}).sort("bookmarked_at", -1):
+            bookmarks.append(Bookmark(**bookmark_doc))
+        return bookmarks
+    except Exception as e:
+        logging.error(f"Error getting bookmarks: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get bookmarks")
+
+@app.delete("/api/bookmarks/{bookmark_id}", tags=["Bookmarks"])
+async def delete_bookmark(bookmark_id: str, current_user: User = Depends(get_current_user)):
+    """Delete a bookmark"""
+    if not db_connected:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    
+    try:
+        result = await db.bookmarks.delete_one({
+            "id": bookmark_id,
+            "user_id": current_user.id
+        })
+        
+        if result.deleted_count == 0:
+            raise HTTPException(status_code=404, detail="Bookmark not found")
+        
+        return {"message": "Bookmark deleted successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error deleting bookmark: {e}")
+        raise HTTPException(status_code=500, detail="Failed to delete bookmark")
+
+@app.delete("/api/bookmarks/article/{article_id}", tags=["Bookmarks"])
+async def delete_bookmark_by_article(article_id: str, current_user: User = Depends(get_current_user)):
+    """Delete a bookmark by article ID"""
+    if not db_connected:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    
+    try:
+        result = await db.bookmarks.delete_one({
+            "article_id": article_id,
+            "user_id": current_user.id
+        })
+        
+        if result.deleted_count == 0:
+            raise HTTPException(status_code=404, detail="Bookmark not found")
+        
+        return {"message": "Bookmark deleted successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error deleting bookmark: {e}")
+        raise HTTPException(status_code=500, detail="Failed to delete bookmark")
+
+@app.get("/api/bookmarks/check/{article_id}", tags=["Bookmarks"])
+async def check_bookmark_status(article_id: str, current_user: User = Depends(get_current_user)):
+    """Check if an article is bookmarked"""
+    if not db_connected:
+        return {"is_bookmarked": False}
+    
+    try:
+        bookmark = await db.bookmarks.find_one({
+            "article_id": article_id,
+            "user_id": current_user.id
+        })
+        
+        return {"is_bookmarked": bookmark is not None}
+    except Exception as e:
+        logging.error(f"Error checking bookmark status: {e}")
+        return {"is_bookmarked": False}
 
 @app.post("/api/audio-interaction", tags=["Auto-Pick"])
 async def record_audio_interaction(
@@ -2427,7 +2628,17 @@ async def create_auto_picked_audio(request: AutoPickRequest, current_user: User 
                 if cache_key in RSS_CACHE and (current_time - RSS_CACHE[cache_key]['timestamp'] < CACHE_EXPIRY_SECONDS):
                     feed = RSS_CACHE[cache_key]['feed']
                 else:
-                    feed = feedparser.parse(source["url"])
+                    # Use timeout to prevent hanging on slow RSS feeds
+                    import signal
+                    def timeout_handler(signum, frame):
+                        raise TimeoutError("RSS feed timeout")
+                    
+                    signal.signal(signal.SIGALRM, timeout_handler)
+                    signal.alarm(3)  # 3 second timeout
+                    try:
+                        feed = feedparser.parse(source["url"])
+                    finally:
+                        signal.alarm(0)  # Cancel the alarm
                     RSS_CACHE[cache_key] = {'feed': feed, 'timestamp': current_time}
 
                 for entry in feed.entries[:20]:

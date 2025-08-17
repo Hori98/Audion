@@ -1,8 +1,12 @@
-import React, { memo, useCallback } from 'react';
-import { FlatList, View, Text, TouchableOpacity, Image, ListRenderItem } from 'react-native';
+import React, { memo, useCallback, useState, useEffect } from 'react';
+import { FlatList, View, Text, TouchableOpacity, Image, ListRenderItem, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
+import { useAuth } from '../context/AuthContext';
 import { Article } from '../types';
+import BookmarkService from '../services/BookmarkService';
+import ShareService from '../services/ShareService';
+import ArchiveService from '../services/ArchiveService';
 
 interface OptimizedArticleListProps {
   articles: Article[];
@@ -15,6 +19,79 @@ interface OptimizedArticleListProps {
 // メモ化されたアーティクルアイテムコンポーネント
 const ArticleItem = memo(({ item, onPress }: { item: Article; onPress: (article: Article) => void }) => {
   const { theme } = useTheme();
+  const { token } = useAuth();
+  const [isBookmarked, setIsBookmarked] = useState<boolean>(false);
+  const [bookmarkLoading, setBookmarkLoading] = useState(false);
+  const [isArchived, setIsArchived] = useState<boolean>(false);
+  const [archiveLoading, setArchiveLoading] = useState(false);
+
+  useEffect(() => {
+    if (token) {
+      // Check bookmark status from cache
+      const cachedStatus = BookmarkService.getInstance().getBookmarkStatusFromCache(item.id);
+      if (cachedStatus !== null) {
+        setIsBookmarked(cachedStatus);
+      } else {
+        // Load from API
+        BookmarkService.getInstance().isBookmarked(token, item.id)
+          .then(setIsBookmarked)
+          .catch(() => setIsBookmarked(false));
+      }
+
+      // Check archive status
+      ArchiveService.getInstance().initialize(token).then(() => {
+        setIsArchived(ArchiveService.getInstance().isArchived(item.id));
+      });
+    }
+  }, [item.id, token]);
+
+  const handleBookmarkToggle = useCallback(async () => {
+    if (!token || bookmarkLoading) return;
+    
+    setBookmarkLoading(true);
+    try {
+      const newBookmarkStatus = await BookmarkService.getInstance().toggleBookmark(token, item);
+      setIsBookmarked(newBookmarkStatus);
+      
+      // Show feedback
+      Alert.alert(
+        newBookmarkStatus ? 'Bookmarked' : 'Removed',
+        newBookmarkStatus ? 'Article saved to bookmarks' : 'Article removed from bookmarks',
+        [{ text: 'OK' }],
+        { cancelable: true }
+      );
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'Failed to update bookmark');
+    } finally {
+      setBookmarkLoading(false);
+    }
+  }, [token, item, bookmarkLoading]);
+
+  const handleShare = useCallback(() => {
+    ShareService.getInstance().showShareOptions(item);
+  }, [item]);
+
+  const handleArchiveToggle = useCallback(async () => {
+    if (!token || archiveLoading) return;
+    
+    setArchiveLoading(true);
+    try {
+      const newArchiveStatus = await ArchiveService.getInstance().toggleArchiveStatus(token, item);
+      setIsArchived(newArchiveStatus);
+      
+      // Show feedback
+      Alert.alert(
+        newArchiveStatus ? 'Archived' : 'Removed',
+        newArchiveStatus ? 'Article saved to archive' : 'Article removed from archive',
+        [{ text: 'OK' }],
+        { cancelable: true }
+      );
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'Failed to update archive');
+    } finally {
+      setArchiveLoading(false);
+    }
+  }, [token, item, archiveLoading]);
 
   const formatDate = useCallback((dateString: string) => {
     try {
@@ -51,25 +128,82 @@ const ArticleItem = memo(({ item, onPress }: { item: Article; onPress: (article:
       <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
         {/* Text content */}
         <View style={{ flex: 1, marginRight: 12 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
-            <Text style={{ 
-              fontSize: 12, 
-              fontWeight: '600', 
-              color: theme.primary,
-              textTransform: 'uppercase'
-            }}>
-              {item.source_name || 'Unknown Source'}
-            </Text>
-            <View style={{ 
-              width: 3, 
-              height: 3, 
-              borderRadius: 1.5, 
-              backgroundColor: theme.textMuted,
-              marginHorizontal: 8
-            }} />
-            <Text style={{ fontSize: 12, color: theme.textMuted }}>
-              {formatDate(item.published || '')}
-            </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+              <Text style={{ 
+                fontSize: 12, 
+                fontWeight: '600', 
+                color: theme.primary,
+                textTransform: 'uppercase'
+              }}>
+                {item.source_name || 'Unknown Source'}
+              </Text>
+              <View style={{ 
+                width: 3, 
+                height: 3, 
+                borderRadius: 1.5, 
+                backgroundColor: theme.textMuted,
+                marginHorizontal: 8
+              }} />
+              <Text style={{ fontSize: 12, color: theme.textMuted }}>
+                {formatDate(item.published || '')}
+              </Text>
+            </View>
+            
+            {/* Action Buttons */}
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              {/* Share Button */}
+              <TouchableOpacity
+                onPress={handleShare}
+                style={{
+                  padding: 8,
+                  marginRight: 4,
+                }}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Ionicons 
+                  name="share-outline" 
+                  size={16} 
+                  color={theme.textMuted} 
+                />
+              </TouchableOpacity>
+
+              {/* Archive Button */}
+              <TouchableOpacity
+                onPress={handleArchiveToggle}
+                style={{
+                  padding: 8,
+                  marginRight: 4,
+                  opacity: archiveLoading ? 0.5 : 1,
+                }}
+                disabled={archiveLoading}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Ionicons 
+                  name={isArchived ? 'archive' : 'archive-outline'} 
+                  size={16} 
+                  color={isArchived ? theme.primary : theme.textMuted} 
+                />
+              </TouchableOpacity>
+
+              {/* Bookmark Button */}
+              <TouchableOpacity
+                onPress={handleBookmarkToggle}
+                style={{
+                  padding: 8,
+                  marginRight: -8,
+                  opacity: bookmarkLoading ? 0.5 : 1,
+                }}
+                disabled={bookmarkLoading}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Ionicons 
+                  name={isBookmarked ? 'bookmark' : 'bookmark-outline'} 
+                  size={16} 
+                  color={isBookmarked ? theme.primary : theme.textMuted} 
+                />
+              </TouchableOpacity>
+            </View>
           </View>
           
           <Text 

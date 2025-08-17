@@ -1,13 +1,17 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export interface UserInteraction {
-  action: 'play' | 'pause' | 'skip' | 'like' | 'share' | 'complete';
+  action: 'play' | 'pause' | 'skip' | 'like' | 'share' | 'complete' | 'bookmark' | 'read_later' | 'archive';
   contentId: string;
   contentType: string;
   category: string;
   timestamp: number;
   duration?: number; // For play/pause events
   position?: number; // Playback position when action occurred
+  source?: string; // Content source
+  readingTime?: number; // Time spent reading (for articles)
+  wordsRead?: number; // Estimated words read
+  engagementLevel?: 'low' | 'medium' | 'high'; // User engagement level
 }
 
 export interface UserPreferences {
@@ -17,11 +21,23 @@ export interface UserPreferences {
     preferredTimeOfDay: string[];
     skipRate: number;
     completionRate: number;
+    readingSpeed: number; // Words per minute
+    engagementScore: number; // Overall engagement (0-1)
   };
   contentPreferences: {
     preferredLength: 'short' | 'medium' | 'long';
     preferredStyle: string[];
     topicInterests: { [topic: string]: number };
+    sourceReliability: { [source: string]: number }; // Trust score for sources
+    recencyBias: number; // Preference for newer vs older content (0-1)
+  };
+  readingHabits: {
+    dailyGoalMinutes: number;
+    weeklyGoalArticles: number;
+    preferredReadingTimes: { hour: number; frequency: number }[];
+    consistency: number; // How consistent reading habits are (0-1)
+    streakDays: number; // Current reading streak
+    bestStreak: number; // Longest reading streak
   };
   lastUpdated: number;
 }
@@ -36,6 +52,7 @@ export interface PersonalizationContext {
 class PersonalizationService {
   private static readonly STORAGE_KEY = 'user_personalization';
   private static readonly INTERACTIONS_KEY = 'user_interactions';
+  private static readonly READING_SESSIONS_KEY = 'reading_sessions';
   private static readonly MAX_INTERACTIONS = 1000; // Keep last 1000 interactions
   
   private static currentPreferences: UserPreferences | null = null;
@@ -50,11 +67,23 @@ class PersonalizationService {
         preferredTimeOfDay: [],
         skipRate: 0,
         completionRate: 0,
+        readingSpeed: 200, // Average reading speed WPM
+        engagementScore: 0.5,
       },
       contentPreferences: {
         preferredLength: 'medium',
         preferredStyle: [],
         topicInterests: {},
+        sourceReliability: {},
+        recencyBias: 0.7, // Slight preference for newer content
+      },
+      readingHabits: {
+        dailyGoalMinutes: 30,
+        weeklyGoalArticles: 10,
+        preferredReadingTimes: [],
+        consistency: 0,
+        streakDays: 0,
+        bestStreak: 0,
       },
       lastUpdated: Date.now(),
     };
@@ -65,8 +94,26 @@ class PersonalizationService {
     try {
       const stored = await AsyncStorage.getItem(this.STORAGE_KEY);
       if (stored) {
-        this.currentPreferences = JSON.parse(stored);
-        return this.currentPreferences!;
+        const parsed = JSON.parse(stored);
+        // Merge with defaults to ensure all properties exist
+        const defaults = this.getDefaultPreferences();
+        this.currentPreferences = {
+          ...defaults,
+          ...parsed,
+          playbackPatterns: {
+            ...defaults.playbackPatterns,
+            ...parsed.playbackPatterns,
+          },
+          contentPreferences: {
+            ...defaults.contentPreferences,
+            ...parsed.contentPreferences,
+          },
+          readingHabits: {
+            ...defaults.readingHabits,
+            ...parsed.readingHabits,
+          },
+        };
+        return this.currentPreferences;
       }
     } catch (error) {
       console.error('Error loading personalization preferences:', error);
@@ -106,10 +153,30 @@ class PersonalizationService {
   // Record a user interaction
   static async recordInteraction(interaction: UserInteraction): Promise<void> {
     try {
+      // Ensure interaction has required properties
+      if (!interaction.contentId || !interaction.action || !interaction.contentType) {
+        console.warn('Invalid interaction data:', interaction);
+        return;
+      }
+
       await this.loadInteractions();
       
-      // Add new interaction
-      this.interactions.unshift(interaction);
+      // Add new interaction with defaults for missing properties
+      const fullInteraction: UserInteraction = {
+        action: interaction.action,
+        contentId: interaction.contentId,
+        contentType: interaction.contentType,
+        category: interaction.category || 'General',
+        timestamp: interaction.timestamp || Date.now(),
+        duration: interaction.duration,
+        position: interaction.position,
+        source: interaction.source,
+        readingTime: interaction.readingTime,
+        wordsRead: interaction.wordsRead,
+        engagementLevel: interaction.engagementLevel || 'medium',
+      };
+
+      this.interactions.unshift(fullInteraction);
       
       // Limit interactions to MAX_INTERACTIONS
       if (this.interactions.length > this.MAX_INTERACTIONS) {
@@ -120,7 +187,10 @@ class PersonalizationService {
       await AsyncStorage.setItem(this.INTERACTIONS_KEY, JSON.stringify(this.interactions));
       
       // Update preferences based on this interaction
-      await this.updatePreferencesFromInteraction(interaction);
+      await this.updatePreferencesFromInteraction(fullInteraction);
+      
+      // Update reading habits
+      await this.updateReadingHabits(fullInteraction);
       
     } catch (error) {
       console.error('Error recording interaction:', error);
@@ -152,12 +222,39 @@ class PersonalizationService {
         case 'share':
           weight = 2;
           break;
+        case 'bookmark':
+          weight = 2.5;
+          break;
+        case 'read_later':
+          weight = 1.5;
+          break;
         case 'skip':
           weight = -1;
+          break;
+        case 'archive':
+          weight = -0.5;
           break;
       }
       
       preferences.favoriteCategories[interaction.category] += weight;
+    }
+    
+    // Update source reliability
+    if (interaction.source) {
+      if (!preferences.contentPreferences.sourceReliability[interaction.source]) {
+        preferences.contentPreferences.sourceReliability[interaction.source] = 5; // Start with neutral
+      }
+      
+      // Adjust source reliability based on user engagement
+      if (interaction.action === 'complete' || interaction.action === 'like') {
+        preferences.contentPreferences.sourceReliability[interaction.source] += 0.1;
+      } else if (interaction.action === 'skip') {
+        preferences.contentPreferences.sourceReliability[interaction.source] -= 0.1;
+      }
+      
+      // Keep reliability score between 1-10
+      preferences.contentPreferences.sourceReliability[interaction.source] = Math.max(1, 
+        Math.min(10, preferences.contentPreferences.sourceReliability[interaction.source]));
     }
     
     // Update playback patterns
@@ -165,6 +262,16 @@ class PersonalizationService {
     
     // Update time-of-day preferences
     this.updateTimePreferences(preferences);
+    
+    // Update reading speed if available
+    if (interaction.readingTime && interaction.wordsRead) {
+      const currentSpeed = (interaction.wordsRead / interaction.readingTime) * 60; // WPM
+      preferences.playbackPatterns.readingSpeed = 
+        (preferences.playbackPatterns.readingSpeed * 0.9) + (currentSpeed * 0.1);
+    }
+    
+    // Update engagement score
+    this.updateEngagementScore(preferences, interaction);
     
     await this.savePreferences(preferences);
   }
@@ -188,6 +295,153 @@ class PersonalizationService {
     } else if (interaction.action === 'skip') {
       preferences.playbackPatterns.skipRate = 
         (preferences.playbackPatterns.skipRate * 0.9) + (1 * 0.1);
+    }
+  }
+
+  // Update engagement score based on interaction
+  private static updateEngagementScore(preferences: UserPreferences, interaction: UserInteraction): void {
+    let engagementDelta = 0;
+    
+    switch (interaction.engagementLevel) {
+      case 'high':
+        engagementDelta = 0.1;
+        break;
+      case 'medium':
+        engagementDelta = 0.05;
+        break;
+      case 'low':
+        engagementDelta = -0.05;
+        break;
+    }
+    
+    // Also factor in specific actions
+    if (interaction.action === 'complete' || interaction.action === 'like') {
+      engagementDelta += 0.05;
+    } else if (interaction.action === 'skip') {
+      engagementDelta -= 0.05;
+    }
+    
+    preferences.playbackPatterns.engagementScore = Math.max(0, Math.min(1,
+      preferences.playbackPatterns.engagementScore + engagementDelta));
+  }
+
+  // Update reading habits analysis
+  private static async updateReadingHabits(interaction: UserInteraction): Promise<void> {
+    try {
+      const preferences = await this.loadPreferences();
+      const now = new Date();
+      const hour = now.getHours();
+      
+      // Ensure readingHabits exists
+      if (!preferences.readingHabits) {
+        preferences.readingHabits = this.getDefaultPreferences().readingHabits;
+      }
+      
+      // Ensure preferredReadingTimes array exists
+      if (!preferences.readingHabits.preferredReadingTimes) {
+        preferences.readingHabits.preferredReadingTimes = [];
+      }
+      
+      // Update preferred reading times
+      const existingTime = preferences.readingHabits.preferredReadingTimes.find(t => t.hour === hour);
+      if (existingTime) {
+        existingTime.frequency += 1;
+      } else {
+        preferences.readingHabits.preferredReadingTimes.push({ hour, frequency: 1 });
+      }
+      
+      // Sort and keep top 5 preferred times
+      preferences.readingHabits.preferredReadingTimes.sort((a, b) => b.frequency - a.frequency);
+      preferences.readingHabits.preferredReadingTimes = 
+        preferences.readingHabits.preferredReadingTimes.slice(0, 5);
+      
+      // Update daily reading streak
+      await this.updateReadingStreak(preferences);
+      
+      // Calculate consistency (how regularly user reads)
+      await this.calculateReadingConsistency(preferences);
+      
+      await this.savePreferences(preferences);
+    } catch (error) {
+      console.error('Error updating reading habits:', error);
+    }
+  }
+
+  // Update reading streak
+  private static async updateReadingStreak(preferences: UserPreferences): Promise<void> {
+    try {
+      const today = new Date().toDateString();
+      const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toDateString();
+      
+      const sessionsData = await AsyncStorage.getItem(this.READING_SESSIONS_KEY);
+      const sessions = sessionsData ? JSON.parse(sessionsData) : {};
+      
+      // Record today's session
+      sessions[today] = (sessions[today] || 0) + 1;
+      
+      // Ensure readingHabits exists and has default values
+      if (!preferences.readingHabits) {
+        preferences.readingHabits = this.getDefaultPreferences().readingHabits;
+      }
+      
+      if (typeof preferences.readingHabits.streakDays !== 'number') {
+        preferences.readingHabits.streakDays = 0;
+      }
+      
+      if (typeof preferences.readingHabits.bestStreak !== 'number') {
+        preferences.readingHabits.bestStreak = 0;
+      }
+      
+      // Check if streak continues
+      if (sessions[yesterday] && sessions[today]) {
+        // Streak continues
+        preferences.readingHabits.streakDays += 1;
+      } else if (!sessions[yesterday] && preferences.readingHabits.streakDays > 0) {
+        // Streak broken, reset
+        preferences.readingHabits.streakDays = 1;
+      } else {
+        // Starting new streak
+        preferences.readingHabits.streakDays = 1;
+      }
+      
+      // Update best streak
+      if (preferences.readingHabits.streakDays > preferences.readingHabits.bestStreak) {
+        preferences.readingHabits.bestStreak = preferences.readingHabits.streakDays;
+      }
+      
+      await AsyncStorage.setItem(this.READING_SESSIONS_KEY, JSON.stringify(sessions));
+    } catch (error) {
+      console.error('Error updating reading streak:', error);
+    }
+  }
+
+  // Calculate reading consistency
+  private static async calculateReadingConsistency(preferences: UserPreferences): Promise<void> {
+    try {
+      const sessionsData = await AsyncStorage.getItem(this.READING_SESSIONS_KEY);
+      if (!sessionsData) return;
+      
+      const sessions = JSON.parse(sessionsData);
+      const last30Days = [];
+      
+      // Get last 30 days
+      for (let i = 0; i < 30; i++) {
+        const date = new Date(Date.now() - i * 24 * 60 * 60 * 1000).toDateString();
+        last30Days.push(sessions[date] || 0);
+      }
+      
+      // Calculate consistency as ratio of active days
+      const activeDays = last30Days.filter(sessions => sessions > 0).length;
+      
+      // Ensure readingHabits exists
+      if (!preferences.readingHabits) {
+        preferences.readingHabits = this.getDefaultPreferences().readingHabits;
+      }
+      
+      preferences.readingHabits.consistency = activeDays / 30;
+      
+    } catch (error) {
+      console.error('Error calculating reading consistency:', error);
     }
   }
 
@@ -230,44 +484,133 @@ class PersonalizationService {
       .sort(([,a], [,b]) => b - a)
       .slice(0, 3)
       .map(([category]) => category);
+
+    // Get top sources by reliability
+    const topSources = Object.entries(preferences.contentPreferences.sourceReliability)
+      .sort(([,a], [,b]) => b - a)
+      .slice(0, 3)
+      .map(([source]) => source);
     
-    // Simulate content recommendations based on preferences
+    // Generate sophisticated recommendations
     const recommendations = [
       {
         type: 'trending',
         category: topCategories[0] || 'Technology',
-        reason: `Based on your interest in ${topCategories[0] || 'Technology'}`,
-        weight: 0.9,
+        reason: `Based on your strong interest in ${topCategories[0] || 'Technology'}`,
+        weight: 0.9 * preferences.playbackPatterns.engagementScore,
+        sources: topSources.slice(0, 2),
       },
       {
-        type: 'time_based',
+        type: 'habit_based',
         category: 'General',
-        reason: `Perfect for ${context.timeOfDay} listening`,
-        weight: 0.7,
+        reason: `Perfect for your ${context.timeOfDay} reading routine`,
+        weight: 0.8 * preferences.readingHabits.consistency,
+        timeOptimal: true,
       },
       {
         type: 'discovery',
         category: topCategories[1] || 'Politics',
-        reason: 'Expand your interests',
+        reason: 'Expand your interests with quality sources',
         weight: 0.6,
+        sources: topSources.slice(2, 3),
+      },
+      {
+        type: 'streak_motivation',
+        category: topCategories[0] || 'Technology',
+        reason: `Keep your ${preferences.readingHabits.streakDays}-day streak going!`,
+        weight: 0.7,
+        streakBonus: preferences.readingHabits.streakDays > 0,
       },
     ];
     
-    return recommendations;
+    return recommendations.filter(rec => rec.weight > 0.3);
   }
 
   // Get personalized content length preference
   static async getPreferredContentLength(): Promise<'short' | 'medium' | 'long'> {
     const preferences = await this.loadPreferences();
     
-    // Adjust based on completion rate
-    if (preferences.playbackPatterns.completionRate > 0.8) {
-      return preferences.contentPreferences.preferredLength;
-    } else if (preferences.playbackPatterns.skipRate > 0.5) {
-      return 'short'; // User tends to skip, prefer shorter content
+    // Adjust based on completion rate and reading speed
+    if (preferences.playbackPatterns.completionRate > 0.8 && preferences.playbackPatterns.readingSpeed > 250) {
+      return 'long'; // Fast reader who completes content
+    } else if (preferences.playbackPatterns.skipRate > 0.5 || preferences.playbackPatterns.readingSpeed < 150) {
+      return 'short'; // Slow reader or tends to skip
     }
     
     return preferences.contentPreferences.preferredLength;
+  }
+
+  // Get reading habit insights
+  static async getReadingHabitInsights(): Promise<any> {
+    try {
+      const preferences = await this.loadPreferences();
+      const insights = [];
+      
+      // Ensure readingHabits exists
+      if (!preferences.readingHabits) {
+        preferences.readingHabits = this.getDefaultPreferences().readingHabits;
+        await this.savePreferences(preferences);
+      }
+      
+      // Streak insights
+      if (preferences.readingHabits.streakDays > 7) {
+        insights.push({
+          type: 'achievement',
+          message: `Amazing! You're on a ${preferences.readingHabits.streakDays}-day reading streak!`,
+          action: 'Keep it up with today\'s recommended articles',
+        });
+      } else if (preferences.readingHabits.streakDays === 0) {
+        insights.push({
+          type: 'motivation',
+          message: 'Start a new reading streak today!',
+          action: 'Read one article to begin',
+        });
+      }
+      
+      // Consistency insights
+      if (preferences.readingHabits.consistency > 0.8) {
+        insights.push({
+          type: 'praise',
+          message: 'You have excellent reading consistency!',
+          action: 'Consider increasing your daily goal',
+        });
+      } else if (preferences.readingHabits.consistency < 0.3) {
+        insights.push({
+          type: 'suggestion',
+          message: 'Try setting a smaller daily reading goal',
+          action: 'Start with 10 minutes per day',
+        });
+      }
+      
+      // Time preference insights
+      const topTime = preferences.readingHabits.preferredReadingTimes?.[0];
+      if (topTime) {
+        const timeStr = `${topTime.hour}:00`;
+        insights.push({
+          type: 'pattern',
+          message: `You read most often around ${timeStr}`,
+          action: 'Set a reminder for your optimal reading time',
+        });
+      }
+      
+      return insights;
+    } catch (error) {
+      console.error('Error getting reading habit insights:', error);
+      return [];
+    }
+  }
+
+  // Get personalized notification timing
+  static async getOptimalNotificationTime(): Promise<number | null> {
+    const preferences = await this.loadPreferences();
+    
+    if (preferences.readingHabits.preferredReadingTimes.length > 0) {
+      // Return the most frequent reading time minus 30 minutes for reminder
+      const topTime = preferences.readingHabits.preferredReadingTimes[0];
+      return Math.max(0, topTime.hour - 0.5); // 30 minutes before
+    }
+    
+    return null;
   }
 
   // Reset all personalization data
@@ -275,6 +618,7 @@ class PersonalizationService {
     try {
       await AsyncStorage.removeItem(this.STORAGE_KEY);
       await AsyncStorage.removeItem(this.INTERACTIONS_KEY);
+      await AsyncStorage.removeItem(this.READING_SESSIONS_KEY);
       this.currentPreferences = null;
       this.interactions = [];
     } catch (error) {
@@ -284,23 +628,65 @@ class PersonalizationService {
 
   // Get analytics data for debugging
   static async getAnalyticsData(): Promise<any> {
-    const preferences = await this.loadPreferences();
-    const interactions = await this.loadInteractions();
-    const context = this.getCurrentContext();
-    
-    return {
-      preferences,
-      interactions: interactions.slice(0, 20), // Last 20 for debugging
-      context,
-      stats: {
-        totalInteractions: interactions.length,
-        mostPlayedCategory: Object.entries(preferences.favoriteCategories)
-          .sort(([,a], [,b]) => b - a)[0]?.[0] || 'None',
-        averageSessionLength: preferences.playbackPatterns.averageSessionLength,
-        completionRate: Math.round(preferences.playbackPatterns.completionRate * 100),
-        skipRate: Math.round(preferences.playbackPatterns.skipRate * 100),
-      },
-    };
+    try {
+      const preferences = await this.loadPreferences();
+      const interactions = await this.loadInteractions();
+      const context = this.getCurrentContext();
+      
+      // Ensure all nested objects exist
+      const safePreferences = {
+        ...this.getDefaultPreferences(),
+        ...preferences,
+        playbackPatterns: {
+          ...this.getDefaultPreferences().playbackPatterns,
+          ...preferences.playbackPatterns,
+        },
+        readingHabits: {
+          ...this.getDefaultPreferences().readingHabits,
+          ...preferences.readingHabits,
+        },
+      };
+      
+      return {
+        preferences: safePreferences,
+        interactions: interactions.slice(0, 20), // Last 20 for debugging
+        context,
+        stats: {
+          totalInteractions: interactions.length,
+          mostPlayedCategory: Object.entries(safePreferences.favoriteCategories)
+            .sort(([,a], [,b]) => (b as number) - (a as number))[0]?.[0] || 'None',
+          averageSessionLength: safePreferences.playbackPatterns.averageSessionLength || 180,
+          completionRate: Math.round((safePreferences.playbackPatterns.completionRate || 0) * 100),
+          skipRate: Math.round((safePreferences.playbackPatterns.skipRate || 0) * 100),
+          engagementScore: Math.round((safePreferences.playbackPatterns.engagementScore || 0.5) * 100),
+          readingSpeed: Math.round(safePreferences.playbackPatterns.readingSpeed || 200),
+          currentStreak: safePreferences.readingHabits.streakDays || 0,
+          bestStreak: safePreferences.readingHabits.bestStreak || 0,
+          consistency: Math.round((safePreferences.readingHabits.consistency || 0) * 100),
+        },
+      };
+    } catch (error) {
+      console.error('Error getting analytics data:', error);
+      // Return safe defaults
+      const defaults = this.getDefaultPreferences();
+      return {
+        preferences: defaults,
+        interactions: [],
+        context: this.getCurrentContext(),
+        stats: {
+          totalInteractions: 0,
+          mostPlayedCategory: 'None',
+          averageSessionLength: 180,
+          completionRate: 0,
+          skipRate: 0,
+          engagementScore: 50,
+          readingSpeed: 200,
+          currentStreak: 0,
+          bestStreak: 0,
+          consistency: 0,
+        },
+      };
+    }
   }
 }
 
