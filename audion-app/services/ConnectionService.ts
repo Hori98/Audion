@@ -133,7 +133,6 @@ class ConnectionService {
         const latency = Date.now() - startTime;
         
         if (response.status === 200) {
-          console.log(`✅ Backend connected: ${url} (${latency}ms)`);
           this.connectionStatus = {
             isConnected: true,
             lastChecked: Date.now(),
@@ -173,7 +172,6 @@ class ConnectionService {
 
     try {
       // Add initial grace period for backend startup (increased for slow networks)
-      console.log('⏳ Waiting for backend to be ready...');
       await new Promise(resolve => setTimeout(resolve, 5000));
       
       // Set a maximum timeout for the entire connection process
@@ -202,7 +200,6 @@ class ConnectionService {
         // Retry on network/timeout errors, not on 4xx client errors
         const shouldRetry = !error.response || error.response.status >= 500 || error.code === 'ECONNABORTED' || error.message === 'Network Error';
         if (shouldRetry && error.message === 'Network Error') {
-          console.log('🔄 Network error detected, will retry...');
         }
         return shouldRetry;
       },
@@ -221,7 +218,6 @@ class ConnectionService {
         const response = await this.axiosInstance(requestConfig);
         
         if (attempt > 0) {
-          console.log(`✅ Request retry succeeded on attempt ${attempt + 1}`);
         }
         
         return response.data;

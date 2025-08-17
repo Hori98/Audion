@@ -16,7 +16,7 @@ import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { format } from 'date-fns';
 import axios from 'axios';
-import * as WebBrowser from 'expo-web-browser';
+// Removed expo-web-browser - using native reader mode instead
 
 const { width } = Dimensions.get('window');
 
@@ -356,7 +356,10 @@ export default function FullScreenPlayer() {
   const handleViewOriginalArticle = async (originalUrl: string) => {
     if (originalUrl) {
       try {
-        await WebBrowser.openBrowserAsync(originalUrl);
+        // Navigate to native reader mode instead of external browser
+        // Note: FullScreenPlayer might need article context for proper reader mode
+        console.warn('FullScreenPlayer: Article context needed for reader mode');
+        // Fallback: could implement article lookup by URL here
       } catch (error) {
         console.error('Error opening article:', error);
         Alert.alert('Error', 'Failed to open the original article.');
@@ -594,16 +597,10 @@ export default function FullScreenPlayer() {
                         style={[styles.minimalViewButton, { backgroundColor: theme.accent, borderColor: theme.border }]}
                         onPress={(e) => {
                           e.stopPropagation();
-                          console.log('=== NEWS SOURCE BUTTON PRESSED ===');
-                          console.log('Chapter data:', chapter);
-                          console.log('Chapter original_url:', chapter.original_url);
-                          console.log('Chapter title:', chapter.title);
                           
                           if (chapter.original_url && chapter.original_url.trim() !== '') {
-                            console.log('Opening URL:', chapter.original_url);
                             handleViewOriginalArticle(chapter.original_url);
                           } else {
-                            console.log('No URL available for chapter:', chapter.title);
                             Alert.alert('Info', 'Original article URL not available for this news source.');
                           }
                         }}

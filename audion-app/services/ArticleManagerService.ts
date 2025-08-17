@@ -29,13 +29,11 @@ class ArticleManagerService {
 
     // Return cached data if valid and not forcing refresh
     if (!forceRefresh && cacheValid && this.articles.length > 0) {
-      console.log(`📰 Using cached articles: ${this.articles.length} articles`);
       return this.articles;
     }
 
     // Prevent multiple simultaneous fetches
     if (this.isLoading) {
-      console.log('📰 Fetch already in progress, waiting...');
       return new Promise((resolve) => {
         const checkInterval = setInterval(() => {
           if (!this.isLoading) {
@@ -53,7 +51,6 @@ class ArticleManagerService {
       const cached = await this.loadFromStorage();
       if (cached.length > 0) {
         this.articles = cached;
-        console.log(`📰 Loaded from storage: ${cached.length} articles`);
         
         // If not forcing refresh and we have cached data, return it
         if (!forceRefresh) {
@@ -63,14 +60,12 @@ class ArticleManagerService {
       }
 
       // Fetch fresh data from API with shorter timeout
-      console.log('📰 Fetching fresh articles from API...');
       const response = await axios.get(`${API}/articles`, {
         headers: { Authorization: `Bearer ${token}` },
         timeout: 5000, // Reduced to 5 seconds
       });
 
       if (response.data && Array.isArray(response.data)) {
-        console.log(`📰 API returned: ${response.data.length} raw articles`);
         
         // Clean and deduplicate articles
         const cleanedArticles = this.cleanAndDeduplicateArticles(response.data);
@@ -81,7 +76,6 @@ class ArticleManagerService {
         // Save to storage
         await this.saveToStorage(cleanedArticles);
         
-        console.log(`📰 Final articles: ${cleanedArticles.length} unique articles`);
         return cleanedArticles;
       } else {
         console.warn('📰 Invalid API response format');
@@ -96,7 +90,6 @@ class ArticleManagerService {
         const fallback = await this.loadFromStorage();
         if (fallback.length > 0) {
           this.articles = fallback;
-          console.log(`📰 Using storage fallback: ${fallback.length} articles`);
         } else {
           // If no cache available, create some mock data for development
           console.warn('📰 No cached data available, creating mock articles for development');
@@ -139,11 +132,9 @@ class ArticleManagerService {
         cleanedArticles.push(this.normalizeArticle(article));
       } else {
         duplicateCount++;
-        console.log(`📰 Duplicate removed: "${article.title?.substring(0, 50)}..."`);
       }
     }
 
-    console.log(`📰 Article cleaning: ${articles.length} raw -> ${cleanedArticles.length} clean (${duplicateCount} duplicates, ${invalidCount} invalid removed)`);
     
     // Sort by publication date (newest first)
     return cleanedArticles.sort((a, b) => {
@@ -231,7 +222,6 @@ class ArticleManagerService {
       },
     ];
     
-    console.log('📰 Created mock articles for development');
     return mockArticles;
   }
 
@@ -377,7 +367,6 @@ class ArticleManagerService {
       console.error('📰 Error clearing cache:', error);
     }
     
-    console.log('📰 Article cache cleared');
   }
 
   /**

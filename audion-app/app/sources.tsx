@@ -54,7 +54,6 @@ export default function SourcesScreen() {
 
   // Debug: Track state changes
   useEffect(() => {
-    console.log('State change - isEditMode:', isEditMode, 'selectedSources:', selectedSources);
   }, [isEditMode, selectedSources]);
 
   const fetchSources = async () => {
@@ -65,19 +64,15 @@ export default function SourcesScreen() {
           Authorization: `Bearer ${token}`,
         },
       });
-      console.log('=== SOURCES DEBUG ===');
-      console.log('Raw API response:', response.data);
       
       // Process sources with proper is_active handling
       const sourcesWithStatus = response.data.map((source: RSSSource) => ({
         ...source,
         is_active: source.is_active ?? true
       }));
-      console.log('Processed sources:', sourcesWithStatus);
       
       // Load saved states from storage
       const savedStates = await loadSourceStatesFromStorage();
-      console.log('Saved states from storage:', savedStates);
       
       // Initialize switch states (prioritize saved states over API data)
       const initialSwitchStates: {[key: string]: boolean} = {};
@@ -85,14 +80,11 @@ export default function SourcesScreen() {
         if (savedStates[source.id] !== undefined) {
           // Use saved state if exists
           initialSwitchStates[source.id] = savedStates[source.id];
-          console.log(`Using saved state for ${source.name}: ${savedStates[source.id]}`);
         } else {
           // Fall back to API data or default true
           initialSwitchStates[source.id] = source.is_active ?? true;
-          console.log(`Using API/default state for ${source.name}: ${source.is_active ?? true}`);
         }
       });
-      console.log('Final switch states:', initialSwitchStates);
       
       setSources(sourcesWithStatus);
       setSwitchStates(initialSwitchStates);
@@ -215,7 +207,6 @@ export default function SourcesScreen() {
       // Clear auto-picked articles cache
       await CacheService.remove('auto_picked_articles');
       
-      console.log('Related caches cleared successfully');
     } catch (error) {
       console.error('Error clearing related caches:', error);
     }
@@ -247,32 +238,26 @@ export default function SourcesScreen() {
       // Clear Feed and Auto-pick caches to reflect source status change
       await clearRelatedCaches();
     } catch (error: any) {
-      console.log(`Source ${sourceName} toggle sync failed:`, error.response?.status, error.response?.data);
       // Silent failure - continue with local storage for UX consistency
       // The local state and storage are already updated for immediate feedback
     }
   };
 
   const handleEditMode = () => {
-    console.log('handleEditMode called, current isEditMode:', isEditMode);
     setIsEditMode(!isEditMode);
     setSelectedSources([]); // Clear selections when toggling edit mode
-    console.log('Edit mode toggled to:', !isEditMode);
   };
 
   const handleSourceSelection = (sourceId: string) => {
-    console.log('handleSourceSelection called with sourceId:', sourceId);
     setSelectedSources(prevSelected => {
       const newSelected = prevSelected.includes(sourceId)
         ? prevSelected.filter(id => id !== sourceId)
         : [...prevSelected, sourceId];
-      console.log('Updated selectedSources:', newSelected);
       return newSelected;
     });
   };
 
   const handleBulkDelete = () => {
-    console.log('handleBulkDelete called, selectedSources:', selectedSources);
     
     if (selectedSources.length === 0) {
       Alert.alert('No Selection', 'Please select sources to delete.');
@@ -283,8 +268,6 @@ export default function SourcesScreen() {
       .filter(source => selectedSources.includes(source.id))
       .map(source => source.name);
 
-    console.log('Selected source names:', selectedSourceNames);
-    console.log('About to show Alert.alert');
 
     try {
       Alert.alert(
@@ -296,13 +279,11 @@ export default function SourcesScreen() {
             text: 'Delete',
             style: 'destructive',
             onPress: () => {
-              console.log('Delete button pressed in Alert - confirming deletion');
               confirmBulkDelete();
             }
           }
         ]
       );
-      console.log('Alert.alert called successfully');
     } catch (error) {
       console.error('Error showing Alert:', error);
       // Fallback:直接削除実行（開発用）
@@ -313,32 +294,24 @@ export default function SourcesScreen() {
   };
 
   const confirmBulkDelete = async () => {
-    console.log('confirmBulkDelete called - START OF FUNCTION');
-    console.log('Current selectedSources:', selectedSources);
-    console.log('Current API endpoint:', API);
     setDeleting(true);
     
     try {
       // Delete from backend
       const deletePromises = selectedSources.map(sourceId => {
         const deleteUrl = `${API}/rss-sources/${sourceId}`;
-        console.log('Preparing DELETE request to:', deleteUrl);
         return axios.delete(deleteUrl, {
           headers: { Authorization: `Bearer ${token}` }
         });
       });
       
-      console.log('Starting backend deletion for sources:', selectedSources);
-      console.log('Delete URLs:', selectedSources.map(id => `${API}/rss-sources/${id}`));
       
       const deleteResults = await Promise.all(deletePromises);
-      console.log('Backend deletion completed successfully. Results:', deleteResults.map(r => r.status));
       
       // Update local state
       setSources(prevSources => 
         prevSources.filter(source => !selectedSources.includes(source.id))
       );
-      console.log('Local sources state updated');
       
       // Clean up switch states
       const newSwitchStates = { ...switchStates };
@@ -347,7 +320,6 @@ export default function SourcesScreen() {
       });
       setSwitchStates(newSwitchStates);
       await saveSourceStatesToStorage(newSwitchStates);
-      console.log('Switch states cleaned up');
       
       // Clear Feed and Auto-pick caches to reflect source deletion
       await clearRelatedCaches();
@@ -355,12 +327,10 @@ export default function SourcesScreen() {
       // Reset UI state
       setSelectedSources([]);
       setIsEditMode(false);
-      console.log('UI state reset to normal mode');
       
       try {
         Alert.alert('Success', `${selectedSources.length} source(s) deleted successfully.`);
       } catch (alertError) {
-        console.log('Success: Sources deleted successfully');
       }
       
     } catch (error: any) {
@@ -372,7 +342,6 @@ export default function SourcesScreen() {
       }
     } finally {
       setDeleting(false);
-      console.log('confirmBulkDelete completed, deleting state reset');
     }
   };
 
@@ -596,7 +565,6 @@ export default function SourcesScreen() {
           <TouchableOpacity
             style={[styles.floatingDeleteButton, { backgroundColor: theme.error || '#ef4444' }]}
             onPress={() => {
-              console.log('Floating delete button pressed, selectedSources:', selectedSources);
               handleBulkDelete();
             }}
             disabled={deleting}

@@ -13,7 +13,7 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { useFocusEffect, useRouter } from 'expo-router';
-import * as WebBrowser from 'expo-web-browser';
+// Removed expo-web-browser - using native reader mode instead
 import { Ionicons } from '@expo/vector-icons';
 import BookmarkService, { Bookmark } from '../services/BookmarkService';
 import SearchBar from '../components/SearchBar';
@@ -60,9 +60,21 @@ export default function ReadLaterScreen() {
 
   const handleArticlePress = async (article: Bookmark) => {
     try {
-      await WebBrowser.openBrowserAsync(article.article_link, {
-        presentationStyle: WebBrowser.WebBrowserPresentationStyle.PUSH_MODAL,
-        controlsColor: '#1a1a1a',
+      // Navigate to native reader mode instead of external browser
+      const articleForReader = {
+        id: article.id,
+        title: article.article_title,
+        summary: article.summary || '',
+        link: article.article_link,
+        published: article.created_at,
+        source_name: article.source || 'Read Later',
+        content: article.content || article.summary,
+        genre: 'Bookmarked'
+      };
+      
+      router.push({
+        pathname: '/article-detail',
+        params: { articleData: JSON.stringify(articleForReader) }
       });
     } catch (error) {
       Alert.alert('エラー', '記事を開けませんでした');

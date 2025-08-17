@@ -19,6 +19,9 @@ import { useTranslation } from 'react-i18next';
 import DebugMenu from '../components/DebugMenu';
 import DebugService from '../services/DebugService';
 import CacheService from '../services/CacheService';
+import ArticleManagerService from '../services/ArticleManagerService';
+import ArchiveService from '../services/ArchiveService';
+import BookmarkService from '../services/BookmarkService';
 
 interface QuickSettingItem {
   id: string;
@@ -69,7 +72,7 @@ export default function QuickSettingsScreen() {
   };
 
   const handleClearCache = () => {
-    console.log('🗑️ [DEBUG] Cache clear button pressed');
+    console.log('⚙️ Settings - Cache clear button pressed');
     Alert.alert(
       'キャッシュクリア',
       'アプリのキャッシュをクリアしますか？これにより、最新のニュースを取得できます。',
@@ -79,14 +82,37 @@ export default function QuickSettingsScreen() {
           text: 'クリア', 
           style: 'destructive',
           onPress: async () => {
-            console.log('🗑️ [DEBUG] Starting cache clear process...');
+            console.log('⚙️ Settings - Starting comprehensive cache clear operation');
             try {
+              // Clear all service caches
+              console.log('⚙️ Settings - Clearing CacheService...');
               await CacheService.clear();
-              console.log('🗑️ [DEBUG] Cache cleared successfully');
-              Alert.alert('完了', 'キャッシュをクリアしました。アプリを再起動して最新のニュースを取得してください。');
+              
+              console.log('⚙️ Settings - Clearing ArticleManagerService cache...');
+              await ArticleManagerService.getInstance().clearCache();
+              
+              console.log('⚙️ Settings - Clearing ArchiveService cache...');
+              ArchiveService.getInstance().clearCache();
+              
+              console.log('⚙️ Settings - Clearing BookmarkService cache...');
+              BookmarkService.getInstance().clearCache();
+              
+              console.log('⚙️ Settings - All caches cleared successfully');
+              Alert.alert(
+                '完了', 
+                'すべてのキャッシュをクリアしました。アプリを再起動して最新のニュースを取得してください。',
+                [
+                  {
+                    text: 'OK',
+                    onPress: () => {
+                      console.log('⚙️ Settings - User acknowledged cache clear completion');
+                    }
+                  }
+                ]
+              );
             } catch (error) {
-              console.error('🗑️ [DEBUG] Cache clear error:', error);
-              Alert.alert('エラー', 'キャッシュのクリアに失敗しました。');
+              console.error('⚙️ Settings - Cache clear error:', error);
+              Alert.alert('エラー', 'キャッシュのクリアに失敗しました。詳細はログを確認してください。');
             }
           }
         }
@@ -282,7 +308,6 @@ export default function QuickSettingsScreen() {
                 key={setting.id}
                 style={[styles.settingItem, { backgroundColor: theme.card }]}
                 onPress={() => {
-                  console.log(`🔧 [DEBUG] Setting pressed: ${setting.id}, type: ${setting.type}`);
                   if (setting.onPress) {
                     setting.onPress();
                   }
@@ -337,7 +362,6 @@ export default function QuickSettingsScreen() {
                 key={setting.id}
                 style={[styles.settingItem, { backgroundColor: theme.card }]}
                 onPress={() => {
-                  console.log(`🔧 [DEBUG] Setting pressed: ${setting.id}, type: ${setting.type}`);
                   if (setting.onPress) {
                     setting.onPress();
                   }
@@ -392,7 +416,6 @@ export default function QuickSettingsScreen() {
                 key={setting.id}
                 style={[styles.settingItem, { backgroundColor: theme.card }]}
                 onPress={() => {
-                  console.log(`🔧 [DEBUG] Setting pressed: ${setting.id}, type: ${setting.type}`);
                   if (setting.onPress) {
                     setting.onPress();
                   }

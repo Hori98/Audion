@@ -9,13 +9,14 @@ import {
   Alert,
   ActivityIndicator,
   RefreshControl,
+  Linking,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
-import * as WebBrowser from 'expo-web-browser';
+// Removed expo-web-browser - using native reader mode instead
 import axios from 'axios';
 import { Article } from '../../types';
 import CacheService from '../../services/CacheService';
@@ -145,16 +146,22 @@ export default function MainScreen() {
       const initializeData = async () => {
         if (!token) return;
 
-        // Parallel initialization for faster startup
+        console.log('🏠 Home - Starting initialization...');
+        
+        // Initialize reading history and other services first
         const [history] = await Promise.all([
           loadReadingHistoryFromStorage(),
           NotificationService.getInstance().initialize(),
           ArchiveService.getInstance().initialize(token),
-          fetchArticles(), // Start article fetch immediately in parallel
           loadReadLaterStatus() // Load Read Later status
         ]);
 
         setReadingHistory(history);
+        
+        // Fetch articles after other initialization is complete
+        console.log('🏠 Home - Services initialized, fetching articles...');
+        await fetchArticles();
+        console.log('🏠 Home - Initialization complete');
       };
 
       initializeData();
@@ -164,6 +171,7 @@ export default function MainScreen() {
   const fetchArticles = async () => {
     if (!token) return;
     
+    console.log('🏠 Home - fetchArticles started');
     setLoading(true);
     try {
       const filters = {
@@ -173,10 +181,11 @@ export default function MainScreen() {
       // Try cache first (exactly like Feed)
       const cachedArticles = await CacheService.getArticles(filters);
       if (cachedArticles) {
-        console.log(`🔍 [DEBUG] Cache HIT: ${cachedArticles.length} articles from cache`);
+        console.log(`🏠 Home - Found ${cachedArticles.length} cached articles`);
         
         // Normalize articles to prevent duplicates
         const normalizedCachedArticles = normalizeArticles(cachedArticles);
+        console.log(`🏠 Home - Normalized to ${normalizedCachedArticles.length} articles`);
         setArticles(normalizedCachedArticles);
         
         // Force UI update after cached articles are set
@@ -208,6 +217,7 @@ export default function MainScreen() {
           return newMap;
         });
         
+        console.log('🏠 Home - Cached articles loaded successfully');
         setLoading(false);
         return;
       }
@@ -217,14 +227,14 @@ export default function MainScreen() {
       if (selectedGenre !== 'All') {
         params.genre = selectedGenre;
       }
+      console.log('🏠 Home - Fetching articles from API...');
       const response = await axios.get(`${API}/articles`, { headers, params });
-      
-      console.log(`🔍 [DEBUG] API Response: ${response.data.length} articles received`);
+      console.log(`🏠 Home - API returned ${response.data.length} articles`);
       
       // Normalize articles to prevent duplicates
       const normalizedArticles = normalizeArticles(response.data);
+      console.log(`🏠 Home - Normalized to ${normalizedArticles.length} articles`);
       
-      console.log(`🔍 [DEBUG] After normalization: ${normalizedArticles.length} articles`);
       
       // Cache the results
       await CacheService.setArticles(normalizedArticles, filters);
@@ -237,7 +247,6 @@ export default function MainScreen() {
       setArticles(initialArticles);
       setDisplayedArticles(initialArticles);
       
-      console.log(`🚀 [PROGRESSIVE] Initial 30 articles displayed`);
       
       // Step 2: Auto-load next 20 articles after 200ms
       if (normalizedArticles.length > 30) {
@@ -253,11 +262,9 @@ export default function MainScreen() {
             setShowMoreButton(true);
           }
           
-          console.log(`🚀 [PROGRESSIVE] Extended to 50 articles`);
         }, 200);
       }
       
-      console.log(`🔍 [DEBUG] Final articles set: ${normalizedArticles.length} total, ${initialArticles.length} initial`);
       
       // Force UI update after articles are set
       setTimeout(() => {
@@ -288,26 +295,38 @@ export default function MainScreen() {
         return newMap;
       });
     } catch (error: any) {
-      console.error('Error fetching articles:', error);
+      console.error('🏠 Home - Error fetching articles:', error);
     } finally {
+      console.log('🏠 Home - fetchArticles completed');
       setLoading(false);
     }
   };
 
   const onRefresh = async () => {
+    console.log('🏠 Home - Pull-to-refresh triggered');
     setRefreshing(true);
-    // Clear cache for current filter settings
-    const filters = {
-      ...(selectedGenre !== 'All' && { genre: selectedGenre })
-    };
-    const cacheKey = CacheService.getArticlesCacheKey(filters);
-    await CacheService.remove(cacheKey);
-    console.log(`🗑️ [DEBUG] Cache cleared for: ${JSON.stringify(filters)}`);
-    await fetchArticles();
-    setRefreshing(false);
+    try {
+      // Clear cache for current filter settings
+      const filters = {
+        ...(selectedGenre !== 'All' && { genre: selectedGenre })
+      };
+      const cacheKey = CacheService.getArticlesCacheKey(filters);
+      console.log('🏠 Home - Clearing cache key:', cacheKey);
+      await CacheService.remove(cacheKey);
+      console.log('🏠 Home - Cache cleared, fetching fresh articles...');
+      await fetchArticles();
+      console.log('🏠 Home - Fresh articles fetched successfully');
+    } catch (error) {
+      console.error('🏠 Home - Error during refresh:', error);
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   const handleArticlePress = async (article: Article) => {
+    console.log('🏠 Home - Article clicked:', article.title);
+    console.log('🏠 Home - Article data:', article);
+    
     // Save reading history
     const newHistory = new Map(readingHistory);
     newHistory.set(article.id, new Date());
@@ -326,11 +345,19 @@ export default function MainScreen() {
     });
     
     try {
-      await WebBrowser.openBrowserAsync(article.link, {
-        presentationStyle: WebBrowser.WebBrowserPresentationStyle.PUSH_MODAL,
-        controlsColor: '#1a1a1a',
-      });
+      // TEMPORARY WORKAROUND: Use external browser until router issue is fixed
+      console.log('🏠 Home - Opening article in browser (temporary fix)');
+      await Linking.openURL(article.link);
+      
+      // TODO: Fix router navigation to article-detail
+      // The issue appears to be with React StrictMode or expo-router unmounting components
+      // Once resolved, restore this code:
+      // router.push({
+      //   pathname: '/article-detail', 
+      //   params: { articleData: JSON.stringify(article) }
+      // });
     } catch (error) {
+      console.error('🏠 Home - Failed to open article:', error);
       Alert.alert('エラー', '記事を開けませんでした');
     }
   };
@@ -415,7 +442,6 @@ export default function MainScreen() {
                 ...(selectedGenre !== 'All' && { preferred_genres: [selectedGenre] })
               };
               
-              console.log(`🎯 [DEBUG] AutoPick request for genre: ${selectedGenre}`, autoPickRequest);
               
               const autoPickResponse = await axios.post(
                 `${API}/auto-pick`,
@@ -473,7 +499,6 @@ export default function MainScreen() {
     genre: selectedGenre,
   });
   
-  console.log(`🔍 [DEBUG] Articles before filter: ${articles.length}, after filter: ${filteredArticles.length}, genre: ${selectedGenre}`);
 
   // Load More Articles Handler
   const handleLoadMore = () => {
@@ -488,7 +513,6 @@ export default function MainScreen() {
       setShowMoreButton(false);
     }
     
-    console.log(`📈 [LOAD MORE] Displayed ${nextBatch.length}/${allAvailableArticles.length} articles`);
   };
 
   return (

@@ -10,11 +10,13 @@ import {
   Linking,
   Dimensions,
   Image,
+  useWindowDimensions,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { WebView } from 'react-native-webview';
+import RenderHtml from 'react-native-render-html';
 
 const { height: screenHeight } = Dimensions.get('window');
 
@@ -37,19 +39,53 @@ export default function ArticleDetailScreen() {
   
   const [article, setArticle] = useState<Article | null>(null);
   const [loading, setLoading] = useState(true);
-  const [viewMode, setViewMode] = useState<'content' | 'web'>('content');
+  const [viewMode, setViewMode] = useState<'summary' | 'content' | 'web'>('summary');
+  const { width } = useWindowDimensions();
+
+  // Add error boundary for this screen
+  const [hasError, setHasError] = useState(false);
+
+  // Log lifecycle events
+  console.log('📰 ArticleDetail - Component mounted/rendered');
 
   useEffect(() => {
-    if (params.articleData) {
-      try {
-        const articleData = JSON.parse(params.articleData as string);
-        setArticle(articleData);
-      } catch (error) {
-        // Article parsing failed
+    console.log('📰 ArticleDetail - useEffect triggered');
+    console.log('📰 ArticleDetail - Params received:', params);
+    
+    try {
+      if (params.articleData) {
+        try {
+          const articleData = JSON.parse(params.articleData as string);
+          console.log('📰 ArticleDetail - Parsed article:', articleData);
+          setArticle(articleData);
+        } catch (error) {
+          console.error('📰 ArticleDetail - Failed to parse article data:', error);
+          console.log('📰 ArticleDetail - Raw params.articleData:', params.articleData);
+          setHasError(true);
+        }
+      } else {
+        console.log('📰 ArticleDetail - No articleData in params');
+        setHasError(true);
       }
+    } catch (error) {
+      console.error('📰 ArticleDetail - Unexpected error in useEffect:', error);
+      setHasError(true);
     }
+    
     setLoading(false);
   }, [params.articleData]);
+
+  // Add useEffect to detect when component is unmounting or re-rendering
+  useEffect(() => {
+    return () => {
+      console.log('📰 ArticleDetail - Component unmounting or re-rendering');
+    };
+  }, []);
+
+  // Log when article changes
+  useEffect(() => {
+    console.log('📰 ArticleDetail - Article state changed:', article?.title);
+  }, [article]);
 
   const formatDate = (dateString: string) => {
     try {
@@ -66,17 +102,24 @@ export default function ArticleDetailScreen() {
   };
 
   const openInBrowser = async () => {
+    console.log('📰 ArticleDetail - Opening in browser:', article?.link);
     if (article?.link) {
       try {
         await Linking.openURL(article.link);
       } catch (error) {
-        // Failed to open URL
+        console.error('📰 ArticleDetail - Error opening browser:', error);
       }
     }
   };
 
   const shareArticle = () => {
+    console.log('📰 ArticleDetail - Share button pressed');
     // TODO: Implement sharing functionality
+  };
+
+  const handleBack = () => {
+    console.log('📰 ArticleDetail - Back button pressed manually');
+    router.back();
   };
 
   if (loading) {
@@ -92,7 +135,8 @@ export default function ArticleDetailScreen() {
     );
   }
 
-  if (!article) {
+  if (!article && !loading) {
+    console.log('📰 ArticleDetail - No article found, showing error screen');
     return (
       <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
         <View style={styles.errorContainer}>
@@ -102,7 +146,7 @@ export default function ArticleDetailScreen() {
           </Text>
           <TouchableOpacity
             style={[styles.backButton, { backgroundColor: theme.primary }]}
-            onPress={() => router.back()}
+            onPress={handleBack}
           >
             <Text style={styles.backButtonText}>Go Back</Text>
           </TouchableOpacity>
@@ -111,143 +155,47 @@ export default function ArticleDetailScreen() {
     );
   }
 
+  // If we somehow got here without an article, don't render anything
+  if (!article) {
+    console.log('📰 ArticleDetail - No article but still loading, rendering nothing');
+    return null;
+  }
+
+  console.log('📰 ArticleDetail - About to render main content');
+  console.log('📰 ArticleDetail - Rendering with viewMode:', viewMode);
+  console.log('📰 ArticleDetail - Article object:', article);
+
+  // TEMPORARY: Force static display to debug auto-back issue
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
-      {/* Header */}
-      <View style={[styles.header, { backgroundColor: theme.surface, borderBottomColor: theme.border }]}>
-        <TouchableOpacity
-          style={styles.headerButton}
-          onPress={() => router.back()}
+      {/* Debug info */}
+      <View style={{ position: 'absolute', top: 50, left: 10, zIndex: 1000, backgroundColor: 'red', padding: 5 }}>
+        <Text style={{ color: 'white', fontSize: 10 }}>Article loaded: {article?.title?.substring(0, 20)}...</Text>
+        <Text style={{ color: 'white', fontSize: 10 }}>ViewMode: {viewMode}</Text>
+      </View>
+
+      {/* STATIC TEST CONTENT */}
+      <View style={{ flex: 1, padding: 20, backgroundColor: 'lightblue' }}>
+        <TouchableOpacity 
+          onPress={handleBack}
+          style={{ backgroundColor: 'blue', padding: 10, marginBottom: 20 }}
         >
-          <Ionicons name="arrow-back" size={24} color={theme.text} />
+          <Text style={{ color: 'white' }}>← Back</Text>
         </TouchableOpacity>
         
-        <View style={styles.headerActions}>
-          <TouchableOpacity
-            style={styles.headerButton}
-            onPress={shareArticle}
-          >
-            <Ionicons name="share-outline" size={24} color={theme.text} />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.headerButton}
-            onPress={openInBrowser}
-          >
-            <Ionicons name="open-outline" size={24} color={theme.text} />
-          </TouchableOpacity>
-        </View>
+        <Text style={{ fontSize: 18, fontWeight: 'bold', marginBottom: 10 }}>
+          STATIC TEST MODE
+        </Text>
+        <Text style={{ fontSize: 16, marginBottom: 10 }}>
+          Title: {article?.title}
+        </Text>
+        <Text style={{ fontSize: 14 }}>
+          Source: {article?.source_name}
+        </Text>
+        <Text style={{ fontSize: 12, marginTop: 20 }}>
+          If this screen stays visible, the auto-back issue is not in the render logic.
+        </Text>
       </View>
-
-      {/* View Mode Toggle */}
-      <View style={[styles.viewModeContainer, { backgroundColor: theme.surface, borderBottomColor: theme.border }]}>
-        <TouchableOpacity
-          style={[
-            styles.viewModeButton,
-            viewMode === 'content' && { backgroundColor: theme.primary }
-          ]}
-          onPress={() => setViewMode('content')}
-        >
-          <Text style={[
-            styles.viewModeText,
-            { color: viewMode === 'content' ? '#fff' : theme.text }
-          ]}>
-            Summary
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[
-            styles.viewModeButton,
-            viewMode === 'web' && { backgroundColor: theme.primary }
-          ]}
-          onPress={() => setViewMode('web')}
-        >
-          <Text style={[
-            styles.viewModeText,
-            { color: viewMode === 'web' ? '#fff' : theme.text }
-          ]}>
-            Full Article
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      {viewMode === 'content' ? (
-        <ScrollView style={styles.contentContainer} showsVerticalScrollIndicator={false}>
-          {/* Article Image */}
-          {article.image_url && (
-            <Image
-              source={{ uri: article.image_url }}
-              style={styles.articleImage}
-              resizeMode="cover"
-            />
-          )}
-
-          {/* Article Content */}
-          <View style={styles.articleContent}>
-            {/* Title */}
-            <Text style={[styles.title, { color: theme.text }]}>
-              {article.title}
-            </Text>
-
-            {/* Meta Info */}
-            <View style={styles.metaContainer}>
-              <View style={styles.metaRow}>
-                <Text style={[styles.source, { color: theme.primary }]}>
-                  {article.source_name}
-                </Text>
-                <View style={[styles.dot, { backgroundColor: theme.textMuted }]} />
-                <Text style={[styles.date, { color: theme.textMuted }]}>
-                  {formatDate(article.published)}
-                </Text>
-              </View>
-              {article.genre && (
-                <View style={[styles.genreTag, { backgroundColor: theme.accent }]}>
-                  <Text style={[styles.genreText, { color: theme.textMuted }]}>
-                    {article.genre}
-                  </Text>
-                </View>
-              )}
-            </View>
-
-            {/* Summary */}
-            <Text style={[styles.summary, { color: theme.textSecondary }]}>
-              {article.summary}
-            </Text>
-
-            {/* Content */}
-            {article.content && article.content !== article.summary && (
-              <Text style={[styles.content, { color: theme.text }]}>
-                {article.content}
-              </Text>
-            )}
-
-            {/* Read More Button */}
-            <TouchableOpacity
-              style={[styles.readMoreButton, { backgroundColor: theme.primary }]}
-              onPress={openInBrowser}
-            >
-              <Text style={styles.readMoreText}>Read Full Article</Text>
-              <Ionicons name="open-outline" size={16} color="#fff" />
-            </TouchableOpacity>
-          </View>
-        </ScrollView>
-      ) : (
-        <WebView
-          source={{ uri: article.link }}
-          style={{ flex: 1 }}
-          onError={(error) => {
-            // WebView error occurred
-          }}
-          startInLoadingState={true}
-          renderLoading={() => (
-            <View style={styles.webViewLoading}>
-              <ActivityIndicator size="large" color={theme.primary} />
-              <Text style={[styles.loadingText, { color: theme.textSecondary }]}>
-                Loading article...
-              </Text>
-            </View>
-          )}
-        />
-      )}
     </SafeAreaView>
   );
 }
@@ -270,136 +218,37 @@ const styles = StyleSheet.create({
   headerActions: {
     flexDirection: 'row',
   },
-  viewModeContainer: {
-    flexDirection: 'row',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-  },
-  viewModeButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    marginRight: 8,
-  },
-  viewModeText: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  contentContainer: {
-    flex: 1,
-  },
-  articleImage: {
-    width: '100%',
-    height: 200,
-  },
-  articleContent: {
-    padding: 20,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    lineHeight: 32,
-    marginBottom: 16,
-  },
-  metaContainer: {
-    marginBottom: 20,
-  },
-  metaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  source: {
-    fontSize: 14,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-  },
-  dot: {
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-    marginHorizontal: 8,
-  },
-  date: {
-    fontSize: 14,
-  },
-  genreTag: {
-    alignSelf: 'flex-start',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  genreText: {
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  summary: {
-    fontSize: 16,
-    lineHeight: 24,
-    marginBottom: 20,
-    fontStyle: 'italic',
-  },
-  content: {
-    fontSize: 16,
-    lineHeight: 24,
-    marginBottom: 24,
-  },
-  readMoreButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 14,
-    paddingHorizontal: 24,
-    borderRadius: 25,
-    gap: 8,
-  },
-  readMoreText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    gap: 16,
   },
   loadingText: {
+    marginTop: 16,
     fontSize: 16,
   },
   errorContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    gap: 16,
-    paddingHorizontal: 40,
+    paddingHorizontal: 32,
   },
   errorText: {
     fontSize: 18,
     fontWeight: '600',
+    marginTop: 16,
+    marginBottom: 24,
     textAlign: 'center',
   },
   backButton: {
     paddingHorizontal: 24,
     paddingVertical: 12,
-    borderRadius: 20,
-    marginTop: 16,
+    borderRadius: 8,
   },
   backButtonText: {
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
   },
-  webViewLoading: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.9)',
-    gap: 16,
-  },
 });
+

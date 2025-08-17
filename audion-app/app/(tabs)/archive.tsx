@@ -17,7 +17,7 @@ import { useTheme } from '../../context/ThemeContext';
 import { useTranslation } from 'react-i18next';
 import { format, isValid, parseISO } from 'date-fns';
 import { useFocusEffect } from '@react-navigation/native';
-import * as WebBrowser from 'expo-web-browser';
+// Removed expo-web-browser - using native reader mode instead
 import { Ionicons } from '@expo/vector-icons';
 import { ErrorHandlingService } from '../../services/ErrorHandlingService';
 import LoadingIndicator from '../../components/LoadingIndicator';
@@ -208,7 +208,22 @@ export default function ArchiveScreen() {
       if (!article.is_read) {
         await markAsRead(article.id);
       }
-      await WebBrowser.openBrowserAsync(url);
+      // Navigate to native reader mode instead of external browser
+      const articleForReader = {
+        id: article.id,
+        title: article.title,
+        summary: article.summary || '',
+        link: article.article_link,
+        published: article.created_at,
+        source_name: article.source || 'Archive',
+        content: article.content || article.summary,
+        genre: 'Archive'
+      };
+      
+      router.push({
+        pathname: '/article-detail',
+        params: { articleData: JSON.stringify(articleForReader) }
+      });
     } catch (error: any) {
       console.error('Error opening article:', error);
       ErrorHandlingService.showError(error, {

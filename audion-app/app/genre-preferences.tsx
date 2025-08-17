@@ -209,7 +209,6 @@ export default function GenrePreferencesScreen() {
 
   const fetchData = async () => {
     try {
-      console.log('🔍 Fetching genre preferences and insights...');
       
       // Get user profile
       const profileResponse = await axios.get(`${API}/user/profile`, {
@@ -224,7 +223,6 @@ export default function GenrePreferencesScreen() {
         });
         insights = insightsResponse.data;
       } catch (error) {
-        console.log('User insights not available, using defaults');
       }
       
       setUserInsights(insights);
@@ -271,7 +269,6 @@ export default function GenrePreferencesScreen() {
         [genre.name]: genre.name === genreName ? clampedWeight : Math.max(0.1, Math.min(2.0, genre.weight))
       }), {});
       
-      console.log('🔄 Sending genre preferences update:', JSON.stringify(newGenrePreferences, null, 2));
       
       await axios.put(`${API}/user/profile`, {
         genre_preferences: newGenrePreferences,

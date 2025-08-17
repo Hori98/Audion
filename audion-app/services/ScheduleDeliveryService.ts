@@ -77,7 +77,6 @@ class ScheduleDeliveryService {
         }
       });
 
-      console.log('ScheduleDeliveryService initialized');
     } catch (error) {
       console.error('Failed to initialize ScheduleDeliveryService:', error);
     }
@@ -100,7 +99,6 @@ class ScheduleDeliveryService {
         await this.scheduleDelivery(timeSlot, settings);
       }
 
-      console.log('Schedules setup successfully for time slots:', settings.timeSlots);
     } catch (error) {
       console.error('Error setting up schedules:', error);
     }
@@ -159,7 +157,6 @@ class ScheduleDeliveryService {
         trigger,
       });
 
-      console.log(`Scheduled delivery for ${timeSlot} with ID:`, notificationId);
     } catch (error) {
       console.error(`Error scheduling delivery for ${timeSlot}:`, error);
     }
@@ -174,7 +171,6 @@ class ScheduleDeliveryService {
         return;
       }
 
-      console.log('Executing scheduled delivery...');
 
       // Get user preferences and apply AI personalization
       const requestBody = await this.buildScheduleRequest(settings, token);
@@ -264,7 +260,6 @@ class ScheduleDeliveryService {
       if (DebugService.shouldBypassSubscriptionLimits()) {
         headers['X-Debug-Bypass-Limits'] = 'true';
         headers['X-Debug-Mode'] = 'true';
-        console.log('🧪 Adding debug headers to scheduled audio API request');
       }
 
       // Create audio from selected articles
@@ -377,7 +372,6 @@ class ScheduleDeliveryService {
   async cancelAllSchedules() {
     try {
       await Notifications.cancelAllScheduledNotificationsAsync();
-      console.log('All scheduled notifications cancelled');
     } catch (error) {
       console.error('Error cancelling schedules:', error);
     }
@@ -415,7 +409,6 @@ class ScheduleDeliveryService {
   }
 
   async testScheduleDelivery(): Promise<ScheduleDeliveryResult> {
-    console.log('Testing schedule delivery...');
     return await this.executeScheduledDelivery();
   }
 
@@ -423,7 +416,6 @@ class ScheduleDeliveryService {
   async getScheduledNotifications() {
     try {
       const notifications = await Notifications.getAllScheduledNotificationsAsync();
-      console.log('Currently scheduled notifications:', notifications.length);
       return notifications;
     } catch (error) {
       console.error('Error getting scheduled notifications:', error);

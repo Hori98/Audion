@@ -21,7 +21,6 @@ class AudioMetadataService {
       existingData[metadata.audioId] = metadata;
       
       await AsyncStorage.setItem(this.METADATA_KEY, JSON.stringify(existingData));
-      console.log('Audio metadata saved:', metadata);
     } catch (error) {
       console.error('Error saving audio metadata:', error);
     }
@@ -62,7 +61,6 @@ class AudioMetadataService {
       delete existingData[audioId];
       
       await AsyncStorage.setItem(this.METADATA_KEY, JSON.stringify(existingData));
-      console.log('Audio metadata removed for:', audioId);
     } catch (error) {
       console.error('Error removing audio metadata:', error);
     }
@@ -85,7 +83,6 @@ class AudioMetadataService {
       }
       
       await AsyncStorage.setItem(this.METADATA_KEY, JSON.stringify(cleanedData));
-      console.log('Audio metadata cleaned up');
     } catch (error) {
       console.error('Error cleaning up metadata:', error);
     }

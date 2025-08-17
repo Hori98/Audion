@@ -8,19 +8,15 @@ export function useSiriShortcuts() {
   useEffect(() => {
     // Navigation callback for Siri shortcuts
     const handleNavigation = (action: string) => {
-      console.log('useSiriShortcuts: Handling navigation for action:', action);
       
       switch (action) {
         case 'create-audio':
-          console.log('useSiriShortcuts: Navigating to feed for audio creation');
           router.push('/feed');
           break;
         case 'auto-pick':
-          console.log('useSiriShortcuts: Navigating to auto-pick');
           router.push('/auto-pick');
           break;
         default:
-          console.log('useSiriShortcuts: Unknown action:', action);
       }
     };
 

@@ -61,14 +61,10 @@ class DebugService {
   // Save debug settings to storage
   static async saveDebugSettings(settings: Partial<DebugSettings>): Promise<void> {
     try {
-      console.log('💾 Saving debug settings:', settings);
-      console.log('📋 Before merge, currentSettings:', this.currentSettings);
       
       this.currentSettings = { ...this.currentSettings, ...settings };
       await AsyncStorage.setItem(this.STORAGE_KEY, JSON.stringify(this.currentSettings));
       
-      console.log('✅ After merge, currentSettings:', this.currentSettings);
-      console.log('💾 Settings saved to AsyncStorage successfully');
     } catch (error) {
       console.error('❌ Failed to save debug settings:', error);
     }
@@ -95,9 +91,7 @@ class DebugService {
 
   // Force specific subscription tier for testing
   static async setForcedSubscriptionTier(tier?: SubscriptionTier): Promise<void> {
-    console.log('🎯 Setting forced subscription tier:', tier);
     await this.saveDebugSettings({ forcedSubscriptionTier: tier });
-    console.log('✅ Forced tier saved, current settings:', this.currentSettings);
   }
 
   static getForcedSubscriptionTier(): SubscriptionTier | undefined {
@@ -181,7 +175,6 @@ class DebugService {
     
     this.currentSettings = defaultSettings;
     await AsyncStorage.setItem(this.STORAGE_KEY, JSON.stringify(defaultSettings));
-    console.log('🔄 Debug settings reset (preserving login):', defaultSettings);
   }
 
   // Get environment info for debugging
@@ -197,8 +190,6 @@ class DebugService {
   // Quick test for beta users (can be called from anywhere)
   static async quickBetaTest(): Promise<void> {
     if (this.isDebugModeEnabled()) {
-      console.log('🧪 Beta Test Mode Activated');
-      console.log('Environment Info:', this.getEnvironmentInfo());
     }
   }
 

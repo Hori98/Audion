@@ -61,7 +61,6 @@ class SiriShortcutsService {
   private handleDeepLink = ({ url }: { url: string }) => {
     // Only log in development mode and exclude expo dev server URLs
     if (__DEV__ && !url.includes('192.0.0.2') && !url.startsWith('exp://')) {
-      console.log('SiriShortcuts: Received deep link:', url);
     }
     
     const { path, queryParams } = Linking.parse(url);
@@ -76,7 +75,6 @@ class SiriShortcutsService {
    * Execute the action requested by Siri shortcut
    */
   private async executeSiriAction(action: string, params: any) {
-    console.log('SiriShortcuts: Executing action:', action, params);
     
     switch (action) {
       case 'create-audio':
@@ -90,7 +88,6 @@ class SiriShortcutsService {
         break;
       
       default:
-        console.log('SiriShortcuts: Unknown action:', action);
     }
   }
 
@@ -98,7 +95,6 @@ class SiriShortcutsService {
    * Navigate to feed page for manual audio creation
    */
   private navigateToCreateAudio() {
-    console.log('SiriShortcuts: Navigating to create audio');
     if (this.navigationCallback) {
       this.navigationCallback('create-audio');
     }
@@ -108,7 +104,6 @@ class SiriShortcutsService {
    * Navigate to auto-pick page for automatic audio creation
    */
   private navigateToAutoPick() {
-    console.log('SiriShortcuts: Navigating to auto-pick');
     if (this.navigationCallback) {
       this.navigationCallback('auto-pick');
     }
@@ -124,7 +119,6 @@ class SiriShortcutsService {
 
     // In a real implementation, this would use native iOS APIs
     // For now, we'll just log the donation
-    console.log('SiriShortcuts: Donating shortcut:', shortcut.title);
     
     // The actual donation would happen in native code
     // This is a placeholder for the native implementation
@@ -135,11 +129,11 @@ class SiriShortcutsService {
    * Log shortcut donation for development
    */
   private logShortcutDonation(shortcut: SiriShortcut) {
-    console.log('SiriShortcuts: Shortcut donated to Siri:', {
-      title: shortcut.title,
-      phrase: shortcut.suggestedInvocationPhrase,
-      activityType: shortcut.activityType,
-    });
+    // console.log removed - shortcut donation logged: {
+    //   title: shortcut.title,
+    //   phrase: shortcut.suggestedInvocationPhrase,
+    //   activityType: shortcut.activityType,
+    // };
   }
 
   /**

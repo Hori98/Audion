@@ -80,7 +80,6 @@ export default function AudioCreationSuccessModal({
       // A simple notification sound file could be added to assets later
       
     } catch (error) {
-      console.log('Could not play notification sound:', error);
     }
   };
 

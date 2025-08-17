@@ -141,7 +141,6 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const playAudio = async (audioItem: AudioItem) => {
-    console.log('AudioContext: Playing audio with local support:', audioItem.title);
     setIsLoading(true);
 
     try {
@@ -149,7 +148,6 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       const localPath = await DownloadService.getLocalPath(audioItem.id);
       const audioUri = localPath || audioItem.audio_url;
       
-      console.log('🎵 Audio source:', localPath ? 'Local file' : 'Remote URL', audioUri);
 
       // Record previous audio completion if switching
       if (currentAudio && sound && currentAudio.id !== audioItem.id) {
@@ -220,7 +218,6 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       // If local file failed, try remote as fallback
       const localPathForFallback = await DownloadService.getLocalPath(audioItem.id);
       if (localPathForFallback && error) {
-        console.log('🔄 Local playback failed, trying remote fallback...');
         try {
           const { sound: fallbackSound } = await Audio.Sound.createAsync(
             { uri: audioItem.audio_url },
@@ -318,7 +315,6 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   };
 
   const seekTo = async (newPosition: number) => {
-    console.log('AudioContext: Attempting to seek to position:', newPosition, 'ms');
     
     if (!sound) {
       console.warn('AudioContext: No sound object available for seeking');
@@ -344,9 +340,6 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      console.log('AudioContext: Current position before seek:', status.positionMillis);
-      console.log('AudioContext: Sound duration:', status.durationMillis);
-      console.log('AudioContext: Seeking to:', newPosition);
 
       // Pause before seeking for better reliability
       const wasPlaying = status.isPlaying;
@@ -370,7 +363,6 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
 
       // Verify the seek worked
       const newStatus = await sound.getStatusAsync();
-      console.log('AudioContext: Position after seek:', newStatus.isLoaded ? newStatus.positionMillis : 'not loaded');
 
     } catch (error) {
       console.error('AudioContext: Error during seek operation:', error);
@@ -397,7 +389,6 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   const cleanupAudio = (audioId: string) => {
     // If the deleted audio is currently playing, stop it and clean up
     if (currentAudio && currentAudio.id === audioId) {
-      console.log('AudioContext: Cleaning up deleted audio:', audioId);
       
       // Stop the audio and clean up
       if (sound) {
@@ -460,12 +451,12 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
         params: requestData
       });
 
-      console.log('Interaction recorded:', {
-        type: interactionType,
-        audio: currentAudio.title,
-        completion: completionPercentage?.toFixed(1) + '%',
-        duration: playDuration + 's'
-      });
+      // console.log removed - interaction recorded: {
+      //   type: interactionType,
+      //   audio: currentAudio.title,
+      //   completion: completionPercentage?.toFixed(1) + '%',
+      //   duration: playDuration + 's'
+      // };
     } catch (error: any) {
       // If it's a 404 or 500 error, the audio might have been deleted
       if (error.response?.status === 404 || error.response?.status === 500) {
@@ -519,7 +510,6 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   // 🆕 Download functions
   const downloadAudio = async (audioItem: AudioItem) => {
     try {
-      console.log('🔽 Starting download for:', audioItem.title);
       
       // Add to downloading set
       setDownloadingAudios(prev => new Set([...prev, audioItem.id]));
@@ -551,7 +541,6 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
               file_size: progress.totalBytes 
             });
             
-            console.log('✅ Download completed:', audioItem.title);
           } else if (progress.status === 'failed') {
             setDownloadingAudios(prev => {
               const newSet = new Set(prev);
@@ -595,7 +584,6 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
 
   const removeDownload = async (audioId: string) => {
     try {
-      console.log('🗑️ Removing download for:', audioId);
       
       await DownloadService.removeDownload(audioId);
       
@@ -609,7 +597,6 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       // Record interaction
       await recordInteraction('download_removed', { audio_id: audioId });
       
-      console.log('✅ Download removed successfully');
     } catch (error) {
       console.error('❌ Failed to remove download:', error);
       throw error;

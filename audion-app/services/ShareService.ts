@@ -36,10 +36,8 @@ class ShareService {
       if (result.action === Share.sharedAction) {
         if (result.activityType) {
           // Shared via specific app
-          console.log('Article shared via:', result.activityType);
         } else {
           // Shared via general share
-          console.log('Article shared successfully');
         }
       }
     } catch (error) {

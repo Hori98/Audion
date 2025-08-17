@@ -8,23 +8,18 @@ export function useAppIconShortcuts() {
   useEffect(() => {
     // Navigation callback for app icon shortcuts
     const handleNavigation = (action: string) => {
-      console.log('useAppIconShortcuts: Handling navigation for action:', action);
       
       switch (action) {
         case 'auto-pick':
-          console.log('useAppIconShortcuts: Navigating to auto-pick');
           router.push('/auto-pick');
           break;
         case 'feed':
-          console.log('useAppIconShortcuts: Navigating to feed');
           router.push('/feed');
           break;
         case 'library':
-          console.log('useAppIconShortcuts: Navigating to library');
           router.push('/library');
           break;
         default:
-          console.log('useAppIconShortcuts: Unknown action:', action);
       }
     };
 

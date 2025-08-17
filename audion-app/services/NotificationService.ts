@@ -76,7 +76,6 @@ class NotificationService {
       this.setupNotificationListeners();
 
       this.isInitialized = true;
-      console.log('NotificationService initialized successfully');
     } catch (error) {
       console.error('Failed to initialize NotificationService:', error);
     }
@@ -148,12 +147,10 @@ class NotificationService {
 
     // Handle notification received while app is in foreground
     Notifications.addNotificationReceivedListener((notification) => {
-      console.log('Notification received in foreground:', notification);
     });
   }
 
   private handleNotificationResponse(data: any) {
-    console.log('Notification tapped with data:', data);
     
     switch (data?.type) {
       case 'audio_ready':
@@ -173,16 +170,13 @@ class NotificationService {
 
   private handleAudioReadyTap(audioId?: string) {
     // TODO: Implement navigation to audio player
-    console.log('Navigate to audio player for:', audioId);
   }
 
   private handleScheduleErrorTap() {
     // TODO: Implement navigation to schedule settings
-    console.log('Navigate to schedule settings');
   }
 
   private handlePreNotificationTap() {
-    console.log('Pre-notification tapped - showing preparation UI');
   }
 
   async sendScheduleDeliveryNotification(
@@ -227,7 +221,6 @@ class NotificationService {
 
     // Web platform doesn't support native notifications
     if (Platform.OS === 'web') {
-      console.log('📱 Web platform: Skipping native notification for:', audioTitle);
       return;
     }
 
@@ -253,7 +246,6 @@ class NotificationService {
         },
       });
 
-      console.log('Audio ready notification sent for:', audioTitle);
     } catch (error) {
       console.error('Error sending audio ready notification:', error);
     }
@@ -393,7 +385,6 @@ class NotificationService {
       
       await AsyncStorage.setItem('notification_settings', JSON.stringify(newSettings));
       
-      console.log('Notification settings updated:', newSettings);
     } catch (error) {
       console.error('Error updating notification settings:', error);
     }
@@ -403,7 +394,6 @@ class NotificationService {
     try {
       await Notifications.dismissAllNotificationsAsync();
       await Notifications.cancelAllScheduledNotificationsAsync();
-      console.log('All notifications cleared');
     } catch (error) {
       console.error('Error clearing notifications:', error);
     }
@@ -641,7 +631,6 @@ class NotificationService {
 
   // Enhanced notification response handler
   private handleNotificationResponse(data: any) {
-    console.log('Notification tapped with data:', data);
     
     switch (data?.type) {
       case 'audio_ready':
@@ -661,23 +650,19 @@ class NotificationService {
         this.handleDailyDigestTap();
         break;
       default:
-        console.log('Unknown notification type:', data?.type);
     }
   }
 
   private handleBreakingNewsTap(articleId: string, articleData?: string) {
-    console.log('Handle breaking news tap:', articleId);
     // Navigate to article detail
     // This should be handled by the navigation service
   }
 
   private handleBookmarkReminderTap() {
-    console.log('Handle bookmark reminder tap');
     // Navigate to bookmarks/library
   }
 
   private handleDailyDigestTap() {
-    console.log('Handle daily digest tap');
     // Navigate to home screen
   }
 
@@ -704,7 +689,6 @@ class NotificationService {
         await this.sendBookmarkReminderNotification([{}, {}, {}]); // 3 articles
         break;
     }
-    console.log(`Test notification sent: ${type}`);
   }
 }
 

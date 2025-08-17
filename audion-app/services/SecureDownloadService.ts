@@ -53,7 +53,6 @@ export class SecureDownloadService {
       if (await this.isSecureAudioDownloaded(audioId)) {
         const existingPath = await this.getSecureLocalPath(audioId);
         if (existingPath && await this.verifySecureFile(existingPath, userId)) {
-          console.log('🔒 Secure audio already downloaded:', existingPath);
           return existingPath;
         }
       }
@@ -63,7 +62,6 @@ export class SecureDownloadService {
         this.progressListeners.set(audioId, onProgress);
       }
 
-      console.log('🔽 Starting secure download:', { audioId, encryptedPath });
 
       // 一時ファイルをダウンロード
       const tempPath = `${FileSystem.cacheDirectory}temp_${audioId}.mp3`;
@@ -124,7 +122,6 @@ export class SecureDownloadService {
         }
 
         this.progressListeners.delete(audioId);
-        console.log('✅ Secure download completed:', encryptedPath);
         return encryptedPath;
       } else {
         throw new Error('Secure download failed - no result');
@@ -174,7 +171,6 @@ export class SecureDownloadService {
       setTimeout(async () => {
         try {
           await FileSystem.deleteAsync(tempPlaybackPath);
-          console.log('🗑️ Temporary playback file cleaned up:', tempPlaybackPath);
         } catch (error) {
           console.warn('Failed to cleanup temp playback file:', error);
         }
@@ -199,7 +195,6 @@ export class SecureDownloadService {
       // 暗号化ファイルを削除
       if (await FileSystem.getInfoAsync(secureAudio.encryptedPath)) {
         await FileSystem.deleteAsync(secureAudio.encryptedPath);
-        console.log('🔒 Encrypted file deleted:', secureAudio.encryptedPath);
       }
 
       // メタデータを削除
@@ -207,7 +202,6 @@ export class SecureDownloadService {
       const filteredAudios = secureAudios.filter(audio => audio.audioId !== audioId);
       await AsyncStorage.setItem(this.SECURE_STORAGE_KEY, JSON.stringify(filteredAudios));
       
-      console.log('✅ Secure download completely removed:', audioId);
     } catch (error) {
       console.error('❌ Failed to remove secure download:', error);
       throw error;
@@ -238,7 +232,6 @@ export class SecureDownloadService {
       const encryptedData = this.simpleEncrypt(sourceData, key);
       
       await FileSystem.writeAsStringAsync(targetPath, encryptedData, { encoding: FileSystem.EncodingType.UTF8 });
-      console.log('🔐 File encrypted and stored:', targetPath);
       
     } catch (error) {
       console.error('❌ Encryption failed:', error);
@@ -255,7 +248,6 @@ export class SecureDownloadService {
       const decryptedData = this.simpleDecrypt(encryptedData, key);
       
       await FileSystem.writeAsStringAsync(tempPath, decryptedData, { encoding: FileSystem.EncodingType.Base64 });
-      console.log('🔓 File decrypted to temp:', tempPath);
       
     } catch (error) {
       console.error('❌ Decryption failed:', error);
@@ -344,7 +336,6 @@ export class SecureDownloadService {
     const dirInfo = await FileSystem.getInfoAsync(this.SECURE_DIRECTORY);
     if (!dirInfo.exists) {
       await FileSystem.makeDirectoryAsync(this.SECURE_DIRECTORY, { intermediates: true });
-      console.log('🔒 Secure directory created');
     }
   }
 
