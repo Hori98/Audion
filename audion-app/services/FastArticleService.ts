@@ -39,7 +39,6 @@ class FastArticleService {
   private initializeBackgroundUpdates(): void {
     // Update every 15 minutes in background
     this.preloadInterval = setInterval(async () => {
-      console.log('🚀 Background article preload starting...');
       await this.preloadArticles();
     }, 15 * 60 * 1000);
   }
@@ -61,10 +60,8 @@ class FastArticleService {
         this.articles = cleanedArticles;
         await this.saveToStorage(cleanedArticles);
         await this.markBackgroundUpdate();
-        console.log(`🚀 Background preload complete: ${cleanedArticles.length} articles`);
       }
     } catch (error) {
-      console.log('🚀 Background preload failed (silent)');
     }
   }
 
@@ -72,11 +69,9 @@ class FastArticleService {
    * Ultra-fast article retrieval (cache-first strategy)
    */
   async getArticlesFast(token?: string): Promise<Article[]> {
-    console.log('⚡ FastArticleService: Getting articles...');
 
     // 1. Instant return if we have cached articles
     if (this.articles.length > 0) {
-      console.log(`⚡ Instant cache hit: ${this.articles.length} articles`);
       this.backgroundRefreshIfNeeded(token);
       return this.articles;
     }
@@ -85,7 +80,6 @@ class FastArticleService {
     const cached = await this.loadFromStorage();
     if (cached.length > 0) {
       this.articles = cached;
-      console.log(`⚡ Storage cache hit: ${cached.length} articles`);
       this.backgroundRefreshIfNeeded(token);
       return cached;
     }
@@ -121,7 +115,6 @@ class FastArticleService {
 
     try {
       if (!isBackground) {
-        console.log('⚡ Fast fetch starting...');
       }
 
       const headers: any = {};
@@ -145,7 +138,6 @@ class FastArticleService {
         await this.saveToStorage(cleanedArticles);
         
         if (!isBackground) {
-          console.log(`⚡ Fast fetch complete: ${cleanedArticles.length} articles`);
         }
         
         return cleanedArticles;
@@ -233,7 +225,6 @@ class FastArticleService {
         }
       }
     } catch (error) {
-      console.log('⚡ Storage load failed (silent)');
     }
     return [];
   }
@@ -251,7 +242,6 @@ class FastArticleService {
         await AsyncStorage.setItem(this.STORAGE_KEY, dataToStore);
       }
     } catch (error) {
-      console.log('⚡ Storage save failed (silent)');
     }
   }
 

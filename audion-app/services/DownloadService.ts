@@ -46,7 +46,6 @@ export class DownloadService {
       if (await this.isAudioDownloaded(audioId)) {
         const existingPath = await this.getLocalPath(audioId);
         if (existingPath && await FileSystem.getInfoAsync(existingPath)) {
-          console.log('📱 Audio already downloaded:', existingPath);
           return existingPath;
         }
       }
@@ -56,7 +55,6 @@ export class DownloadService {
         this.progressListeners.set(audioId, onProgress);
       }
 
-      console.log('📥 Starting download:', { audioId, audioUrl, localPath });
 
       // ダウンロード実行
       const downloadResumable = FileSystem.createDownloadResumable(
@@ -112,7 +110,6 @@ export class DownloadService {
         // リスナーを削除
         this.progressListeners.delete(audioId);
 
-        console.log('✅ Download completed:', result.uri);
         return result.uri;
       } else {
         throw new Error('Download failed - no result');
@@ -177,7 +174,6 @@ export class DownloadService {
         const fileInfo = await FileSystem.getInfoAsync(localPath);
         if (fileInfo.exists) {
           await FileSystem.deleteAsync(localPath);
-          console.log('🗑️ Local file deleted:', localPath);
         }
       }
 
@@ -186,7 +182,6 @@ export class DownloadService {
       const updatedAudios = downloadedAudios.filter(audio => audio.audioId !== audioId);
       await AsyncStorage.setItem(this.DOWNLOADS_STORAGE_KEY, JSON.stringify(updatedAudios));
       
-      console.log('✅ Download info removed for:', audioId);
     } catch (error) {
       console.error('❌ Failed to remove download:', error);
       throw error;
@@ -226,7 +221,6 @@ export class DownloadService {
       const dirInfo = await FileSystem.getInfoAsync(this.DOWNLOAD_DIRECTORY);
       if (!dirInfo.exists) {
         await FileSystem.makeDirectoryAsync(this.DOWNLOAD_DIRECTORY, { intermediates: true });
-        console.log('📁 Download directory created');
       }
     } catch (error) {
       console.error('❌ Failed to create download directory:', error);
@@ -263,7 +257,6 @@ export class DownloadService {
     // 現在のDownloadResumableインスタンスを保持する仕組みが必要
     // 将来の機能拡張として実装予定
     this.progressListeners.delete(audioId);
-    console.log('🚫 Download cancelled:', audioId);
   }
 
   /**

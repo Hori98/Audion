@@ -117,7 +117,6 @@ export const LanguageProvider: React.FC<LanguageProviderProps> = ({ children }) 
     try {
       await AsyncStorage.setItem(LANGUAGE_KEY, language);
       await changeLanguage(language);
-      console.log('UI language changed to:', language);
     } catch (error) {
       console.error('Error setting UI language:', error);
     }
@@ -127,7 +126,6 @@ export const LanguageProvider: React.FC<LanguageProviderProps> = ({ children }) 
     try {
       await AsyncStorage.setItem(VOICE_LANGUAGE_KEY, voiceLanguage);
       setCurrentVoiceLanguage(voiceLanguage);
-      console.log('Voice language changed to:', voiceLanguage);
     } catch (error) {
       console.error('Error setting voice language:', error);
     }

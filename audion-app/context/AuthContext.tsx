@@ -49,9 +49,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   const initializeConnection = async () => {
     try {
-      console.log('🔄 Initializing backend connection...');
       await connectionService.ensureConnection();
-      console.log('✅ Backend connection established');
     } catch (error) {
       console.warn('⚠️ Backend connection failed, continuing in offline mode:', error?.message || error);
       // Continue with app initialization in offline mode
@@ -62,7 +60,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const checkUserOnboardStatus = async (userToken: string) => {
     // Don't check if no token provided
     if (!userToken || userToken.trim() === '') {
-      console.log('No valid token provided for onboard status check');
       setIsNewUser(true);
       return;
     }
@@ -84,12 +81,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       // Handle authentication errors (401, 403) and 404 errors which might be auth-related
       if (error?.response?.status === 401 || error?.response?.status === 403 || 
           error?.response?.status === 404) {
-        console.log(`Authentication/access failed during onboard status check (${error?.response?.status}), clearing token`);
         await handleAuthError();
         return;
       }
       
-      console.log('Could not check user onboard status (non-auth error):', error.message || error);
       
       // For other errors (network, server issues), default to existing user
       setIsNewUser(false);
@@ -118,7 +113,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
               created_at: new Date().toISOString() 
             });
           } catch (tokenError) {
-            console.log('Stored token is invalid, clearing authentication:', tokenError);
             // Token is invalid, clear stored auth data
             await AsyncStorage.removeItem('token');
             setToken(null);
@@ -199,7 +193,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   const forceLogout = async () => {
-    console.log('=== FORCE LOGOUT TRIGGERED ===');
     setToken(null);
     setUser(null);
     setIsNewUser(false);
@@ -214,7 +207,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         'isNewUser',
         'feed_selected_articles'
       ]);
-      console.log('Auth storage cleared successfully');
     } catch (error) {
       console.error('Error clearing auth storage:', error);
     }
@@ -223,12 +215,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     setLoading(true);
     setTimeout(() => {
       setLoading(false);
-      console.log('Force logout completed');
     }, 100);
   };
 
   const handleAuthError = async () => {
-    console.log('=== HANDLING AUTH ERROR - SIMPLE LOGOUT ===');
     try {
       // Clear storage with error handling
       await AsyncStorage.multiRemove([
@@ -247,7 +237,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       setUser(null);
       setIsNewUser(false);
       
-      console.log('Auth error handled successfully');
     } catch (error) {
       console.error('Critical auth error handling failure:', error);
     }

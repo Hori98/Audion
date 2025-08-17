@@ -59,9 +59,6 @@ export default function DebugMenu({ visible, onClose }: DebugMenuProps) {
       const forced = settings.forcedSubscriptionTier;
       setForcedTier(forced);
       
-      console.log('🧪 Debug settings loaded:', settings);
-      console.log('🎯 Forced tier from settings:', forced);
-      console.log('🎯 Forced tier from service:', DebugService.getForcedSubscriptionTier());
     } catch (error) {
       console.error('Failed to load debug settings:', error);
     }
@@ -127,7 +124,6 @@ export default function DebugMenu({ visible, onClose }: DebugMenuProps) {
         {
           text: 'Confirm',
           onPress: async () => {
-            console.log('🔄 Setting forced tier to:', tier);
             await DebugService.setForcedSubscriptionTier(tier);
             await loadDebugSettings(); // Reload to update UI
             Alert.alert('Success', `Forced subscription tier set to ${tier}`);
@@ -138,7 +134,6 @@ export default function DebugMenu({ visible, onClose }: DebugMenuProps) {
   };
 
   const handleClearForcedTier = async () => {
-    console.log('🧙 Clearing forced tier');
     await DebugService.setForcedSubscriptionTier(undefined);
     await loadDebugSettings(); // Reload to update UI
     Alert.alert('Success', 'Forced subscription tier cleared');
@@ -154,7 +149,6 @@ export default function DebugMenu({ visible, onClose }: DebugMenuProps) {
           text: 'Reset',
           style: 'destructive',
           onPress: async () => {
-            console.log('🗟️ Resetting all debug settings');
             await DebugService.resetDebugSettings();
             
             // 🔐 デバッグモード状態を保持しつつ設定をリセット

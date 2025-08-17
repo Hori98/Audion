@@ -65,11 +65,35 @@ export class CacheService {
 
   async clear(): Promise<void> {
     try {
+      console.log('🗑️ CacheService - Starting comprehensive cache clear...');
+      
+      // Get all keys from AsyncStorage
       const keys = await AsyncStorage.getAllKeys();
-      const cacheKeys = keys.filter(key => key.startsWith('cache_'));
-      await AsyncStorage.multiRemove(cacheKeys);
+      console.log(`🗑️ CacheService - Found ${keys.length} total AsyncStorage keys`);
+      
+      // Find all cache-related keys (broader pattern to catch all cached data)
+      const cacheKeys = keys.filter(key => 
+        key.startsWith('cache_') || 
+        key.includes('_cache') ||
+        key.startsWith('articles_') ||
+        key.startsWith('rss_') ||
+        key.includes('personalization') ||
+        key.includes('search_history') ||
+        key.includes('archived_articles') ||
+        key.includes('bookmarks')
+      );
+      
+      console.log(`🗑️ CacheService - Found ${cacheKeys.length} cache keys to remove:`, cacheKeys);
+      
+      if (cacheKeys.length > 0) {
+        await AsyncStorage.multiRemove(cacheKeys);
+        console.log(`🗑️ CacheService - Successfully removed ${cacheKeys.length} cache entries`);
+      } else {
+        console.log('🗑️ CacheService - No cache keys found to remove');
+      }
     } catch (error) {
-      console.error('Cache clear error:', error);
+      console.error('🗑️ CacheService - Cache clear error:', error);
+      throw error;
     }
   }
 

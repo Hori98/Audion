@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert, RefreshControl, Modal, Platform, Animated, Easing, TextInput, SafeAreaView } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert, RefreshControl, Modal, Platform, Animated, Easing, TextInput, SafeAreaView, Linking } from 'react-native';
 import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
 import { useAudio } from '../../context/AudioContext';
@@ -8,7 +8,7 @@ import { useLanguage } from '../../context/LanguageContext';
 import { useTranslation } from 'react-i18next';
 import { format } from 'date-fns';
 import { useFocusEffect } from '@react-navigation/native';
-import * as WebBrowser from 'expo-web-browser';
+// Removed expo-web-browser - using native reader mode instead
 import { Ionicons } from '@expo/vector-icons'; // Added import
 import { useSiriShortcuts } from '../../hooks/useSiriShortcuts';
 import AudioCreationSuccessModal from '../../components/AudioCreationSuccessModal';
@@ -104,13 +104,17 @@ export default function FeedScreen() {
     React.useCallback(() => {
       const initializeData = async () => {
         if (token && token !== '') {
+          console.log('📰 Feed - Starting initialization...');
           await loadGlobalSelection();
           await loadArchivedArticles();
           await loadReadingHistory();
           await loadReadLaterStatus();
           // Force refresh sources to get latest changes from sources screen
+          console.log('📰 Feed - Loading sources...');
           await fetchSources(true);
+          console.log('📰 Feed - Loading articles...');
           await fetchArticles();
+          console.log('📰 Feed - Initialization complete');
         }
       };
       initializeData();
@@ -143,7 +147,6 @@ export default function FeedScreen() {
     const initNotifications = async () => {
       try {
         await NotificationService.getInstance().initialize();
-        console.log('✅ Feed: NotificationService initialized');
       } catch (error) {
         console.error('❌ Feed: Failed to initialize NotificationService:', error);
       }
@@ -413,6 +416,7 @@ export default function FeedScreen() {
   };
 
   const fetchArticles = async () => {
+    console.log('📰 Feed - fetchArticles started');
     setLoading(true);
     try {
       const filters = {
@@ -423,9 +427,11 @@ export default function FeedScreen() {
       // Try cache first
       const cachedArticles = await CacheService.getArticles(filters);
       if (cachedArticles) {
+        console.log(`📰 Feed - Found ${cachedArticles.length} cached articles`);
         
         // Normalize articles to prevent duplicates
         const normalizedCachedArticles = normalizeArticles(cachedArticles);
+        console.log(`📰 Feed - Normalized to ${normalizedCachedArticles.length} articles`);
         setArticles(normalizedCachedArticles);
         
         // Force UI update after cached articles are set
@@ -457,6 +463,7 @@ export default function FeedScreen() {
           return newMap;
         });
         
+        console.log('📰 Feed - Cached articles loaded successfully');
         setLoading(false);
         return;
       }
@@ -469,10 +476,13 @@ export default function FeedScreen() {
       if (selectedSource !== 'All') {
         params.source = selectedSource;
       }
+      console.log('📰 Feed - Fetching articles from API...');
       const response = await axios.get(`${API}/articles`, { headers, params });
+      console.log(`📰 Feed - API returned ${response.data.length} articles`);
       
       // Normalize articles to prevent duplicates
       const normalizedArticles = normalizeArticles(response.data);
+      console.log(`📰 Feed - Normalized to ${normalizedArticles.length} articles`);
       
       // Cache the results
       await CacheService.setArticles(normalizedArticles, filters);
@@ -507,42 +517,66 @@ export default function FeedScreen() {
         return newMap;
       });
     } catch (error: any) {
-      console.error('Error fetching articles:', error);
+      console.error('📰 Feed - Error fetching articles:', error);
       ErrorHandlingService.showError(error, { 
         action: 'fetch_articles',
         source: 'Feed Screen',
         details: { genre: selectedGenre, source: selectedSource }
       });
     } finally {
+      console.log('📰 Feed - fetchArticles completed');
       setLoading(false);
     }
   };
 
   const onRefresh = async () => {
+    console.log('📰 Feed - Pull-to-refresh triggered');
     setRefreshing(true);
-    // Clear relevant caches to force fresh data
-    await CacheService.remove('rss_sources');
-    const filters = {
-      ...(selectedGenre !== 'All' && { genre: selectedGenre }),
-      ...(selectedSource !== 'All' && { source: selectedSource })
-    };
-    const cacheKey = CacheService.getArticlesCacheKey(filters);
-    await CacheService.remove(cacheKey);
-    
-    // Force refresh sources to get latest source changes
-    await Promise.all([fetchSources(true), fetchArticles()]);
-    setRefreshing(false);
+    try {
+      // Clear relevant caches to force fresh data
+      console.log('📰 Feed - Clearing RSS sources cache');
+      await CacheService.remove('rss_sources');
+      const filters = {
+        ...(selectedGenre !== 'All' && { genre: selectedGenre }),
+        ...(selectedSource !== 'All' && { source: selectedSource })
+      };
+      const cacheKey = CacheService.getArticlesCacheKey(filters);
+      console.log('📰 Feed - Clearing articles cache key:', cacheKey);
+      await CacheService.remove(cacheKey);
+      
+      // Force refresh sources to get latest source changes
+      console.log('📰 Feed - Fetching fresh sources and articles...');
+      await Promise.all([fetchSources(true), fetchArticles()]);
+      console.log('📰 Feed - Fresh data fetched successfully');
+    } catch (error) {
+      console.error('📰 Feed - Error during refresh:', error);
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   const handleArticlePress = async (url: string, article?: Article) => {
     if (url) {
       try {
+        console.log('📰 Feed - Article clicked:', article?.title || url);
+        
         // Record reading history before opening article
         if (article) {
           await recordArticleReading(article);
         }
         
-        await WebBrowser.openBrowserAsync(url);
+        // TEMPORARY WORKAROUND: Use external browser until router issue is fixed (same as Home)
+        console.log('📰 Feed - Opening article in browser (temporary fix)');
+        await Linking.openURL(url);
+        
+        // TODO: Fix router navigation to article-detail
+        // Once resolved, restore this code:
+        // if (article) {
+        //   router.push({
+        //     pathname: '/article-detail',
+        //     params: { articleData: JSON.stringify(article) }
+        //   });
+        // }
       } catch (error: any) {
         console.error('Error opening article:', error);
         ErrorHandlingService.showError(error, { 
@@ -704,9 +738,6 @@ export default function FeedScreen() {
       return;
     }
 
-    console.log('🎬 Starting audio creation with debug check...');
-    console.log('🧪 Debug mode enabled:', require('../../services/DebugService').default.isDebugModeEnabled());
-    console.log('🧪 Should bypass limits:', require('../../services/DebugService').default.shouldBypassSubscriptionLimits());
 
     setCreatingAudio(true);
     try {
@@ -741,15 +772,12 @@ export default function FeedScreen() {
       const articleUrls = selectedArticles.map((article) => article.link);
 
       // Debug voice language setting
-      console.log('🎤 Manual Pick Audio Creation - Voice Language:', currentVoiceLanguage);
-      console.log('🎤 Manual Pick Audio Creation - Prompt Data:', promptData);
       
       // Add debug headers if bypass is enabled
       const headers: any = { Authorization: `Bearer ${token}` };
       if (require('../../services/DebugService').default.shouldBypassSubscriptionLimits()) {
         headers['X-Debug-Bypass-Limits'] = 'true';
         headers['X-Debug-Mode'] = 'true';
-        console.log('🧪 Adding debug headers to API request');
       }
 
       const response = await axios.post(
@@ -806,7 +834,6 @@ export default function FeedScreen() {
           selectedArticles.length,
           response.data.id
         );
-        console.log('✅ Audio ready notification sent for manual selection');
       } catch (notifError) {
         console.error('❌ Failed to send audio ready notification:', notifError);
       }
@@ -838,7 +865,6 @@ export default function FeedScreen() {
             { text: 'OK', style: 'default' },
             { text: 'View Usage', onPress: () => {
               // TODO: Navigate to subscription/usage page
-              console.log('Usage info:', errorData.usage_info);
             }}
           ]
         );
@@ -991,7 +1017,6 @@ export default function FeedScreen() {
       if (require('../../services/DebugService').default.shouldBypassSubscriptionLimits()) {
         headers['X-Debug-Bypass-Limits'] = 'true';
         headers['X-Debug-Mode'] = 'true';
-        console.log('🧪 Adding debug headers to single audio API request');
       }
 
       const response = await axios.post(
@@ -1041,7 +1066,6 @@ export default function FeedScreen() {
           1,
           response.data.id
         );
-        console.log('✅ Audio ready notification sent for single article');
       } catch (notifError) {
         console.error('❌ Failed to send audio ready notification:', notifError);
       }
@@ -1060,7 +1084,6 @@ export default function FeedScreen() {
           [
             { text: 'OK', style: 'default' },
             { text: 'View Usage', onPress: () => {
-              console.log('Usage info:', errorData.usage_info);
             }}
           ]
         );
@@ -1112,7 +1135,6 @@ export default function FeedScreen() {
       if (require('../../services/DebugService').default.shouldBypassSubscriptionLimits()) {
         headers['X-Debug-Bypass-Limits'] = 'true';
         headers['X-Debug-Mode'] = 'true';
-        console.log('🧪 Adding debug headers to weekly audio API request');
       }
 
       const response = await axios.post(
@@ -1167,7 +1189,6 @@ export default function FeedScreen() {
           articleCount,
           response.data.id
         );
-        console.log('✅ Audio ready notification sent for weekly digest');
       } catch (notifError) {
         console.error('❌ Failed to send audio ready notification:', notifError);
       }
@@ -1185,7 +1206,6 @@ export default function FeedScreen() {
           [
             { text: 'OK', style: 'default' },
             { text: 'View Usage', onPress: () => {
-              console.log('Usage info:', errorData.usage_info);
             }}
           ]
         );

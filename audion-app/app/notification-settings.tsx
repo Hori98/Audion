@@ -46,7 +46,6 @@ export default function NotificationSettingsScreen() {
 
     try {
       await NotificationService.getInstance().updateNotificationSettings({ [key]: value });
-      console.log('Notification setting updated:', key, value);
     } catch (error) {
       console.error('Failed to update notification setting:', error);
       Alert.alert('Error', 'Failed to update notification setting');

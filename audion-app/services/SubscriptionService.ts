@@ -65,12 +65,10 @@ class SubscriptionService {
       const forcedTier = debugService.getForcedSubscriptionTier();
       
       if (forcedTier && debugService.isDebugModeEnabled()) {
-        console.log(`🧪 Debug: Using forced subscription tier: ${forcedTier}`);
         return forcedTier;
       }
       
       if (debugService.isMockPremiumUser()) {
-        console.log('🧪 Debug: Using mock premium user');
         return SubscriptionTier.PREMIUM;
       }
     } catch (error) {
@@ -94,7 +92,6 @@ class SubscriptionService {
       const debugService = await getDebugService();
       
       if (debugService.shouldBypassSubscriptionLimits()) {
-        console.log('🧪 Debug: Bypassing subscription limits');
         return {
           maxArticlesPerEpisode: 99,
           availableArticleCounts: [1, 3, 5, 7, 10, 15, 20, 30, 50],

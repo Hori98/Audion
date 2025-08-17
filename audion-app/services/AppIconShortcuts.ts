@@ -61,7 +61,6 @@ class AppIconShortcutsService {
   private handleDeepLink = ({ url }: { url: string }) => {
     // Only log in development mode and exclude expo dev server URLs
     if (__DEV__ && !url.includes('192.0.0.2') && !url.startsWith('exp://')) {
-      console.log('AppIconShortcuts: Received deep link:', url);
     }
     
     const { path, queryParams } = Linking.parse(url);
@@ -76,7 +75,6 @@ class AppIconShortcutsService {
    * Execute the action requested by app icon shortcut
    */
   private async executeShortcutAction(action: string) {
-    console.log('AppIconShortcuts: Executing action:', action);
     
     switch (action) {
       case 'auto-pick':
@@ -92,7 +90,6 @@ class AppIconShortcutsService {
         break;
       
       default:
-        console.log('AppIconShortcuts: Unknown action:', action);
     }
   }
 
@@ -100,7 +97,6 @@ class AppIconShortcutsService {
    * Navigate to auto-pick page
    */
   private navigateToAutoPick() {
-    console.log('AppIconShortcuts: Navigating to auto-pick');
     if (this.navigationCallback) {
       this.navigationCallback('auto-pick');
     }
@@ -110,7 +106,6 @@ class AppIconShortcutsService {
    * Navigate to feed page
    */
   private navigateToFeed() {
-    console.log('AppIconShortcuts: Navigating to feed');
     if (this.navigationCallback) {
       this.navigationCallback('feed');
     }
@@ -120,7 +115,6 @@ class AppIconShortcutsService {
    * Navigate to library page
    */
   private navigateToLibrary() {
-    console.log('AppIconShortcuts: Navigating to library');
     if (this.navigationCallback) {
       this.navigationCallback('library');
     }
@@ -153,12 +147,10 @@ class AppIconShortcutsService {
    */
   createDynamicShortcut(shortcut: Partial<AppIconShortcut>) {
     if (!this.isSupported()) {
-      console.log('AppIconShortcuts: Dynamic shortcuts not supported on this platform');
       return;
     }
 
     // This would require native iOS implementation
-    console.log('AppIconShortcuts: Creating dynamic shortcut:', shortcut);
     
     // Placeholder for native implementation
     this.logDynamicShortcutCreation(shortcut);
@@ -168,11 +160,11 @@ class AppIconShortcutsService {
    * Log dynamic shortcut creation for development
    */
   private logDynamicShortcutCreation(shortcut: Partial<AppIconShortcut>) {
-    console.log('AppIconShortcuts: Dynamic shortcut created:', {
-      type: shortcut.type,
-      title: shortcut.title,
-      subtitle: shortcut.subtitle,
-    });
+    // console.log removed - dynamic shortcut creation logged: {
+    //   type: shortcut.type,
+    //   title: shortcut.title,
+    //   subtitle: shortcut.subtitle,
+    // });
   }
 }
 

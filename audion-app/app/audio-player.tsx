@@ -34,7 +34,6 @@ export default function AudioPlayerScreen() {
   const [audioItem, setAudioItem] = useState<AudioItem | null>(null);
 
   useEffect(() => {
-    console.log('Received audioData:', audioData);
     if (audioData) {
       try {
         let parsedAudio;
@@ -43,7 +42,6 @@ export default function AudioPlayerScreen() {
         } else {
           parsedAudio = JSON.parse(audioData as string);
         }
-        console.log('Parsed audio item:', parsedAudio);
         setAudioItem(parsedAudio);
         setDuration(parsedAudio.duration * 1000 || 0); // Convert to milliseconds
       } catch (error) {

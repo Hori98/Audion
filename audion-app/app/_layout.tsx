@@ -38,7 +38,6 @@ const InitialLayout = () => {
     const initNotifications = async () => {
       try {
         await NotificationService.getInstance().initialize();
-        console.log('✅ App: NotificationService initialized');
       } catch (error) {
         console.error('❌ App: Failed to initialize NotificationService:', error);
       }

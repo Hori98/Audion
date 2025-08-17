@@ -1,5 +1,5 @@
 import { Href, Link } from 'expo-router';
-import { openBrowserAsync } from 'expo-web-browser';
+// Removed expo-web-browser - keeping web behavior only
 import { type ComponentProps } from 'react';
 import { Platform } from 'react-native';
 
@@ -13,10 +13,10 @@ export function ExternalLink({ href, ...rest }: Props) {
       href={href}
       onPress={async (event) => {
         if (Platform.OS !== 'web') {
-          // Prevent the default behavior of linking to the default browser on native.
+          // Note: Native apps now use reader mode for articles
+          // This component is for general external links only
           event.preventDefault();
-          // Open the link in an in-app browser.
-          await openBrowserAsync(href);
+          console.warn('ExternalLink: Consider using router navigation for article links');
         }
       }}
     />

@@ -82,7 +82,6 @@ class AudioLimitService {
   async checkAudioLimits(token: string, articleCount: number): Promise<LimitCheckResult> {
     // 🧪 Debug: Bypass subscription limits if enabled
     if (DebugService.shouldBypassSubscriptionLimits()) {
-      console.log('🧪 Debug: Bypassing audio creation limits');
       return {
         can_create: true,
         error_message: '',
@@ -123,7 +122,6 @@ class AudioLimitService {
   async getMaxArticlesForUser(token: string): Promise<number> {
     // 🧪 Debug: Bypass subscription limits if enabled
     if (DebugService.shouldBypassSubscriptionLimits()) {
-      console.log('🧪 Debug: Returning unlimited article count');
       return 999;
     }
 
@@ -145,12 +143,9 @@ class AudioLimitService {
     maxAllowed?: number;
     remainingDaily?: number;
   }> {
-    console.log(`🔍 AudioLimitService: Validating creation for ${articleCount} articles`);
     
     // Load debug settings to ensure they are current
     await DebugService.loadDebugSettings();
-    console.log('🧪 AudioLimitService: Debug bypass enabled?', DebugService.shouldBypassSubscriptionLimits());
-    console.log('🧪 AudioLimitService: Current debug settings:', DebugService.getCurrentSettings());
     
     try {
       const result = await this.checkAudioLimits(token, articleCount);
