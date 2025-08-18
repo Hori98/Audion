@@ -75,9 +75,17 @@ export const LanguageProvider: React.FC<LanguageProviderProps> = ({ children }) 
       if (savedLanguage && (savedLanguage === 'en' || savedLanguage === 'ja')) {
         await changeLanguage(savedLanguage as SupportedLanguage);
       } else {
-        // Fall back to device locale for UI
-        const deviceLocale = Localization.locale || 'en-US';
-        const languageCode = deviceLocale.split('-')[0] || 'en';
+        // Fall back to device locale for UI with proper error handling
+        let deviceLocale = 'en-US';
+        try {
+          deviceLocale = Localization.locale || 'en-US';
+        } catch (error) {
+          console.warn('Error getting device locale, using default:', error);
+        }
+        
+        const languageCode = (deviceLocale && typeof deviceLocale === 'string') 
+          ? deviceLocale.split('-')[0] || 'en' 
+          : 'en';
         const detectedLang: SupportedLanguage = languageCode === 'ja' ? 'ja' : 'en';
         await changeLanguage(detectedLang);
       }
@@ -87,10 +95,16 @@ export const LanguageProvider: React.FC<LanguageProviderProps> = ({ children }) 
       if (savedVoiceLanguage && (savedVoiceLanguage === 'en-US' || savedVoiceLanguage === 'ja-JP')) {
         setCurrentVoiceLanguage(savedVoiceLanguage as SupportedVoiceLanguage);
       } else {
-        // Default voice language based on UI language
-        const deviceLocale = Localization.locale || 'en-US';
+        // Default voice language based on UI language with proper error handling
+        let deviceLocale = 'en-US';
+        try {
+          deviceLocale = Localization.locale || 'en-US';
+        } catch (error) {
+          console.warn('Error getting device locale for voice, using default:', error);
+        }
+        
         const defaultVoiceLanguage: SupportedVoiceLanguage = 
-          deviceLocale.startsWith('ja') ? 'ja-JP' : 'en-US';
+          (deviceLocale && typeof deviceLocale === 'string' && deviceLocale.startsWith('ja')) ? 'ja-JP' : 'en-US';
         setCurrentVoiceLanguage(defaultVoiceLanguage);
         await AsyncStorage.setItem(VOICE_LANGUAGE_KEY, defaultVoiceLanguage);
       }

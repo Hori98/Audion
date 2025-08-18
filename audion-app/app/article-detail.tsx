@@ -45,47 +45,33 @@ export default function ArticleDetailScreen() {
   // Add error boundary for this screen
   const [hasError, setHasError] = useState(false);
 
-  // Log lifecycle events
-  console.log('📰 ArticleDetail - Component mounted/rendered');
-
   useEffect(() => {
-    console.log('📰 ArticleDetail - useEffect triggered');
-    console.log('📰 ArticleDetail - Params received:', params);
+    console.log('Article detail useEffect triggered');
+    console.log('Params:', params);
     
     try {
       if (params.articleData) {
         try {
           const articleData = JSON.parse(params.articleData as string);
-          console.log('📰 ArticleDetail - Parsed article:', articleData);
+          console.log('Parsed article data successfully:', articleData.title);
           setArticle(articleData);
-        } catch (error) {
-          console.error('📰 ArticleDetail - Failed to parse article data:', error);
-          console.log('📰 ArticleDetail - Raw params.articleData:', params.articleData);
+          setHasError(false);
+        } catch (parseError) {
+          console.error('Failed to parse article data:', parseError);
+          console.log('Raw articleData:', params.articleData);
           setHasError(true);
         }
       } else {
-        console.log('📰 ArticleDetail - No articleData in params');
+        console.error('No articleData in params');
         setHasError(true);
       }
     } catch (error) {
-      console.error('📰 ArticleDetail - Unexpected error in useEffect:', error);
+      console.error('Unexpected error in useEffect:', error);
       setHasError(true);
     }
     
     setLoading(false);
   }, [params.articleData]);
-
-  // Add useEffect to detect when component is unmounting or re-rendering
-  useEffect(() => {
-    return () => {
-      console.log('📰 ArticleDetail - Component unmounting or re-rendering');
-    };
-  }, []);
-
-  // Log when article changes
-  useEffect(() => {
-    console.log('📰 ArticleDetail - Article state changed:', article?.title);
-  }, [article]);
 
   const formatDate = (dateString: string) => {
     try {
@@ -102,23 +88,20 @@ export default function ArticleDetailScreen() {
   };
 
   const openInBrowser = async () => {
-    console.log('📰 ArticleDetail - Opening in browser:', article?.link);
     if (article?.link) {
       try {
         await Linking.openURL(article.link);
       } catch (error) {
-        console.error('📰 ArticleDetail - Error opening browser:', error);
+        console.error('Error opening browser:', error);
       }
     }
   };
 
   const shareArticle = () => {
-    console.log('📰 ArticleDetail - Share button pressed');
     // TODO: Implement sharing functionality
   };
 
   const handleBack = () => {
-    console.log('📰 ArticleDetail - Back button pressed manually');
     router.back();
   };
 
@@ -135,20 +118,34 @@ export default function ArticleDetailScreen() {
     );
   }
 
-  if (!article && !loading) {
-    console.log('📰 ArticleDetail - No article found, showing error screen');
+  if (hasError || (!article && !loading)) {
+    console.log('Rendering error screen. hasError:', hasError, 'article:', !!article, 'loading:', loading);
     return (
       <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
+        <View style={[styles.header, { borderBottomColor: theme.border }]}>
+          <TouchableOpacity 
+            style={styles.headerButton}
+            onPress={handleBack}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="arrow-back" size={24} color={theme.text} />
+          </TouchableOpacity>
+          <View style={styles.headerActions} />
+        </View>
+        
         <View style={styles.errorContainer}>
           <Ionicons name="alert-circle-outline" size={64} color={theme.textMuted} />
           <Text style={[styles.errorText, { color: theme.text }]}>
-            Article not found
+            記事が見つかりません
+          </Text>
+          <Text style={[styles.errorSubText, { color: theme.textSecondary }]}>
+            {hasError ? 'データの解析に失敗しました' : '記事データがありません'}
           </Text>
           <TouchableOpacity
             style={[styles.backButton, { backgroundColor: theme.primary }]}
             onPress={handleBack}
           >
-            <Text style={styles.backButtonText}>Go Back</Text>
+            <Text style={styles.backButtonText}>戻る</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
@@ -157,45 +154,95 @@ export default function ArticleDetailScreen() {
 
   // If we somehow got here without an article, don't render anything
   if (!article) {
-    console.log('📰 ArticleDetail - No article but still loading, rendering nothing');
     return null;
   }
 
-  console.log('📰 ArticleDetail - About to render main content');
-  console.log('📰 ArticleDetail - Rendering with viewMode:', viewMode);
-  console.log('📰 ArticleDetail - Article object:', article);
+  // Simplified content rendering for debugging
+  const renderContent = () => {
+    // Always render summary mode for now to debug the issue
+    return (
+      <ScrollView style={styles.contentContainer} showsVerticalScrollIndicator={false}>
+        <View style={styles.contentPadding}>
+          <Text style={[styles.articleTitle, { color: theme.text }]}>
+            {article.title}
+          </Text>
+          
+          <View style={styles.metaInfo}>
+            <Text style={[styles.sourceText, { color: theme.primary }]}>
+              {article.source_name}
+            </Text>
+            <View style={styles.metaSeparator} />
+            <Text style={[styles.dateText, { color: theme.textMuted }]}>
+              {formatDate(article.published || article.published_at)}
+            </Text>
+            {article.genre && (
+              <>
+                <View style={styles.metaSeparator} />
+                <View style={[styles.genreTag, { backgroundColor: theme.secondary }]}>
+                  <Text style={[styles.genreText, { color: theme.primary }]}>
+                    {article.genre}
+                  </Text>
+                </View>
+              </>
+            )}
+          </View>
+          
+          <Text style={[styles.summaryText, { color: theme.textSecondary }]}>
+            {article.summary}
+          </Text>
+          
+          <TouchableOpacity
+            style={[styles.readFullButton, { backgroundColor: theme.primary }]}
+            onPress={openInBrowser}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="globe-outline" size={20} color="#fff" />
+            <Text style={styles.readFullButtonText}>ブラウザで読む</Text>
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
+    );
+  };
 
-  // TEMPORARY: Force static display to debug auto-back issue
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
-      {/* Debug info */}
-      <View style={{ position: 'absolute', top: 50, left: 10, zIndex: 1000, backgroundColor: 'red', padding: 5 }}>
-        <Text style={{ color: 'white', fontSize: 10 }}>Article loaded: {article?.title?.substring(0, 20)}...</Text>
-        <Text style={{ color: 'white', fontSize: 10 }}>ViewMode: {viewMode}</Text>
-      </View>
-
-      {/* STATIC TEST CONTENT */}
-      <View style={{ flex: 1, padding: 20, backgroundColor: 'lightblue' }}>
+      {/* Header */}
+      <View style={[styles.header, { borderBottomColor: theme.border }]}>
         <TouchableOpacity 
+          style={styles.headerButton}
           onPress={handleBack}
-          style={{ backgroundColor: 'blue', padding: 10, marginBottom: 20 }}
+          activeOpacity={0.7}
         >
-          <Text style={{ color: 'white' }}>← Back</Text>
+          <Ionicons name="arrow-back" size={24} color={theme.text} />
         </TouchableOpacity>
         
-        <Text style={{ fontSize: 18, fontWeight: 'bold', marginBottom: 10 }}>
-          STATIC TEST MODE
-        </Text>
-        <Text style={{ fontSize: 16, marginBottom: 10 }}>
-          Title: {article?.title}
-        </Text>
-        <Text style={{ fontSize: 14 }}>
-          Source: {article?.source_name}
-        </Text>
-        <Text style={{ fontSize: 12, marginTop: 20 }}>
-          If this screen stays visible, the auto-back issue is not in the render logic.
+        <View style={styles.headerActions}>
+          <TouchableOpacity 
+            style={styles.headerButton}
+            onPress={shareArticle}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="share-outline" size={24} color={theme.text} />
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.headerButton}
+            onPress={openInBrowser}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="open-outline" size={24} color={theme.text} />
+          </TouchableOpacity>
+        </View>
+      </View>
+      
+      {/* Simplified header for debugging */}
+      <View style={[styles.debugHeader, { backgroundColor: theme.surface, borderBottomColor: theme.border }]}>
+        <Text style={[styles.debugText, { color: theme.text }]}>
+          記事詳細 (デバッグモード)
         </Text>
       </View>
+      
+      {/* Content */}
+      {renderContent()}
     </SafeAreaView>
   );
 }
@@ -218,6 +265,124 @@ const styles = StyleSheet.create({
   headerActions: {
     flexDirection: 'row',
   },
+  tabContainer: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+  },
+  tab: {
+    flex: 1,
+    paddingVertical: 16,
+    alignItems: 'center',
+  },
+  tabText: {
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  contentContainer: {
+    flex: 1,
+  },
+  contentPadding: {
+    padding: 16,
+  },
+  articleImage: {
+    height: 200,
+    backgroundColor: '#f0f0f0',
+  },
+  articleTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    lineHeight: 32,
+    marginBottom: 16,
+  },
+  metaInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 20,
+    flexWrap: 'wrap',
+  },
+  sourceText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  metaSeparator: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#ccc',
+    marginHorizontal: 8,
+  },
+  dateText: {
+    fontSize: 12,
+  },
+  genreTag: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  genreText: {
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  summaryText: {
+    fontSize: 16,
+    lineHeight: 24,
+    marginBottom: 24,
+  },
+  readFullButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+    gap: 8,
+  },
+  readFullButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  noContentContainer: {
+    alignItems: 'center',
+    paddingVertical: 60,
+  },
+  noContentText: {
+    fontSize: 16,
+    marginTop: 16,
+    marginBottom: 24,
+    textAlign: 'center',
+  },
+  webViewButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+    gap: 8,
+  },
+  webViewButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  webView: {
+    flex: 1,
+  },
+  webViewLoading: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+  },
+  webViewLoadingText: {
+    marginTop: 16,
+    fontSize: 16,
+  },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -237,6 +402,11 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '600',
     marginTop: 16,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  errorSubText: {
+    fontSize: 14,
     marginBottom: 24,
     textAlign: 'center',
   },
@@ -249,6 +419,15 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
+  },
+  debugHeader: {
+    paddingVertical: 16,
+    alignItems: 'center',
+    borderBottomWidth: 1,
+  },
+  debugText: {
+    fontSize: 16,
+    fontWeight: '500',
   },
 });
 

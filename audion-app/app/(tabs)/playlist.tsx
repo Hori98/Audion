@@ -11,6 +11,8 @@ import LoadingIndicator from '../../components/LoadingIndicator';
 import DownloadButton from '../../components/DownloadButton';
 import AudioMetadataService from '../../services/AudioMetadataService';
 import SearchBar from '../../components/SearchBar';
+import BottomSheetMenu from '../../components/BottomSheetMenu';
+import PlaylistService from '../../services/PlaylistService';
 
 interface RecentAudioItem {
   id: string;
@@ -28,7 +30,7 @@ interface RecentAudioItem {
   };
 }
 
-export default function RecentScreen() {
+export default function PlaylistScreen() {
   const { token } = useAuth();
   const { playAudio, currentAudio, isPlaying, pauseAudio, resumeAudio } = useAudio();
   const { theme } = useTheme();
@@ -37,8 +39,17 @@ export default function RecentScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState(''); // Search functionality
+  const [showBottomSheet, setShowBottomSheet] = useState(false);
+  const [selectedAudio, setSelectedAudio] = useState<RecentAudioItem | null>(null);
 
   const API = process.env.EXPO_PUBLIC_BACKEND_URL ? `${process.env.EXPO_PUBLIC_BACKEND_URL}/api` : 'http://localhost:8003/api';
+
+  // Initialize PlaylistService with auth token
+  React.useEffect(() => {
+    if (token) {
+      PlaylistService.getInstance().setAuthToken(token);
+    }
+  }, [token]);
 
   useFocusEffect(
     React.useCallback(() => {
@@ -171,8 +182,8 @@ export default function RecentScreen() {
         }
       >
         <View style={styles.header}>
-          <Ionicons name="time-outline" size={24} color={theme.primary} />
-          <Text style={styles.headerTitle}>最近の音声</Text>
+          <Ionicons name="musical-notes" size={24} color={theme.primary} />
+          <Text style={styles.headerTitle}>プレイリスト</Text>
           <Text style={styles.headerSubtitle}>最新10件表示・引き下げで更新</Text>
         </View>
 
@@ -180,87 +191,94 @@ export default function RecentScreen() {
           <View style={styles.emptyState}>
             <Ionicons name="musical-notes-outline" size={48} color={theme.textMuted} />
             <Text style={styles.emptyText}>
-              まだ音声がありません{'\n'}
+              プレイリストが空です{'\n'}
               フィードから音声を作成してみましょう
             </Text>
           </View>
         ) : (
           <View style={styles.audioList}>
             {filteredAudio.map((audio) => (
-              <View key={audio.id} style={styles.audioItem}>
-                <TouchableOpacity
-                  style={styles.audioContent}
-                  onPress={() => handlePlayAudio(audio)}
-                >
-                  <View style={styles.audioInfo}>
-                    <Text style={styles.audioTitle} numberOfLines={2}>
-                      {audio.title}
+              <TouchableOpacity
+                key={audio.id}
+                style={[
+                  styles.audioItem,
+                  currentAudio?.id === audio.id && styles.currentlyPlaying
+                ]}
+                onPress={() => handlePlayAudio(audio)}
+                activeOpacity={0.7}
+              >
+                <View style={styles.audioInfo}>
+                  <Text style={styles.audioTitle} numberOfLines={2}>
+                    {audio.title}
+                  </Text>
+                  {audio.summary && (
+                    <Text style={[styles.audioSummary, { color: theme.textSecondary }]} numberOfLines={2}>
+                      {audio.summary}
                     </Text>
-                    {audio.summary && (
-                      <Text style={[styles.audioSummary, { color: theme.textSecondary }]} numberOfLines={2}>
-                        {audio.summary}
+                  )}
+                  <View style={styles.audioMeta}>
+                    <View style={styles.metaRow}>
+                      <Ionicons 
+                        name={currentAudio?.id === audio.id && isPlaying ? "pause" : "play"} 
+                        size={12} 
+                        color={theme.primary} 
+                      />
+                      <Text style={styles.audioDuration}>
+                        {formatDuration(audio.duration)}
                       </Text>
-                    )}
-                    <View style={styles.audioMeta}>
-                      <View style={styles.metaRow}>
-                        <Ionicons name="time-outline" size={12} color={theme.primary} />
-                        <Text style={styles.audioDuration}>
-                          {formatDuration(audio.duration)}
-                        </Text>
-                      </View>
-                      <View style={styles.metaRow}>
-                        <Ionicons name="calendar-outline" size={12} color={theme.textSecondary} />
-                        <Text style={styles.audioDate}>
-                          {format(new Date(audio.created_at), 'MM/dd HH:mm')}
-                        </Text>
-                      </View>
-                      {audio.articles && audio.articles.length > 0 && (
-                        <View style={styles.metaRow}>
-                          <Ionicons name="newspaper-outline" size={12} color={theme.textSecondary} />
-                          <Text style={[styles.audioDate, { color: theme.textSecondary }]}>
-                            {audio.articles.length}記事
-                          </Text>
-                        </View>
-                      )}
-                      {audio.promptMetadata && (
-                        <View style={styles.metaRow}>
-                          <Ionicons name="settings-outline" size={12} color={theme.accent} />
-                          <Text style={[styles.promptInfo, { color: theme.accent }]}>
-                            {AudioMetadataService.getPromptModeDisplayName(audio.promptMetadata.promptMode, audio.promptMetadata.creationMethod)} • {AudioMetadataService.getPromptStyleDisplayName(audio.promptMetadata.promptStyle)}
-                          </Text>
-                        </View>
-                      )}
                     </View>
+                    <View style={styles.metaRow}>
+                      <Ionicons name="calendar-outline" size={12} color={theme.textSecondary} />
+                      <Text style={styles.audioDate}>
+                        {format(new Date(audio.created_at), 'MM/dd HH:mm')}
+                      </Text>
+                    </View>
+                    {audio.articles && audio.articles.length > 0 && (
+                      <View style={styles.metaRow}>
+                        <Ionicons name="newspaper-outline" size={12} color={theme.textSecondary} />
+                        <Text style={[styles.audioDate, { color: theme.textSecondary }]}>
+                          {audio.articles.length}記事
+                        </Text>
+                      </View>
+                    )}
+                    {audio.promptMetadata && (
+                      <View style={styles.metaRow}>
+                        <Ionicons name="settings-outline" size={12} color={theme.accent} />
+                        <Text style={[styles.promptInfo, { color: theme.accent }]}>
+                          {AudioMetadataService.getPromptModeDisplayName(audio.promptMetadata.promptMode, audio.promptMetadata.creationMethod)} • {AudioMetadataService.getPromptStyleDisplayName(audio.promptMetadata.promptStyle)}
+                        </Text>
+                      </View>
+                    )}
                   </View>
-                  <View style={styles.playButton}>
-                    <Ionicons
-                      name={currentAudio?.id === audio.id && isPlaying ? "pause" : "play"}
-                      size={24}
-                      color={theme.primary}
-                    />
-                  </View>
-                </TouchableOpacity>
+                </View>
                 
-                {/* 🆕 Download Button */}
-                <DownloadButton
-                  audioItem={{
-                    id: audio.id,
-                    title: audio.title,
-                    audio_url: audio.audio_url,
-                    duration: audio.duration,
-                    created_at: audio.created_at
-                  }}
-                  size="small"
-                  showText={false}
-                />
-                
-                <TouchableOpacity
-                  style={styles.deleteButton}
-                  onPress={() => handleDeleteAudio(audio.id)}
-                >
-                  <Ionicons name="trash-outline" size={20} color={theme.error} />
-                </TouchableOpacity>
-              </View>
+                <View style={styles.actionButtons}>
+                  {/* Download Button */}
+                  <DownloadButton
+                    audioItem={{
+                      id: audio.id,
+                      title: audio.title,
+                      audio_url: audio.audio_url,
+                      duration: audio.duration,
+                      created_at: audio.created_at
+                    }}
+                    size="small"
+                    showText={false}
+                  />
+                  
+                  {/* 3-Dot Menu Button */}
+                  <TouchableOpacity
+                    style={styles.menuButton}
+                    onPress={(e) => {
+                      e.stopPropagation(); // Prevent triggering audio play
+                      setSelectedAudio(audio);
+                      setShowBottomSheet(true);
+                    }}
+                  >
+                    <Ionicons name="ellipsis-vertical" size={20} color={theme.text} />
+                  </TouchableOpacity>
+                </View>
+              </TouchableOpacity>
             ))}
           </View>
         )}
@@ -268,11 +286,31 @@ export default function RecentScreen() {
         <View style={styles.infoCard}>
           <Ionicons name="information-circle-outline" size={20} color={theme.primary} />
           <Text style={styles.infoText}>
-            Option A設計：即消費体験に集中するため、長期保存機能は最小限に。{'\n'}
-            日常使いでは「最新の音声をすぐ聞く」ことが重要です。
+            プレイリスト機能：3点リーダーメニューから音声をシェア・管理・ソース表示ができます。{'\n'}
+            最新音声を中心とした即消費体験を提供します。
           </Text>
         </View>
       </ScrollView>
+      
+      {/* Bottom Sheet Menu */}
+      {selectedAudio && (
+        <BottomSheetMenu
+          audioItem={selectedAudio}
+          visible={showBottomSheet}
+          onClose={() => {
+            setShowBottomSheet(false);
+            setSelectedAudio(null);
+          }}
+          playlistId="default"
+          onSourcesPress={(audioItem) => {
+            // Handle sources press - will show article list modal
+            console.log('Show sources for:', audioItem.title);
+          }}
+          onDeletePress={(audioId) => {
+            handleDeleteAudio(audioId);
+          }}
+        />
+      )}
     </View>
   );
 }
@@ -322,13 +360,18 @@ const createStyles = (theme: any) => StyleSheet.create({
     padding: 16,
     alignItems: 'center',
   },
-  audioContent: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
+  currentlyPlaying: {
+    borderWidth: 2,
+    borderColor: theme.primary,
+    backgroundColor: theme.accent,
   },
   audioInfo: {
     flex: 1,
+  },
+  actionButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   audioTitle: {
     fontSize: 16,
@@ -364,12 +407,8 @@ const createStyles = (theme: any) => StyleSheet.create({
     fontSize: 11,
     fontWeight: '500',
   },
-  playButton: {
+  menuButton: {
     padding: 8,
-  },
-  deleteButton: {
-    padding: 8,
-    marginLeft: 8,
   },
   infoCard: {
     flexDirection: 'row',
