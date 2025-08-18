@@ -9,6 +9,9 @@ import {
   ScrollView,
   Dimensions,
   Alert,
+  PanResponder,
+  GestureResponderEvent,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAudio } from '../context/AudioContext';
@@ -46,8 +49,12 @@ export default function FullScreenPlayer() {
   const [showFullScript, setShowFullScript] = React.useState(false);
   const [currentWordIndex, setCurrentWordIndex] = React.useState(0);
   const [showHeaderMiniPlayer, setShowHeaderMiniPlayer] = React.useState(false);
+  const [isDragging, setIsDragging] = React.useState(false);
+  const [dragPosition, setDragPosition] = React.useState(0);
   const scriptScrollRef = React.useRef<ScrollView>(null);
   const scrollViewRef = React.useRef<ScrollView>(null);
+  const progressBarRef = React.useRef<View>(null);
+  const progressBarWidth = React.useRef(0);
 
   // Auto-open script when requested from mini player
   React.useEffect(() => {
@@ -198,12 +205,55 @@ export default function FullScreenPlayer() {
   };
 
   const progressPercentage = duration > 0 ? (position / duration) * 100 : 0;
+  const displayProgressPercentage = isDragging ? dragPosition : progressPercentage;
+
+  // PanResponder for drag operations
+  const panResponder = React.useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (evt, gestureState) => {
+        return Math.abs(gestureState.dx) > 5 || Math.abs(gestureState.dy) > 5;
+      },
+      onPanResponderGrant: (evt, gestureState) => {
+        // Start dragging
+        setIsDragging(true);
+        const locationX = evt.nativeEvent.locationX;
+        if (progressBarWidth.current > 0) {
+          const percentage = Math.max(0, Math.min(100, (locationX / progressBarWidth.current) * 100));
+          setDragPosition(percentage);
+        }
+      },
+      onPanResponderMove: (evt, gestureState) => {
+        // Continue dragging
+        if (progressBarWidth.current > 0) {
+          const locationX = evt.nativeEvent.locationX;
+          const percentage = Math.max(0, Math.min(100, (locationX / progressBarWidth.current) * 100));
+          setDragPosition(percentage);
+        }
+      },
+      onPanResponderRelease: (evt, gestureState) => {
+        // End dragging and seek
+        setIsDragging(false);
+        if (duration > 0 && progressBarWidth.current > 0) {
+          const locationX = evt.nativeEvent.locationX;
+          const percentage = Math.max(0, Math.min(100, (locationX / progressBarWidth.current) * 100));
+          const newPosition = (percentage / 100) * duration;
+          seekTo(newPosition);
+        }
+      },
+    })
+  ).current;
 
   const handleSeek = (percentage: number) => {
     if (duration > 0 && isFinite(percentage) && percentage >= 0 && percentage <= 100) {
       const newPosition = (percentage / 100) * duration;
       seekTo(newPosition);
     }
+  };
+
+  // Measure progress bar width
+  const handleProgressBarLayout = (event: any) => {
+    const { width } = event.nativeEvent.layout;
+    progressBarWidth.current = width;
   };
 
   const skipForward = () => {
@@ -472,31 +522,36 @@ export default function FullScreenPlayer() {
 
           {/* Progress Section */}
           <View style={styles.progressSection}>
-            <TouchableOpacity
+            <View
               style={styles.progressBarContainer}
-              onPress={(e) => {
-                const { locationX } = e.nativeEvent;
-                if (isFinite(locationX) && width > 0) {
-                  const percentage = (locationX / width) * 100;
-                  handleSeek(Math.max(0, Math.min(100, percentage)));
-                }
-              }}
+              {...panResponder.panHandlers}
             >
-              <View style={styles.progressBar}>
+              <View 
+                ref={progressBarRef}
+                style={styles.progressBar}
+                onLayout={handleProgressBarLayout}
+              >
                 <View
                   style={[
                     styles.progressFill,
-                    { width: `${progressPercentage}%` }
+                    { 
+                      width: `${displayProgressPercentage}%`,
+                      backgroundColor: isDragging ? '#6366f1' : '#4f46e5'
+                    }
                   ]}
                 />
                 <View
                   style={[
                     styles.progressThumb,
-                    { left: `${progressPercentage}%` }
+                    { 
+                      left: `${displayProgressPercentage}%`,
+                      backgroundColor: isDragging ? '#6366f1' : '#4f46e5',
+                      transform: [{ scale: isDragging ? 1.2 : 1 }]
+                    }
                   ]}
                 />
               </View>
-            </TouchableOpacity>
+            </View>
             
             <View style={styles.timeContainer}>
               <Text style={[styles.timeText, { color: theme.textSecondary }]}>{formatTime(position)}</Text>

@@ -8,6 +8,7 @@ import { useLanguage } from '../../context/LanguageContext';
 import { useTranslation } from 'react-i18next';
 import { format } from 'date-fns';
 import { useFocusEffect } from '@react-navigation/native';
+import { useRouter } from 'expo-router';
 // Removed expo-web-browser - using native reader mode instead
 import { Ionicons } from '@expo/vector-icons'; // Added import
 import { useSiriShortcuts } from '../../hooks/useSiriShortcuts';
@@ -22,11 +23,13 @@ import AudioLimitService from '../../services/AudioLimitService';
 import AudioMetadataService from '../../services/AudioMetadataService';
 import NotificationService from '../../services/NotificationService';
 import ArchiveService from '../../services/ArchiveService';
+import PersonalizationService from '../../services/PersonalizationService';
 import { Article } from '../../types';
 import { getAPIPromptData, getPromptSettingsForMode } from '../../utils/promptUtils';
 import SearchBar from '../../components/SearchBar';
 import SearchUtils from '../../utils/searchUtils';
 import BookmarkService from '../../services/BookmarkService';
+import ArticleReader from '../../components/ArticleReader';
 
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:8003';
 const API = `${BACKEND_URL}/api`;
@@ -46,6 +49,7 @@ export default function FeedScreen() {
   const { currentVoiceLanguage } = useLanguage();
   const { t } = useTranslation();
   const { donateShortcut } = useSiriShortcuts();
+  const router = useRouter();
   const [articles, setArticles] = useState<Article[]>([]);
   const [sources, setSources] = useState<RSSSource[]>([]);
   const [loading, setLoading] = useState(true);
@@ -72,6 +76,8 @@ export default function FeedScreen() {
   const [readingHistory, setReadingHistory] = useState<Map<string, Date>>(new Map()); // Track reading history by article ID
   const [searchQuery, setSearchQuery] = useState(''); // Search functionality
   const [readLaterStatus, setReadLaterStatus] = useState<Map<string, boolean>>(new Map());
+  const [selectedArticle, setSelectedArticle] = useState<Article | null>(null);
+  const [showArticleReader, setShowArticleReader] = useState(false);
 
   // 検索クエリ変更時の処理（履歴保存含む）
   const handleSearchChange = async (query: string) => {
@@ -104,28 +110,25 @@ export default function FeedScreen() {
     React.useCallback(() => {
       const initializeData = async () => {
         if (token && token !== '') {
-          console.log('📰 Feed - Starting initialization...');
           await loadGlobalSelection();
           await loadArchivedArticles();
           await loadReadingHistory();
           await loadReadLaterStatus();
           // Force refresh sources to get latest changes from sources screen
-          console.log('📰 Feed - Loading sources...');
           await fetchSources(true);
-          console.log('📰 Feed - Loading articles...');
           await fetchArticles();
-          console.log('📰 Feed - Initialization complete');
         }
       };
       initializeData();
     }, [token])
   );
 
-  // Separate effect for filter changes - ensure selection state is loaded first
+  // Separate effect for source changes only - genre filtering is now client-side
   useEffect(() => {
     
-    const handleFilterChange = async () => {
+    const handleSourceChange = async () => {
       if (token && token !== '') {
+        // Only refetch when source changes, not genre
         // Ensure we have the latest selection state before fetching articles
         await loadGlobalSelection();
         // Also refresh sources to ensure latest source list is available
@@ -134,8 +137,8 @@ export default function FeedScreen() {
       }
     };
     
-    handleFilterChange();
-  }, [selectedGenre, selectedSource]);
+    handleSourceChange();
+  }, [selectedSource]); // Removed selectedGenre - now handled client-side
 
   // Effect to force UI update when selection or filters change
   useEffect(() => {
@@ -416,22 +419,18 @@ export default function FeedScreen() {
   };
 
   const fetchArticles = async () => {
-    console.log('📰 Feed - fetchArticles started');
     setLoading(true);
     try {
+      // Only filter by source, not genre (genre filtering is now client-side)
       const filters = {
-        ...(selectedGenre !== 'All' && { genre: selectedGenre }),
         ...(selectedSource !== 'All' && { source: selectedSource })
       };
 
       // Try cache first
       const cachedArticles = await CacheService.getArticles(filters);
       if (cachedArticles) {
-        console.log(`📰 Feed - Found ${cachedArticles.length} cached articles`);
-        
         // Normalize articles to prevent duplicates
         const normalizedCachedArticles = normalizeArticles(cachedArticles);
-        console.log(`📰 Feed - Normalized to ${normalizedCachedArticles.length} articles`);
         setArticles(normalizedCachedArticles);
         
         // Force UI update after cached articles are set
@@ -463,7 +462,6 @@ export default function FeedScreen() {
           return newMap;
         });
         
-        console.log('📰 Feed - Cached articles loaded successfully');
         setLoading(false);
         return;
       }
@@ -476,13 +474,10 @@ export default function FeedScreen() {
       if (selectedSource !== 'All') {
         params.source = selectedSource;
       }
-      console.log('📰 Feed - Fetching articles from API...');
       const response = await axios.get(`${API}/articles`, { headers, params });
-      console.log(`📰 Feed - API returned ${response.data.length} articles`);
       
       // Normalize articles to prevent duplicates
       const normalizedArticles = normalizeArticles(response.data);
-      console.log(`📰 Feed - Normalized to ${normalizedArticles.length} articles`);
       
       // Cache the results
       await CacheService.setArticles(normalizedArticles, filters);
@@ -517,66 +512,64 @@ export default function FeedScreen() {
         return newMap;
       });
     } catch (error: any) {
-      console.error('📰 Feed - Error fetching articles:', error);
+      console.error('Error fetching articles:', error);
       ErrorHandlingService.showError(error, { 
         action: 'fetch_articles',
         source: 'Feed Screen',
         details: { genre: selectedGenre, source: selectedSource }
       });
     } finally {
-      console.log('📰 Feed - fetchArticles completed');
       setLoading(false);
     }
   };
 
   const onRefresh = async () => {
-    console.log('📰 Feed - Pull-to-refresh triggered');
     setRefreshing(true);
     try {
       // Clear relevant caches to force fresh data
-      console.log('📰 Feed - Clearing RSS sources cache');
       await CacheService.remove('rss_sources');
       const filters = {
         ...(selectedGenre !== 'All' && { genre: selectedGenre }),
         ...(selectedSource !== 'All' && { source: selectedSource })
       };
       const cacheKey = CacheService.getArticlesCacheKey(filters);
-      console.log('📰 Feed - Clearing articles cache key:', cacheKey);
       await CacheService.remove(cacheKey);
       
       // Force refresh sources to get latest source changes
-      console.log('📰 Feed - Fetching fresh sources and articles...');
       await Promise.all([fetchSources(true), fetchArticles()]);
-      console.log('📰 Feed - Fresh data fetched successfully');
     } catch (error) {
-      console.error('📰 Feed - Error during refresh:', error);
+      console.error('Error during refresh:', error);
     } finally {
       setRefreshing(false);
     }
   };
 
   const handleArticlePress = async (url: string, article?: Article) => {
-    if (url) {
+    if (article) {
       try {
-        console.log('📰 Feed - Article clicked:', article?.title || url);
-        
         // Record reading history before opening article
-        if (article) {
-          await recordArticleReading(article);
+        await recordArticleReading(article);
+        
+        // Open article in new modal reader
+        setSelectedArticle(article);
+        setShowArticleReader(true);
+      } catch (error: any) {
+        console.error('Failed to open article:', error);
+        // Fallback to external browser if modal fails
+        try {
+          await Linking.openURL(url);
+        } catch (linkError: any) {
+          console.error('Failed to open article link:', linkError);
+          ErrorHandlingService.showError(linkError, { 
+            action: 'open_article',
+            source: 'Feed Screen' 
+          });
         }
-        
-        // TEMPORARY WORKAROUND: Use external browser until router issue is fixed (same as Home)
-        console.log('📰 Feed - Opening article in browser (temporary fix)');
+      }
+    } else if (url) {
+      // Fallback for when no article object is provided
+      try {
         await Linking.openURL(url);
-        
-        // TODO: Fix router navigation to article-detail
-        // Once resolved, restore this code:
-        // if (article) {
-        //   router.push({
-        //     pathname: '/article-detail',
-        //     params: { articleData: JSON.stringify(article) }
-        //   });
-        // }
       } catch (error: any) {
         console.error('Error opening article:', error);
         ErrorHandlingService.showError(error, { 
@@ -1100,6 +1093,79 @@ export default function FeedScreen() {
   };
 
   // Create audio from this week's read articles
+  const handleCreateAutoPickAudio = async () => {
+    if (articles.length === 0) {
+      Alert.alert('No Articles', 'Please add some RSS sources and refresh to get articles.');
+      return;
+    }
+
+    Alert.alert(
+      'Auto-Pick & Create Podcast',
+      'Let AI automatically select the best articles and create a personalized podcast for you?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Auto-Pick',
+          onPress: async () => {
+            setCreatingAudio(true);
+            try {
+              // AutoPick should respect current genre and source selection
+              const autoPickRequest = {
+                max_articles: 5,
+                ...(selectedGenre !== 'All' && { preferred_genres: [selectedGenre] }),
+                ...(selectedSource !== 'All' && { source_filter: selectedSource })
+              };
+              
+              const autoPickResponse = await axios.post(
+                `${API}/auto-pick`,
+                autoPickRequest,
+                { headers: { Authorization: `Bearer ${token}` } }
+              );
+              
+              if (autoPickResponse.data && autoPickResponse.data.length > 0) {
+                const audioResponse = await axios.post(
+                  `${API}/audio/create`,
+                  { articles: autoPickResponse.data },
+                  { headers: { Authorization: `Bearer ${token}` } }
+                );
+                
+                if (audioResponse.data?.audio_url) {
+                  Alert.alert(
+                    'Success!', 
+                    `AI selected ${autoPickResponse.data.length} articles and created your personalized podcast. Check your library!`
+                  );
+                  
+                  await PersonalizationService.recordInteraction({
+                    action: 'complete',
+                    contentId: audioResponse.data.id,
+                    contentType: 'audio',
+                    category: 'Auto-Pick Podcast',
+                    timestamp: Date.now(),
+                    engagementLevel: 'high',
+                  });
+                  
+                  await NotificationService.getInstance().sendAudioReadyNotification(
+                    audioResponse.data.title || 'Your AI Podcast',
+                    autoPickResponse.data.length,
+                    audioResponse.data.id
+                  );
+                } else {
+                  Alert.alert('Error', 'Failed to create audio from selected articles');
+                }
+              } else {
+                Alert.alert('No Selection', 'AI could not find suitable articles for podcast creation. Try again later.');
+              }
+            } catch (error: any) {
+              Alert.alert('Error', error.response?.data?.detail || 'Failed to auto-pick articles');
+            } finally {
+              setCreatingAudio(false);
+            }
+          }
+        }
+      ]
+    );
+  };
+
   const handleCreateWeeklyAudio = async () => {
     if (creatingAudio) {
       return; // Prevent double-clicking
@@ -1511,6 +1577,34 @@ export default function FeedScreen() {
         </TouchableOpacity>
         
         
+        {/* Auto-Pick Button - Show when not in selection mode */}
+        {!selectionMode && (
+          <TouchableOpacity
+            style={[
+              styles.autoPickButton,
+              { backgroundColor: theme.accent, borderColor: theme.primary }
+            ]}
+            onPress={handleCreateAutoPickAudio}
+            disabled={creatingAudio}
+            accessibilityRole="button"
+            accessibilityLabel="Auto-pick articles and create audio"
+            accessibilityHint="Let AI automatically select best articles and create podcast"
+          >
+            <Ionicons 
+              name="radio-outline" 
+              size={16} 
+              color={theme.primary}
+              style={{ marginRight: 6 }} 
+            />
+            <Text style={[
+              styles.autoPickButtonText, 
+              { color: theme.primary }
+            ]}>
+              Auto-Pick
+            </Text>
+          </TouchableOpacity>
+        )}
+
         {/* Weekly Audio Button - Show when This Week's Reads filter is active */}
         {selectedReadingFilter === 'This Week\'s Reads' && !selectionMode && (
           <TouchableOpacity
@@ -1808,6 +1902,16 @@ export default function FeedScreen() {
         onClose={() => setShowPlanUpgradeModal(false)}
         errorMessage={planUpgradeInfo.errorMessage}
         usageInfo={planUpgradeInfo.usageInfo}
+      />
+
+      {/* Article Reader Modal */}
+      <ArticleReader
+        article={selectedArticle}
+        visible={showArticleReader}
+        onClose={() => {
+          setShowArticleReader(false);
+          setSelectedArticle(null);
+        }}
       />
     </View>
   );
@@ -2205,6 +2309,20 @@ const styles = StyleSheet.create({
     height: 28,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  autoPickButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+    borderWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 8,
+  },
+  autoPickButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
   },
   weeklyAudioButton: {
     paddingVertical: 8,

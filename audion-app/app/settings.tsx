@@ -9,6 +9,7 @@ import {
   Alert,
   Switch,
   Modal,
+  Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -22,6 +23,7 @@ import CacheService from '../services/CacheService';
 import ArticleManagerService from '../services/ArticleManagerService';
 import ArchiveService from '../services/ArchiveService';
 import BookmarkService from '../services/BookmarkService';
+import UserProfileService, { UserProfile } from '../services/UserProfileService';
 
 interface QuickSettingItem {
   id: string;
@@ -52,6 +54,26 @@ export default function QuickSettingsScreen() {
   const [themeModalVisible, setThemeModalVisible] = useState(false);
   const [languageModalVisible, setLanguageModalVisible] = useState(false);
   const [voiceLanguageModalVisible, setVoiceLanguageModalVisible] = useState(false);
+  const [accountModalVisible, setAccountModalVisible] = useState(false);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+
+  // Fetch user profile on mount
+  useEffect(() => {
+    const fetchUserProfile = async () => {
+      try {
+        const profileService = UserProfileService.getInstance();
+        if (user?.token) {
+          profileService.setAuthToken(user.token);
+          const profile = await profileService.getCurrentUserProfile();
+          setUserProfile(profile);
+        }
+      } catch (error) {
+        console.error('Error fetching user profile:', error);
+      }
+    };
+
+    fetchUserProfile();
+  }, [user]);
 
   const handleLogout = () => {
     Alert.alert(
@@ -218,12 +240,12 @@ export default function QuickSettingsScreen() {
 
   const accountSettings: QuickSettingItem[] = [
     {
-      id: 'account',
-      title: t('settings.account'),
-      subtitle: user?.email || t('settings.accountSubtitle'),
-      icon: 'person-outline',
+      id: 'account-details',
+      title: 'アカウント詳細設定',
+      subtitle: '詳細なプロフィール設定・プライバシー・通知設定',
+      icon: 'settings-outline',
       type: 'navigation',
-      onPress: () => Alert.alert('開発中', 'アカウント設定は開発中です')
+      onPress: () => router.push('/profile')
     },
     {
       id: 'subscription',
@@ -280,19 +302,41 @@ export default function QuickSettingsScreen() {
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Option A Info Card */}
-        <View style={[styles.infoCard, { backgroundColor: theme.primary + '20' }]}>
-          <Ionicons name="flash-outline" size={24} color={theme.primary} />
-          <View style={styles.infoContent}>
-            <Text style={[styles.infoTitle, { color: theme.primary }]}>
-              即消費体験に最適化
-            </Text>
-            <Text style={[styles.infoText, { color: theme.text }]}>
-              複雑な設定を排除し、すぐに音声を楽しめる設計にしました。
-              必要な設定のみを厳選しています。
-            </Text>
+        {/* Account Info Card */}
+        <TouchableOpacity 
+          style={[styles.accountCard, { backgroundColor: theme.card }]}
+          onPress={() => setAccountModalVisible(true)}
+          activeOpacity={0.7}
+        >
+          <View style={styles.accountAvatar}>
+            {userProfile?.avatar_url ? (
+              <Image 
+                source={{ uri: userProfile.avatar_url }} 
+                style={styles.avatarImage}
+              />
+            ) : (
+              <View style={[styles.defaultAvatar, { backgroundColor: theme.accent }]}>
+                <Ionicons name="person" size={24} color={theme.primary} />
+              </View>
+            )}
           </View>
-        </View>
+          <View style={styles.accountInfo}>
+            <Text style={[styles.accountName, { color: theme.text }]}>
+              {userProfile?.display_name || user?.email || 'ユーザー'}
+            </Text>
+            <Text style={[styles.accountEmail, { color: theme.textSecondary }]}>
+              {userProfile?.email || user?.email || 'user@example.com'}
+            </Text>
+            {userProfile && (
+              <View style={styles.accountStats}>
+                <Text style={[styles.accountStatsText, { color: theme.textSecondary }]}>
+                  {userProfile.audio_count || 0} 音声 • {userProfile.followers_count || 0} フォロワー
+                </Text>
+              </View>
+            )}
+          </View>
+          <Ionicons name="chevron-forward" size={20} color={theme.textMuted} />
+        </TouchableOpacity>
 
         {/* Language Settings Section */}
         <View style={styles.sectionContainer}>
@@ -645,6 +689,120 @@ export default function QuickSettingsScreen() {
         </SafeAreaView>
       </Modal>
 
+      {/* Account Modal */}
+      <Modal
+        visible={accountModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setAccountModalVisible(false)}
+      >
+        <View style={styles.accountModalContainer}>
+          <View style={[styles.accountModalContent, { backgroundColor: theme.card }]}>
+            <View style={styles.accountModalHeader}>
+              <View style={styles.accountModalAvatar}>
+                {userProfile?.avatar_url ? (
+                  <Image 
+                    source={{ uri: userProfile.avatar_url }} 
+                    style={styles.accountModalAvatarImage}
+                  />
+                ) : (
+                  <View style={[styles.accountModalDefaultAvatar, { backgroundColor: theme.accent }]}>
+                    <Ionicons name="person" size={32} color={theme.primary} />
+                  </View>
+                )}
+              </View>
+              
+              <Text style={[styles.accountModalName, { color: theme.text }]}>
+                {userProfile?.display_name || user?.email || 'ユーザー'}
+              </Text>
+              
+              <Text style={[styles.accountModalEmail, { color: theme.textSecondary }]}>
+                {userProfile?.email || user?.email || 'user@example.com'}
+              </Text>
+              
+              {userProfile && (
+                <View style={[styles.accountModalStats, { borderColor: theme.border }]}>
+                  <View style={styles.statItem}>
+                    <Text style={[styles.statNumber, { color: theme.text }]}>
+                      {userProfile.audio_count || 0}
+                    </Text>
+                    <Text style={[styles.statLabel, { color: theme.textSecondary }]}>
+                      音声
+                    </Text>
+                  </View>
+                  <View style={styles.statItem}>
+                    <Text style={[styles.statNumber, { color: theme.text }]}>
+                      {userProfile.followers_count || 0}
+                    </Text>
+                    <Text style={[styles.statLabel, { color: theme.textSecondary }]}>
+                      フォロワー
+                    </Text>
+                  </View>
+                  <View style={styles.statItem}>
+                    <Text style={[styles.statNumber, { color: theme.text }]}>
+                      {userProfile.following_count || 0}
+                    </Text>
+                    <Text style={[styles.statLabel, { color: theme.textSecondary }]}>
+                      フォロー中
+                    </Text>
+                  </View>
+                  <View style={styles.statItem}>
+                    <Text style={[styles.statNumber, { color: theme.text }]}>
+                      {userProfile.total_plays || 0}
+                    </Text>
+                    <Text style={[styles.statLabel, { color: theme.textSecondary }]}>
+                      再生数
+                    </Text>
+                  </View>
+                </View>
+              )}
+            </View>
+            
+            <View style={styles.accountModalButtons}>
+              <TouchableOpacity
+                style={[styles.accountModalButton, { backgroundColor: theme.primary }]}
+                onPress={() => {
+                  setAccountModalVisible(false);
+                  router.push('/profile');
+                }}
+              >
+                <Ionicons name="settings-outline" size={20} color={theme.background} />
+                <Text style={[styles.accountModalButtonText, { color: theme.background }]}>
+                  詳細設定
+                </Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={[styles.accountModalButton, { backgroundColor: theme.accent }]}
+                onPress={async () => {
+                  const avatarUrl = await UserProfileService.getInstance().uploadAvatar();
+                  if (avatarUrl && userProfile) {
+                    setUserProfile({
+                      ...userProfile,
+                      avatar_url: avatarUrl,
+                    });
+                  }
+                }}
+              >
+                <Ionicons name="camera-outline" size={20} color={theme.text} />
+                <Text style={[styles.accountModalButtonText, { color: theme.text }]}>
+                  アバター変更
+                </Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={[styles.accountModalButton, styles.closeModalButton, { backgroundColor: theme.border }]}
+                onPress={() => setAccountModalVisible(false)}
+              >
+                <Text style={[styles.accountModalButtonText, { color: theme.text }]}>
+                  閉じる
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       {/* Debug Menu Modal */}
       <DebugMenu
         visible={debugMenuVisible}
@@ -863,5 +1021,131 @@ const createStyles = (theme: any) => StyleSheet.create({
     lineHeight: 18,
     marginBottom: 16,
     paddingHorizontal: 4,
+  },
+  // Account Card Styles
+  accountCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 20,
+    marginTop: 20,
+    marginBottom: 24,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  accountAvatar: {
+    marginRight: 16,
+  },
+  avatarImage: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+  },
+  defaultAvatar: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  accountInfo: {
+    flex: 1,
+  },
+  accountName: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 4,
+  },
+  accountEmail: {
+    fontSize: 14,
+    marginBottom: 8,
+  },
+  accountStats: {
+    marginTop: 4,
+  },
+  accountStatsText: {
+    fontSize: 12,
+  },
+  // Account Modal Styles
+  accountModalContainer: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  accountModalContent: {
+    width: '85%',
+    maxHeight: '70%',
+    borderRadius: 20,
+    padding: 24,
+  },
+  accountModalHeader: {
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  accountModalAvatar: {
+    marginBottom: 16,
+  },
+  accountModalAvatarImage: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+  },
+  accountModalDefaultAvatar: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  accountModalName: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    marginBottom: 4,
+  },
+  accountModalEmail: {
+    fontSize: 16,
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  accountModalStats: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    width: '100%',
+    paddingVertical: 16,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    marginBottom: 20,
+  },
+  statItem: {
+    alignItems: 'center',
+  },
+  statNumber: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 4,
+  },
+  statLabel: {
+    fontSize: 12,
+  },
+  accountModalButtons: {
+    gap: 12,
+  },
+  accountModalButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    gap: 8,
+  },
+  accountModalButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  closeModalButton: {
+    marginTop: 8,
   },
 });

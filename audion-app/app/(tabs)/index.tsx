@@ -28,6 +28,7 @@ import { Modal } from 'react-native';
 import PersonalizationService from '../../services/PersonalizationService';
 import SearchUtils from '../../utils/searchUtils';
 import BookmarkService from '../../services/BookmarkService';
+import ArticleReader from '../../components/ArticleReader';
 
 // Constants
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:8003';
@@ -123,6 +124,8 @@ export default function MainScreen() {
   const [uiUpdateTrigger, setUiUpdateTrigger] = useState(0); // Force UI updates
   const [readLaterStatus, setReadLaterStatus] = useState<Map<string, boolean>>(new Map());
   const [showSearchModal, setShowSearchModal] = useState(false);
+  const [selectedArticle, setSelectedArticle] = useState<Article | null>(null);
+  const [showArticleReader, setShowArticleReader] = useState(false);
   
   // Progressive loading states
   const [allAvailableArticles, setAllAvailableArticles] = useState<Article[]>([]);
@@ -146,8 +149,6 @@ export default function MainScreen() {
       const initializeData = async () => {
         if (!token) return;
 
-        console.log('🏠 Home - Starting initialization...');
-        
         // Initialize reading history and other services first
         const [history] = await Promise.all([
           loadReadingHistoryFromStorage(),
@@ -159,9 +160,7 @@ export default function MainScreen() {
         setReadingHistory(history);
         
         // Fetch articles after other initialization is complete
-        console.log('🏠 Home - Services initialized, fetching articles...');
         await fetchArticles();
-        console.log('🏠 Home - Initialization complete');
       };
 
       initializeData();
@@ -171,21 +170,17 @@ export default function MainScreen() {
   const fetchArticles = async () => {
     if (!token) return;
     
-    console.log('🏠 Home - fetchArticles started');
     setLoading(true);
     try {
       const filters = {
-        ...(selectedGenre !== 'All' && { genre: selectedGenre })
+        // Genre filtering is now handled client-side for better performance
       };
 
       // Try cache first (exactly like Feed)
       const cachedArticles = await CacheService.getArticles(filters);
       if (cachedArticles) {
-        console.log(`🏠 Home - Found ${cachedArticles.length} cached articles`);
-        
         // Normalize articles to prevent duplicates
         const normalizedCachedArticles = normalizeArticles(cachedArticles);
-        console.log(`🏠 Home - Normalized to ${normalizedCachedArticles.length} articles`);
         setArticles(normalizedCachedArticles);
         
         // Force UI update after cached articles are set
@@ -217,7 +212,6 @@ export default function MainScreen() {
           return newMap;
         });
         
-        console.log('🏠 Home - Cached articles loaded successfully');
         setLoading(false);
         return;
       }
@@ -227,13 +221,10 @@ export default function MainScreen() {
       if (selectedGenre !== 'All') {
         params.genre = selectedGenre;
       }
-      console.log('🏠 Home - Fetching articles from API...');
       const response = await axios.get(`${API}/articles`, { headers, params });
-      console.log(`🏠 Home - API returned ${response.data.length} articles`);
       
       // Normalize articles to prevent duplicates
       const normalizedArticles = normalizeArticles(response.data);
-      console.log(`🏠 Home - Normalized to ${normalizedArticles.length} articles`);
       
       
       // Cache the results
@@ -295,15 +286,13 @@ export default function MainScreen() {
         return newMap;
       });
     } catch (error: any) {
-      console.error('🏠 Home - Error fetching articles:', error);
+      console.error('Error fetching articles:', error);
     } finally {
-      console.log('🏠 Home - fetchArticles completed');
       setLoading(false);
     }
   };
 
   const onRefresh = async () => {
-    console.log('🏠 Home - Pull-to-refresh triggered');
     setRefreshing(true);
     try {
       // Clear cache for current filter settings
@@ -311,22 +300,16 @@ export default function MainScreen() {
         ...(selectedGenre !== 'All' && { genre: selectedGenre })
       };
       const cacheKey = CacheService.getArticlesCacheKey(filters);
-      console.log('🏠 Home - Clearing cache key:', cacheKey);
       await CacheService.remove(cacheKey);
-      console.log('🏠 Home - Cache cleared, fetching fresh articles...');
       await fetchArticles();
-      console.log('🏠 Home - Fresh articles fetched successfully');
     } catch (error) {
-      console.error('🏠 Home - Error during refresh:', error);
+      console.error('Error during refresh:', error);
     } finally {
       setRefreshing(false);
     }
   };
 
   const handleArticlePress = async (article: Article) => {
-    console.log('🏠 Home - Article clicked:', article.title);
-    console.log('🏠 Home - Article data:', article);
-    
     // Save reading history
     const newHistory = new Map(readingHistory);
     newHistory.set(article.id, new Date());
@@ -344,22 +327,9 @@ export default function MainScreen() {
       engagementLevel: 'medium',
     });
     
-    try {
-      // TEMPORARY WORKAROUND: Use external browser until router issue is fixed
-      console.log('🏠 Home - Opening article in browser (temporary fix)');
-      await Linking.openURL(article.link);
-      
-      // TODO: Fix router navigation to article-detail
-      // The issue appears to be with React StrictMode or expo-router unmounting components
-      // Once resolved, restore this code:
-      // router.push({
-      //   pathname: '/article-detail', 
-      //   params: { articleData: JSON.stringify(article) }
-      // });
-    } catch (error) {
-      console.error('🏠 Home - Failed to open article:', error);
-      Alert.alert('エラー', '記事を開けませんでした');
-    }
+    // Open article in new modal reader
+    setSelectedArticle(article);
+    setShowArticleReader(true);
   };
 
   // Load Read Later status for all articles
@@ -494,10 +464,12 @@ export default function MainScreen() {
   };
 
 
-  const filteredArticles = SearchUtils.filterArticles(articles, {
+  // Convert Map to Array and apply filters with proper error handling
+  const articlesArray = Array.isArray(articles) ? articles : [];
+  const filteredArticles = SearchUtils.filterArticles(articlesArray, {
     searchQuery,
     genre: selectedGenre,
-  });
+  }) || [];
   
 
   // Load More Articles Handler
@@ -572,7 +544,7 @@ export default function MainScreen() {
       >
         {loading ? (
           <ActivityIndicator size="large" color={theme.primary} style={styles.loadingIndicator} />
-        ) : filteredArticles.length === 0 ? (
+        ) : !filteredArticles || filteredArticles.length === 0 ? (
           <Text style={[styles.noArticlesText, { color: theme.textSecondary }]}>
             No articles available. Try refreshing or check your RSS sources.
           </Text>
@@ -733,6 +705,16 @@ export default function MainScreen() {
           <Ionicons name="radio-outline" size={24} color="#fff" />
         )}
       </TouchableOpacity>
+
+      {/* Article Reader Modal */}
+      <ArticleReader
+        article={selectedArticle}
+        visible={showArticleReader}
+        onClose={() => {
+          setShowArticleReader(false);
+          setSelectedArticle(null);
+        }}
+      />
     </SafeAreaView>
   );
 }

@@ -3,6 +3,8 @@ import { Audio } from 'expo-av';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import DownloadService, { DownloadProgress } from '../services/DownloadService';
+import BackgroundAudioService from '../services/BackgroundAudioService';
+import OfflineAudioService from '../services/OfflineAudioService';
 
 interface AudioItem {
   id: string;
@@ -76,6 +78,14 @@ interface AudioContextType {
   getDownloadProgress: (audioId: string) => number;
   isAudioDownloading: (audioId: string) => boolean;
   
+  // 🆕 Native app functions
+  getStorageInfo: () => Promise<any>;
+  getAllOfflineAudio: () => Promise<any[]>;
+  cleanupOldFiles: () => Promise<number>;
+  getAutoDownloadSettings: () => Promise<any>;
+  setAutoDownloadSettings: (settings: any) => Promise<void>;
+  getBackgroundAudioCapabilities: () => any;
+  
   // Cleanup
   cleanupAudio: (audioId: string) => void;
   
@@ -102,6 +112,10 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   // 🆕 Download states
   const [downloadProgress, setDownloadProgress] = useState<Map<string, number>>(new Map());
   const [downloadingAudios, setDownloadingAudios] = useState<Set<string>>(new Set());
+  
+  // 🆕 Native services
+  const backgroundAudioService = BackgroundAudioService.getInstance();
+  const offlineAudioService = OfflineAudioService.getInstance();
   
   const API = process.env.EXPO_PUBLIC_BACKEND_URL ? `${process.env.EXPO_PUBLIC_BACKEND_URL}/api` : 'http://localhost:8003/api';
 
@@ -131,12 +145,49 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  // Initialize background audio service
+  useEffect(() => {
+    const initializeBackgroundAudio = async () => {
+      await backgroundAudioService.initialize();
+      
+      // Set up media action handler for lock screen controls
+      backgroundAudioService.setMediaActionHandler((action: string, audioId: string) => {
+        switch (action) {
+          case 'TOGGLE_PLAYBACK':
+            if (isPlaying) {
+              pauseAudio();
+            } else {
+              resumeAudio();
+            }
+            break;
+          case 'SKIP_FORWARD':
+            // Implement skip forward (e.g., +30 seconds)
+            if (sound) {
+              seekTo(Math.min(position + 30000, duration));
+            }
+            break;
+          case 'SKIP_BACKWARD':
+            // Implement skip backward (e.g., -15 seconds)
+            if (sound) {
+              seekTo(Math.max(position - 15000, 0));
+            }
+            break;
+        }
+      });
+      
+      console.log('🎵 Background audio service initialized');
+    };
+
+    initializeBackgroundAudio();
+  }, []);
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
       if (sound) {
         sound.unloadAsync();
       }
+      backgroundAudioService.cleanup();
     };
   }, []);
 
@@ -144,9 +195,25 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     setIsLoading(true);
 
     try {
-      // Check if we have a local file first
-      const localPath = await DownloadService.getLocalPath(audioItem.id);
-      const audioUri = localPath || audioItem.audio_url;
+      // Check if we have an offline file first, then fallback to existing download service
+      let audioUri = audioItem.audio_url;
+      let isOfflineFile = false;
+      
+      // Check offline audio service first (new native implementation)
+      const offlineAudio = await offlineAudioService.getOfflineAudio(audioItem.id);
+      if (offlineAudio) {
+        audioUri = offlineAudio.localFilePath;
+        isOfflineFile = true;
+        console.log('🎵 Playing from offline storage:', audioItem.title);
+      } else {
+        // Fallback to existing download service
+        const localPath = await DownloadService.getLocalPath(audioItem.id);
+        if (localPath) {
+          audioUri = localPath;
+          isOfflineFile = true;
+          console.log('🎵 Playing from legacy download storage:', audioItem.title);
+        }
+      }
       
 
       // Record previous audio completion if switching
@@ -206,10 +273,18 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       setDuration(audioItem.duration * 1000);
       setPlayStartTime(Date.now());
 
+      // Update background audio now playing info
+      await backgroundAudioService.updateNowPlaying({
+        title: audioItem.title,
+        artist: 'Audion News', // or could be the RSS source name
+        audioId: audioItem.id,
+        duration: audioItem.duration * 1000
+      });
+
       // Record play interaction with source info
       await recordInteraction('play_started', { 
         audio_id: audioItem.id,
-        source: localPath ? 'local' : 'remote'
+        source: isOfflineFile ? 'offline' : 'remote'
       });
 
     } catch (error) {
@@ -274,6 +349,25 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     if (sound) {
       await sound.pauseAsync();
       setIsPlaying(false);
+      
+      // Update background audio notification
+      if (currentAudio) {
+        await backgroundAudioService.updatePlaybackNotification(
+          {
+            title: currentAudio.title,
+            artist: 'Audion News',
+            audioId: currentAudio.id,
+            duration: duration
+          },
+          {
+            isPlaying: false,
+            position: position,
+            duration: duration,
+            rate: playbackRate
+          }
+        );
+      }
+      
       // Record pause interaction (useful for engagement analysis)
       setTimeout(() => recordInteraction('paused'), 50);
     }
@@ -284,6 +378,24 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       await sound.playAsync();
       setIsPlaying(true);
       setPlayStartTime(Date.now()); // Reset start time for accurate duration tracking
+      
+      // Update background audio notification
+      if (currentAudio) {
+        await backgroundAudioService.updatePlaybackNotification(
+          {
+            title: currentAudio.title,
+            artist: 'Audion News',
+            audioId: currentAudio.id,
+            duration: duration
+          },
+          {
+            isPlaying: true,
+            position: position,
+            duration: duration,
+            rate: playbackRate
+          }
+        );
+      }
     }
   };
 
@@ -312,6 +424,9 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     setShowMiniPlayer(false);
     setShowFullScreenPlayer(false);
     setPlayStartTime(null);
+    
+    // Clear background audio notification
+    await backgroundAudioService.clearNowPlaying();
   };
 
   const seekTo = async (newPosition: number) => {
@@ -507,7 +622,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // 🆕 Download functions
+  // 🆕 Download functions - Enhanced with native offline support
   const downloadAudio = async (audioItem: AudioItem) => {
     try {
       
@@ -520,41 +635,83 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       // Record interaction
       await recordInteraction('download_started', { audio_id: audioItem.id });
       
-      // Start download with progress callback
-      await DownloadService.downloadAudio(
-        audioItem.id,
-        audioItem.audio_url,
-        audioItem.title,
-        (progress: DownloadProgress) => {
-          setDownloadProgress(prev => new Map([...prev, [audioItem.id, progress.progress]]));
-          
-          if (progress.status === 'completed') {
-            setDownloadingAudios(prev => {
-              const newSet = new Set(prev);
-              newSet.delete(audioItem.id);
-              return newSet;
-            });
-            
-            // Record successful download
-            recordInteraction('download_completed', { 
-              audio_id: audioItem.id,
-              file_size: progress.totalBytes 
-            });
-            
-          } else if (progress.status === 'failed') {
-            setDownloadingAudios(prev => {
-              const newSet = new Set(prev);
-              newSet.delete(audioItem.id);
-              return newSet;
-            });
-            
-            // Record failed download
-            recordInteraction('download_failed', { audio_id: audioItem.id });
-            
-            console.error('❌ Download failed:', audioItem.title);
+      // Use new OfflineAudioService for native download functionality
+      try {
+        const localFilePath = await offlineAudioService.downloadAudio(
+          audioItem.id,
+          audioItem.audio_url,
+          audioItem.title,
+          'Audion News', // artist
+          {
+            duration: audioItem.duration,
+            format: 'mp3',
+            quality: 'standard'
+          },
+          (progress) => {
+            setDownloadProgress(prev => new Map([...prev, [audioItem.id, progress.progress]]));
           }
+        );
+        
+        if (localFilePath) {
+          // Success - clean up downloading state
+          setDownloadingAudios(prev => {
+            const newSet = new Set(prev);
+            newSet.delete(audioItem.id);
+            return newSet;
+          });
+          
+          // Keep progress at 100%
+          setDownloadProgress(prev => new Map([...prev, [audioItem.id, 100]]));
+          
+          // Record successful download
+          await recordInteraction('download_completed', { 
+            audio_id: audioItem.id,
+            service: 'offline_audio'
+          });
+          
+          console.log('✅ Audio downloaded successfully using OfflineAudioService:', audioItem.title);
         }
-      );
+        
+      } catch (offlineError) {
+        console.warn('⚠️ OfflineAudioService failed, falling back to legacy DownloadService:', offlineError);
+        
+        // Fallback to existing download service
+        await DownloadService.downloadAudio(
+          audioItem.id,
+          audioItem.audio_url,
+          audioItem.title,
+          (progress: DownloadProgress) => {
+            setDownloadProgress(prev => new Map([...prev, [audioItem.id, progress.progress]]));
+            
+            if (progress.status === 'completed') {
+              setDownloadingAudios(prev => {
+                const newSet = new Set(prev);
+                newSet.delete(audioItem.id);
+                return newSet;
+              });
+              
+              // Record successful download
+              recordInteraction('download_completed', { 
+                audio_id: audioItem.id,
+                file_size: progress.totalBytes,
+                service: 'legacy_download'
+              });
+              
+            } else if (progress.status === 'failed') {
+              setDownloadingAudios(prev => {
+                const newSet = new Set(prev);
+                newSet.delete(audioItem.id);
+                return newSet;
+              });
+              
+              // Record failed download
+              recordInteraction('download_failed', { audio_id: audioItem.id });
+              
+              console.error('❌ Download failed:', audioItem.title);
+            }
+          }
+        );
+      }
       
     } catch (error) {
       console.error('❌ Download error:', error);
@@ -585,7 +742,15 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   const removeDownload = async (audioId: string) => {
     try {
       
-      await DownloadService.removeDownload(audioId);
+      // Try to remove from OfflineAudioService first
+      const offlineDeleted = await offlineAudioService.deleteOfflineAudio(audioId);
+      
+      // Also try legacy download service
+      try {
+        await DownloadService.removeDownload(audioId);
+      } catch (legacyError) {
+        console.warn('Legacy download service removal failed:', legacyError);
+      }
       
       // Clean up state
       setDownloadProgress(prev => {
@@ -595,7 +760,10 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       });
       
       // Record interaction
-      await recordInteraction('download_removed', { audio_id: audioId });
+      await recordInteraction('download_removed', { 
+        audio_id: audioId,
+        offline_deleted: offlineDeleted
+      });
       
     } catch (error) {
       console.error('❌ Failed to remove download:', error);
@@ -604,6 +772,13 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   };
 
   const isAudioDownloaded = async (audioId: string): Promise<boolean> => {
+    // Check both offline service and legacy service
+    const offlineAudio = await offlineAudioService.getOfflineAudio(audioId);
+    if (offlineAudio) {
+      return true;
+    }
+    
+    // Fallback to legacy service
     return await DownloadService.isAudioDownloaded(audioId);
   };
 
@@ -613,6 +788,31 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
 
   const isAudioDownloading = (audioId: string): boolean => {
     return downloadingAudios.has(audioId);
+  };
+
+  // 🆕 Native app helper functions
+  const getStorageInfo = async () => {
+    return await offlineAudioService.getStorageInfo();
+  };
+
+  const getAllOfflineAudio = async () => {
+    return await offlineAudioService.getAllOfflineAudio();
+  };
+
+  const cleanupOldFiles = async () => {
+    return await offlineAudioService.cleanupOldFiles();
+  };
+
+  const getAutoDownloadSettings = async () => {
+    return await offlineAudioService.getAutoDownloadSettings();
+  };
+
+  const setAutoDownloadSettings = async (settings: any) => {
+    return await offlineAudioService.setAutoDownloadSettings(settings);
+  };
+
+  const getBackgroundAudioCapabilities = () => {
+    return backgroundAudioService.getCapabilities();
   };
 
   const value: AudioContextType = {
@@ -645,6 +845,13 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     isAudioDownloaded,
     getDownloadProgress,
     isAudioDownloading,
+    // 🆕 Native app functions
+    getStorageInfo,
+    getAllOfflineAudio,
+    cleanupOldFiles,
+    getAutoDownloadSettings,
+    setAutoDownloadSettings,
+    getBackgroundAudioCapabilities,
     cleanupAudio,
     recordInteraction,
   };

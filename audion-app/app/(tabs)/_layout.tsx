@@ -154,21 +154,30 @@ export default function AppLayout() {
         }}
       />
       <Tabs.Screen
+        name="discover"
+        options={{
+          title: 'Discover',
+          tabBarLabel: 'Discover',
+          tabBarIcon: ({ color, size }) => <Ionicons name="compass-outline" color={color} size={size} />,
+          href: '/(tabs)/discover'
+        }}
+      />
+      <Tabs.Screen
+        name="playlist"
+        options={{
+          title: 'Playlist',
+          tabBarLabel: 'Playlist',
+          tabBarIcon: ({ color, size }) => <Ionicons name="musical-notes-outline" color={color} size={size} />,
+          href: '/(tabs)/playlist'
+        }}
+      />
+      <Tabs.Screen
         name="archive"
         options={{
           title: 'Archive',
           tabBarLabel: 'Archive',
           tabBarIcon: ({ color, size }) => <Ionicons name="bookmark-outline" color={color} size={size} />,
           href: '/(tabs)/archive'
-        }}
-      />
-      <Tabs.Screen
-        name="library"
-        options={{
-          title: 'Recent',
-          tabBarLabel: 'Recent',
-          tabBarIcon: ({ color, size }) => <Ionicons name="time-outline" color={color} size={size} />,
-          href: '/(tabs)/library'
         }}
       />
     </Tabs>
