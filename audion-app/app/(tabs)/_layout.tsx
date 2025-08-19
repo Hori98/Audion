@@ -1,12 +1,13 @@
-import { Tabs } from 'expo-router';
+import { Tabs, useSegments } from 'expo-router';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { TouchableOpacity, View, Image, Text, Platform } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import axios from 'axios';
+import GlobalEventService from '../../services/GlobalEventService';
 
 // TODO: Future Twitter-like UI enhancements
 // 1. Add tab selection UI between header and content (similar to Twitter's Home/Following tabs)
@@ -19,14 +20,51 @@ const CustomHeader = () => {
   const { token } = useAuth();
   const { theme } = useTheme();
   const router = useRouter();
+  const segments = useSegments();
   const insets = useSafeAreaInsets();
   const [userProfileImage, setUserProfileImage] = useState<string | null>(null);
+  const [currentTab, setCurrentTab] = useState<string>('index');
   
   const API = process.env.EXPO_PUBLIC_BACKEND_URL ? `${process.env.EXPO_PUBLIC_BACKEND_URL}/api` : 'http://localhost:8003/api';
   
   const handleSettingsPress = () => {
     router.push('/settings');
   };
+
+  const handleSearchPress = () => {
+    const eventService = GlobalEventService.getInstance();
+    if (currentTab === 'index') {
+      eventService.triggerHomeSearch();
+    } else if (currentTab === 'feed') {
+      eventService.triggerFeedSearch();
+    } else if (currentTab === 'discover') {
+      eventService.triggerDiscoverSearch();
+    }
+  };
+
+  const handleFilterPress = () => {
+    if (currentTab === 'feed') {
+      GlobalEventService.getInstance().triggerFeedFilter();
+    }
+  };
+
+  // Track current tab from segments
+  useEffect(() => {
+    const tabSegment = segments[segments.length - 1];
+    if (tabSegment) {
+      setCurrentTab(tabSegment);
+    }
+  }, [segments]);
+
+  // Ensure currentTab is always set correctly
+  useFocusEffect(
+    useCallback(() => {
+      const tabSegment = segments[segments.length - 1];
+      if (tabSegment) {
+        setCurrentTab(tabSegment);
+      }
+    }, [segments])
+  );
 
   // Fetch user profile image from backend
   useEffect(() => {
@@ -111,8 +149,65 @@ const CustomHeader = () => {
         </Text>
       </View>
 
-        {/* Right side placeholder for future features */}
-        <View style={{ width: 32 }} />
+        {/* Right side - Dynamic icons based on current tab */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          {/* Feed Filter Menu Button - Only show on Feed tab */}
+          {currentTab === 'feed' && (
+            <TouchableOpacity
+              onPress={handleFilterPress}
+              style={{
+                width: 32,
+                height: 32,
+                borderRadius: 16,
+                backgroundColor: theme.surface,
+                justifyContent: 'center',
+                alignItems: 'center',
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 1 },
+                shadowOpacity: 0.1,
+                shadowRadius: 2,
+                elevation: 2,
+              }}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel="Open filter menu"
+              accessibilityHint="Access reading status filters"
+            >
+              <Ionicons name="menu" size={16} color={theme.textSecondary} />
+            </TouchableOpacity>
+          )}
+
+          {/* Search Button - Show on Home, Feed, and Discover tabs */}
+          {(currentTab === 'index' || currentTab === 'feed' || currentTab === 'discover') && (
+            <TouchableOpacity
+              onPress={handleSearchPress}
+              style={{
+                width: 32,
+                height: 32,
+                borderRadius: 16,
+                backgroundColor: theme.surface,
+                justifyContent: 'center',
+                alignItems: 'center',
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 1 },
+                shadowOpacity: 0.1,
+                shadowRadius: 2,
+                elevation: 2,
+              }}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel="Search"
+              accessibilityHint="Open search modal"
+            >
+              <Ionicons name="search" size={16} color={theme.textSecondary} />
+            </TouchableOpacity>
+          )}
+          
+          {/* Placeholder for tabs without icons */}
+          {!(currentTab === 'index' || currentTab === 'feed' || currentTab === 'discover') && (
+            <View style={{ width: 32 }} />
+          )}
+        </View>
       </View>
     </View>
   );

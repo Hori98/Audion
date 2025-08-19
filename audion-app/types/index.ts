@@ -9,6 +9,8 @@ export interface Article {
   source_name: string;
   genre?: string; // Optional to match various article formats
   content?: string;
+  image_url?: string; // Optional thumbnail/featured image
+  published_at?: string; // Alternative date field
   [key: string]: unknown; // Allow additional properties for flexibility
 }
 

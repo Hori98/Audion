@@ -312,8 +312,17 @@ class BackgroundAudioService {
     try {
       await this.clearNowPlaying();
       
-      // Remove notification listeners
-      Notifications.removeAllNotificationListeners();
+      // Remove notification listeners (Web platform doesn't support this)
+      if (Platform.OS !== 'web') {
+        try {
+          // Check if the method exists before calling
+          if (typeof Notifications.removeAllDeliveredNotifications === 'function') {
+            await Notifications.removeAllDeliveredNotifications();
+          }
+        } catch (notificationError) {
+          // Silently ignore notification cleanup errors
+        }
+      }
       
       this.isInitialized = false;
       console.log('🎵 BackgroundAudioService cleaned up');
