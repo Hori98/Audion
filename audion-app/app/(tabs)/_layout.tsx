@@ -1,10 +1,10 @@
+import React, { useState, useEffect, useCallback } from 'react';
 import { Tabs, useSegments } from 'expo-router';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { TouchableOpacity, View, Image, Text, Platform } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useState, useEffect, useCallback } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import axios from 'axios';
 import GlobalEventService from '../../services/GlobalEventService';
@@ -218,8 +218,19 @@ export default function AppLayout() {
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
   
-  // Calculate proper tab bar height including safe area
-  const tabBarHeight = Platform.OS === 'ios' ? 49 + insets.bottom : 56;
+  // Correct tab bar implementation - let React Navigation handle safe area properly
+  const baseTabBarHeight = Platform.OS === 'ios' ? 49 : 56;
+  
+  // Debug logging in development
+  React.useEffect(() => {
+    if (__DEV__) {
+      console.log(`📱 TabBar Debug:
+        Platform: ${Platform.OS}
+        SafeArea Bottom: ${insets.bottom}
+        Base Tab Bar Height: ${baseTabBarHeight}
+      `);
+    }
+  }, [insets.bottom]);
   
   return (
     <Tabs
@@ -230,8 +241,8 @@ export default function AppLayout() {
         tabBarStyle: {
           backgroundColor: theme.tabBarBackground,
           borderTopColor: theme.border,
-          height: tabBarHeight, // Dynamic height including safe area
-          paddingBottom: Platform.OS === 'ios' ? insets.bottom : 0,
+          height: baseTabBarHeight, // Base height only
+          paddingBottom: insets.bottom, // Full safe area for Home Indicator clearance
           zIndex: 1000, // Ensure tab bar is above other elements
           elevation: Platform.OS === 'android' ? 8 : 0,
         },

@@ -62,29 +62,49 @@ export default function UnifiedFloatingButtons({ actions }: UnifiedFloatingButto
   const calculateButtonPosition = () => {
     const isMiniPlayerVisible = showMiniPlayer && currentAudio;
     
-    // Base positions
-    const tabHeight = Platform.OS === 'ios' ? 49 + insets.bottom : 56;
-    const safeBottomArea = insets.bottom || 0;
+    // Use small gaps for direct positioning above footer/mini-player
+    const BUTTON_GAP = 8; // Small gap directly above element below
     
     if (isMiniPlayerVisible) {
-      // Stack: Footer -> MiniPlayer -> Buttons
-      // MiniPlayer positioning (from MiniPlayerV2)
-      const miniPlayerGap = Platform.OS === 'web' ? 6 : 4;
-      const miniPlayerBottom = isTabRoute ? tabHeight + miniPlayerGap : safeBottomArea + miniPlayerGap;
-      const MINI_PLAYER_HEIGHT = 76;
-      const BUTTON_GAP = 16; // Slightly more gap for better visual separation
+      // Stack: Footer -> MiniPlayer -> Buttons (small gap)
+      const MINI_PLAYER_HEIGHT = 76; // Total MiniPlayer height 
+      const miniPlayerGap = Platform.OS === 'web' ? 6 : 4; // MiniPlayer's gap above footer
       
+      // Calculate MiniPlayer's bottom position using correct tab bar height
+      const baseTabHeight = Platform.OS === 'ios' ? 49 : 56;
+      const tabBarTotalHeight = baseTabHeight + insets.bottom; // Actual tab bar total height
+      const safeBottomArea = insets.bottom || 0;
+      const miniPlayerBottom = isTabRoute ? tabBarTotalHeight + miniPlayerGap : safeBottomArea + miniPlayerGap;
+      
+      // Position buttons directly above MiniPlayer top
       return miniPlayerBottom + MINI_PLAYER_HEIGHT + BUTTON_GAP;
     } else {
-      // Stack: Footer -> Buttons  
-      const BUTTON_GAP = 16; // Consistent gap above footer
-      const footerTop = isTabRoute ? tabHeight : safeBottomArea;
+      // Stack: Footer -> Buttons (small gap directly above)
+      const baseTabHeight = Platform.OS === 'ios' ? 49 : 56;
+      const tabBarTotalHeight = baseTabHeight + insets.bottom; // Actual tab bar total height
+      const safeBottomArea = insets.bottom || 0;
+      const footerHeight = isTabRoute ? tabBarTotalHeight : safeBottomArea;
       
-      return footerTop + BUTTON_GAP;
+      // Position buttons directly above footer
+      return footerHeight + BUTTON_GAP;
     }
   };
 
   const bottomPosition = calculateButtonPosition();
+
+  // Debug logging in development
+  React.useEffect(() => {
+    if (__DEV__) {
+      const isMiniPlayerVisible = showMiniPlayer && currentAudio;
+      console.log(`🔧 UnifiedFloatingButtons Debug:
+        Path: ${pathname}
+        IsTabRoute: ${isTabRoute}
+        SafeArea Bottom: ${insets.bottom}
+        MiniPlayer Visible: ${isMiniPlayerVisible}
+        Calculated Bottom Position: ${bottomPosition}px
+      `);
+    }
+  }, [pathname, isTabRoute, insets.bottom, showMiniPlayer, currentAudio, bottomPosition]);
 
   // Filter visible actions
   const visibleActions = actions.filter(action => action.visible !== false);
