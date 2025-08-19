@@ -8,6 +8,7 @@ import {
   Animated,
   Platform,
   ScrollView,
+  Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAudio } from '../context/AudioContext';
@@ -15,7 +16,8 @@ import { useTheme } from '../context/ThemeContext';
 import { format } from 'date-fns';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { usePathname } from 'expo-router';
-
+import TabBarService from '../services/TabBarService';
+import { useTabBarHeight } from '../hooks/useTabBarHeight';
 export default function MiniPlayer() {
   const {
     currentAudio,
@@ -30,26 +32,21 @@ export default function MiniPlayer() {
     showMiniPlayer,
     recordInteraction,
     playbackRate,
+    audioQueue,
   } = useAudio();
   const { theme } = useTheme();
   
-  const insets = useSafeAreaInsets();
-  const pathname = usePathname();
+  const { totalBottomOffset, isTabRoute, tabBarHeight, safeAreaBottom } = useTabBarHeight();
+  const [debugInfo, setDebugInfo] = useState('');
   
-  // Calculate bottom position based on current route
-  const calculateBottomPosition = () => {
-    // Tab routes that have tab bar
-    const tabRoutes = ['/feed', '/auto-pick', '/library', '/sources'];
-    const isTabRoute = tabRoutes.some(route => pathname.startsWith(route));
+  // Update debug info when offset changes
+  useEffect(() => {
+    const debug = isTabRoute 
+      ? `Tab: ${Platform.OS}, tab=${tabBarHeight}, safe=${safeAreaBottom}, total=${totalBottomOffset}`
+      : `NoTab: ${Platform.OS}, safe=${safeAreaBottom}, total=${totalBottomOffset}`;
     
-    if (isTabRoute) {
-      // Tab bar height + safe area
-      return 49 + insets.bottom;
-    } else {
-      // No tab bar, just safe area
-      return insets.bottom;
-    }
-  };
+    setDebugInfo(debug);
+  }, [totalBottomOffset, isTabRoute, tabBarHeight, safeAreaBottom]);
   
   const handleOpenFullScreen = () => {
     recordInteraction('full_screen_opened');
@@ -65,6 +62,9 @@ export default function MiniPlayer() {
     return null;
   }
 
+  // Debug mode - show debug info in development
+  const showDebugInfo = __DEV__ && true; // Set to true to see debug info
+
   const formatTime = (millis: number) => {
     const totalSeconds = Math.floor(millis / 1000);
     const minutes = Math.floor(totalSeconds / 60);
@@ -75,7 +75,22 @@ export default function MiniPlayer() {
   const progressPercentage = duration > 0 ? (position / duration) * 100 : 0;
 
   return (
-    <View style={[styles.container, { bottom: calculateBottomPosition(), backgroundColor: theme.surface, borderTopColor: theme.border }]}>
+    <View style={[
+      styles.container, 
+      { 
+        bottom: totalBottomOffset, 
+        backgroundColor: theme.surface, 
+        borderTopColor: theme.border,
+        marginHorizontal: 8,
+        borderRadius: 12,
+        marginBottom: 4,
+        shadowColor: theme.text,
+        shadowOffset: { width: 0, height: -4 },
+        shadowOpacity: 0.15,
+        shadowRadius: 12,
+        elevation: 8,
+      }
+    ]}>
       {/* Main Content */}
       <TouchableOpacity
         style={styles.content}
@@ -99,6 +114,18 @@ export default function MiniPlayer() {
 
         {/* Controls */}
         <View style={styles.controls}>
+          {audioQueue.length > 0 && (
+            <TouchableOpacity
+              onPress={handleOpenFullScreen}
+              style={styles.queueButton}
+            >
+              <Ionicons name="list-outline" size={20} color={theme.textMuted} />
+              <Text style={[styles.queueCount, { color: theme.textMuted }]}>
+                {audioQueue.length}
+              </Text>
+            </TouchableOpacity>
+          )}
+          
           {currentAudio?.script && (
             <TouchableOpacity
               onPress={handleOpenFullScreenWithScript}
@@ -144,6 +171,15 @@ export default function MiniPlayer() {
           />
         </View>
       </View>
+      
+      {/* Debug Info - Development Only */}
+      {showDebugInfo && (
+        <View style={[styles.debugInfo, { backgroundColor: theme.background }]}>
+          <Text style={[styles.debugText, { color: theme.text }]}>
+            {debugInfo}
+          </Text>
+        </View>
+      )}
     </View>
   );
 }
@@ -164,6 +200,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
+    zIndex: 999, // Below tab bar but above content
   },
   content: {
     flexDirection: 'row',
@@ -219,5 +256,29 @@ const styles = StyleSheet.create({
   scriptButton: {
     padding: 8,
     marginRight: 4,
+  },
+  queueButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 8,
+    marginRight: 4,
+    gap: 2,
+  },
+  queueCount: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  debugInfo: {
+    position: 'absolute',
+    top: -30,
+    left: 8,
+    right: 8,
+    padding: 4,
+    borderRadius: 4,
+    opacity: 0.9,
+  },
+  debugText: {
+    fontSize: 10,
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
   },
 });

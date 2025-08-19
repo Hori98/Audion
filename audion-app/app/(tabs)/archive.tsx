@@ -704,7 +704,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   articlesContent: {
-    paddingBottom: 20,
+    paddingBottom: 160,
   },
   emptyState: {
     flex: 1,

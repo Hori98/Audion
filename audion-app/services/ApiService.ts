@@ -1,5 +1,6 @@
 import axios, { AxiosInstance, AxiosResponse, AxiosError } from 'axios';
 import { Alert } from 'react-native';
+import { API_CONFIG, buildEndpointURL } from '../config/api';
 
 export interface ApiResponse<T = any> {
   success: boolean;
@@ -8,18 +9,26 @@ export interface ApiResponse<T = any> {
 }
 
 class ApiService {
+  private static _instance: ApiService;
   private instance: AxiosInstance;
   private authErrorHandler?: () => Promise<void>;
 
-  constructor() {
-    const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:8003';
-    
+  private constructor() {
     this.instance = axios.create({
-      baseURL: `${BACKEND_URL}/api`,
-      timeout: 30000,
+      baseURL: API_CONFIG.apiURL,
+      timeout: API_CONFIG.timeout,
+      headers: API_CONFIG.defaultHeaders,
     });
 
     this.setupInterceptors();
+  }
+
+  // Singleton pattern
+  static getInstance(): ApiService {
+    if (!ApiService._instance) {
+      ApiService._instance = new ApiService();
+    }
+    return ApiService._instance;
   }
 
   // Set the auth error handler from AuthContext
@@ -37,18 +46,39 @@ class ApiService {
   }
 
   private setupInterceptors() {
+    // Request interceptor for debugging
+    this.instance.interceptors.request.use(
+      (config) => {
+        console.log(`[API] ${config.method?.toUpperCase()} ${config.url}`);
+        return config;
+      },
+      (error) => Promise.reject(error)
+    );
+
     // Response interceptor for common error handling
     this.instance.interceptors.response.use(
-      (response: AxiosResponse) => response,
+      (response: AxiosResponse) => {
+        console.log(`[API] Response: ${response.status} ${response.config.url}`);
+        return response;
+      },
       async (error: AxiosError) => {
-        if (error.response?.status === 401 && this.authErrorHandler) {
-          // Handle 401 errors automatically
+        const status = error.response?.status;
+        const url = error.config?.url;
+        
+        console.error(`[API] Error: ${status} ${url}`, error.response?.data || error.message);
+        
+        if (status === 401 && this.authErrorHandler) {
           await this.authErrorHandler();
           return Promise.reject(error);
         }
         
-        // Log other errors
-        console.error('API Error:', error.response?.data || error.message);
+        // Handle common errors
+        if (status === 429) {
+          Alert.alert('Rate Limited', 'Too many requests. Please try again later.');
+        } else if (status && status >= 500) {
+          Alert.alert('Server Error', 'Server is experiencing issues. Please try again.');
+        }
+        
         return Promise.reject(error);
       }
     );
@@ -67,6 +97,19 @@ class ApiService {
     }
   }
 
+  // Endpoint-based GET request
+  async getEndpoint<T>(endpointPath: string, config?: any): Promise<ApiResponse<T>> {
+    try {
+      const url = buildEndpointURL(endpointPath);
+      return await this.get<T>(url.replace(API_CONFIG.apiURL, ''), config);
+    } catch (error: any) {
+      return { 
+        success: false, 
+        error: error.message || 'Invalid endpoint path' 
+      };
+    }
+  }
+
   // Generic POST request
   async post<T>(url: string, data?: any, config?: any): Promise<ApiResponse<T>> {
     try {
@@ -76,6 +119,19 @@ class ApiService {
       return { 
         success: false, 
         error: error.response?.data?.detail || error.message || 'Request failed' 
+      };
+    }
+  }
+
+  // Endpoint-based POST request
+  async postEndpoint<T>(endpointPath: string, data?: any, config?: any): Promise<ApiResponse<T>> {
+    try {
+      const url = buildEndpointURL(endpointPath);
+      return await this.post<T>(url.replace(API_CONFIG.apiURL, ''), data, config);
+    } catch (error: any) {
+      return { 
+        success: false, 
+        error: error.message || 'Invalid endpoint path' 
       };
     }
   }
@@ -113,5 +169,8 @@ class ApiService {
 }
 
 // Export singleton instance
-export const apiService = new ApiService();
+export const apiService = ApiService.getInstance();
 export default apiService;
+
+// Export the class for type definitions
+export { ApiService };

@@ -35,6 +35,7 @@ import OptimizedArticleList from '../../components/OptimizedArticleList';
 import DualFilterUI from '../../components/DualFilterUI';
 import FeedFilterMenu from '../../components/FeedFilterMenu';
 import GlobalEventService from '../../services/GlobalEventService';
+import UnifiedFloatingButtons from '../../components/UnifiedFloatingButtons';
 
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:8003';
 const API = `${BACKEND_URL}/api`;
@@ -1333,96 +1334,54 @@ export default function FeedScreen() {
 
       {/* Selection Count moved to floating section above */}
 
-      {/* Floating Action Buttons */}
-      
-      {/* Manual Pick Button - Always visible at bottom right */}
-      <TouchableOpacity
-        style={[
-          styles.floatingButton,
+      {/* Unified Floating Buttons */}
+      <UnifiedFloatingButtons
+        actions={[
+          // Manual Pick Button - Always visible (rightmost)
           {
-            backgroundColor: selectionMode ? theme.primary : theme.surface,
-            borderColor: theme.primary,
-            borderWidth: 2,
-            bottom: showMiniPlayer ? 160 : 80,
-            right: 20
+            icon: 'list',
+            onPress: toggleSelectionMode,
+            disabled: creatingAudio,
+            visible: true,
+            style: selectionMode ? 'primary' : 'secondary',
+            accessibilityLabel: selectionMode ? "Exit manual selection mode" : "Start manual article selection",
+            accessibilityHint: selectionMode ? "Tap to exit manual selection mode" : "Tap to manually select articles for audio creation"
+          },
+          // Auto-Pick Button - Show when not in selection mode (middle)
+          {
+            icon: 'sparkles',
+            onPress: handleCreateAutoPickAudio,
+            disabled: creatingAudio,
+            loading: creatingAudio,
+            visible: !selectionMode && articles.length > 0,
+            style: 'secondary',
+            accessibilityLabel: 'Auto-pick articles and create audio',
+            accessibilityHint: 'Let AI automatically select best articles and create podcast'
+          },
+          // Create Audio Button - Show in selection mode when articles selected (leftmost)
+          {
+            icon: 'musical-notes',
+            onPress: handleCreateAudio,
+            disabled: creatingAudio,
+            loading: creatingAudio,
+            visible: selectionMode && selectedArticleIds.length > 0,
+            style: 'success',
+            accessibilityLabel: `Create audio from ${selectedArticleIds.length} selected articles`,
+            accessibilityHint: 'Tap to create audio from selected articles'
           }
         ]}
-        onPress={toggleSelectionMode}
-        disabled={creatingAudio}
-        activeOpacity={0.8}
-        accessibilityRole="button"
-        accessibilityLabel={selectionMode ? "Exit manual selection mode" : "Start manual article selection"}
-        accessibilityHint={selectionMode ? "Tap to exit manual selection mode" : "Tap to manually select articles for audio creation"}
-        accessibilityState={{ selected: selectionMode }}
-      >
-        <Ionicons 
-          name="list" 
-          size={20} 
-          color={selectionMode ? "#fff" : theme.primary} 
-        />
-      </TouchableOpacity>
-
-      {/* Auto-Pick Button - Show when not in selection mode */}
-      {!selectionMode && (
-        <TouchableOpacity
-          style={[
-            styles.floatingButton,
-            {
-              backgroundColor: theme.accent,
-              borderColor: theme.primary,
-              borderWidth: 2,
-              bottom: showMiniPlayer ? 160 : 80,
-              right: 80
-            }
-          ]}
-          onPress={handleCreateAutoPickAudio}
-          disabled={creatingAudio}
-          activeOpacity={0.8}
-          accessibilityRole="button"
-          accessibilityLabel="Auto-pick articles and create audio"
-          accessibilityHint="Let AI automatically select best articles and create podcast"
-        >
-          <Ionicons 
-            name="sparkles" 
-            size={20} 
-            color={theme.primary}
-          />
-        </TouchableOpacity>
-      )}
-
-      {/* Create Audio FAB - Show in selection mode when articles are selected */}
-      {selectionMode && selectedArticleIds.length > 0 && (
-        <TouchableOpacity
-          style={[
-            styles.mainFAB,
-            {
-              backgroundColor: theme.success,
-              bottom: showMiniPlayer ? 140 : 20,
-              right: 20
-            }
-          ]}
-          onPress={handleCreateAudio}
-          disabled={creatingAudio}
-          activeOpacity={0.8}
-          accessibilityRole="button"
-          accessibilityLabel={`Create audio from ${selectedArticleIds.length} selected articles`}
-          accessibilityHint="Tap to create audio from selected articles"
-        >
-          {creatingAudio ? (
-            <ActivityIndicator color="#fff" size={20} />
-          ) : (
-            <Ionicons 
-              name="musical-notes" 
-              size={24} 
-              color="#fff" 
-            />
-          )}
-        </TouchableOpacity>
-      )}
+      />
 
       {/* Selection Count Info - Show in selection mode */}
       {selectionMode && selectedArticleIds.length > 0 && (
-        <View style={[styles.selectionCountInfo, { backgroundColor: theme.accent, bottom: showMiniPlayer ? 210 : 130 }]}>
+        <View style={[
+          styles.selectionCountInfo, 
+          { 
+            backgroundColor: theme.accent,
+            // Position above the buttons with 72px offset (56px button height + 16px gap)
+            bottom: showMiniPlayer ? 232 : 156, // Adjusted for UnifiedFloatingButtons positioning
+          }
+        ]}>
           <Text style={[styles.selectionCountText, { color: theme.primary }]}>
             {selectedArticleIds.length} article{selectedArticleIds.length !== 1 ? 's' : ''} selected
           </Text>
@@ -1711,39 +1670,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#6b7280',
   },
-  // Pattern B: Clean FAB and Sticky Bar styles
-  mainFAB: {
-    position: 'absolute',
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
-    elevation: 8,
-  },
-  floatingButton: {
-    position: 'absolute',
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 6,
-  },
+  // Note: mainFAB and floatingButton styles removed - now using UnifiedFloatingButtons
   fabTouchable: {
     width: '100%',
     height: '100%',

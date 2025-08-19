@@ -334,7 +334,7 @@ const OptimizedArticleList: React.FC<OptimizedArticleListProps> = ({
       windowSize={10} // ウィンドウサイズを最適化
       removeClippedSubviews={true} // 画面外要素を削除
       ListEmptyComponent={ListEmptyComponent}
-      contentContainerStyle={articles.length === 0 ? { flex: 1 } : { paddingVertical: 8 }}
+      contentContainerStyle={articles.length === 0 ? { flex: 1 } : { paddingVertical: 8, paddingBottom: 160 }}
     />
   );
 };
