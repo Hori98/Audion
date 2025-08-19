@@ -1,17 +1,16 @@
-
 import React, { createContext, useState, useEffect, useContext } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import axios from 'axios';
+import AuthService, { User, AuthState } from '../services/AuthService';
 import { apiService } from '../services/ApiService';
 import { ErrorHandlingService } from '../services/ErrorHandlingService';
 import ConnectionService from '../services/ConnectionService';
-import { User } from '../types';
 
 // Define the shape of the context data
 interface AuthContextData {
   user: User | null;
   token: string | null;
   loading: boolean;
+  isAuthenticated: boolean;
   isNewUser: boolean;
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   register: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
@@ -30,36 +29,50 @@ export const useAuth = () => {
 
 // Provider component that wraps the app
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
-  const [user, setUser] = useState<User | null>(null);
-  const [token, setToken] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [authState, setAuthState] = useState<AuthState>({
+    user: null,
+    token: null,
+    isLoading: true,
+    isAuthenticated: false
+  });
   const [isNewUser, setIsNewUser] = useState(false);
   
   const connectionService = ConnectionService.getInstance();
-  const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:8003';
-  const API = `${BACKEND_URL}/api`;
 
   useEffect(() => {
-    // Initialize API service with auth error handler
-    apiService.setAuthErrorHandler(handleAuthError);
+    const initializeAuth = async () => {
+      await AuthService.initialize();
+    };
+    
+    initializeAuth();
+    
+    // Subscribe to auth state changes
+    const unsubscribe = AuthService.subscribe((newState) => {
+      setAuthState(newState);
+    });
+    
+    // Set initial state
+    setAuthState(AuthService.getAuthState());
     
     // Initialize connection service
     initializeConnection();
+    
+    // Cleanup subscription on unmount
+    return unsubscribe;
   }, []);
 
   const initializeConnection = async () => {
     try {
       await connectionService.ensureConnection();
-    } catch (error) {
-      console.warn('⚠️ Backend connection failed, continuing in offline mode:', error?.message || error);
+    } catch (error: any) {
+      console.warn('Backend connection failed, continuing in offline mode:', error?.message || error);
       // Continue with app initialization in offline mode
     }
   };
 
   // Check if user has RSS sources to determine if they're new
-  const checkUserOnboardStatus = async (userToken: string) => {
-    // Don't check if no token provided
-    if (!userToken || userToken.trim() === '') {
+  const checkUserOnboardStatus = async () => {
+    if (!authState.isAuthenticated || !authState.token) {
       setIsNewUser(true);
       return;
     }
@@ -69,7 +82,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       await connectionService.ensureConnection();
       
       const sources = await connectionService.get('/rss-sources', {
-        headers: { Authorization: `Bearer ${userToken}` }
+        headers: { Authorization: `Bearer ${authState.token}` }
       });
       // If user has RSS sources, they're not new
       if (sources.length > 0) {
@@ -85,156 +98,108 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         return;
       }
       
-      
       // For other errors (network, server issues), default to existing user
       setIsNewUser(false);
     }
   };
 
   useEffect(() => {
-    const loadAuthData = async () => {
-      try {
-        const storedToken = await AsyncStorage.getItem('token');
-        if (storedToken) {
-          // First, verify the token is still valid by checking onboard status
-          try {
-            // Test token validity by making an authenticated request
-            await checkUserOnboardStatus(storedToken);
-            
-            // Token is valid, set up authentication
-            setToken(storedToken);
-            axios.defaults.headers.common['Authorization'] = `Bearer ${storedToken}`;
-            apiService.setAuthToken(storedToken);
-            // TODO: Fetch user profile from backend to verify token and get user data
-            // For now, we'll set a placeholder user
-            setUser({ 
-              id: 'placeholder', 
-              email: 'placeholder@email.com', 
-              created_at: new Date().toISOString() 
-            });
-          } catch (tokenError) {
-            // Token is invalid, clear stored auth data
-            await AsyncStorage.removeItem('token');
-            setToken(null);
-            setUser(null);
-            setIsNewUser(false);
-            delete axios.defaults.headers.common['Authorization'];
-            apiService.setAuthToken(null);
-          }
-        }
-      } catch (e) {
-        console.error("Failed to load auth data", e);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadAuthData();
-  }, []);
+    // Check user onboard status when auth state changes
+    if (authState.isAuthenticated) {
+      checkUserOnboardStatus();
+    }
+  }, [authState.isAuthenticated]);
 
   const login = async (email: string, password: string) => {
     try {
-      const response = await axios.post(`${API}/auth/login`, { email, password });
-      const { access_token, user } = response.data;
-      setToken(access_token);
-      setUser(user);
-      axios.defaults.headers.common['Authorization'] = `Bearer ${access_token}`;
-      apiService.setAuthToken(access_token);
-      await AsyncStorage.setItem('token', access_token);
+      await connectionService.ensureConnection();
       
-      // Check if existing user needs onboarding
-      await checkUserOnboardStatus(access_token);
+      await AuthService.login({ email, password });
+      
+      // Check if user is new after successful login
+      await checkUserOnboardStatus();
       
       return { success: true };
-    } catch (error: unknown) {
-      console.error('Login failed:', error);
-      ErrorHandlingService.showError(error, { 
-        action: 'login',
-        source: 'AuthContext'
-      });
-      const errorMessage = error && typeof error === 'object' && 'response' in error 
-        ? (error.response as any)?.data?.detail || 'Login failed'
-        : 'Login failed';
+    } catch (error: any) {
+      let errorMessage = 'Login failed';
+      
+      if (error?.response?.data?.detail) {
+        errorMessage = error.response.data.detail;
+      } else if (error?.message) {
+        errorMessage = error.message;
+      }
+      
+      console.error('Login error:', errorMessage);
+      
       return { success: false, error: errorMessage };
     }
   };
 
   const register = async (email: string, password: string) => {
     try {
-      const response = await axios.post(`${API}/auth/register`, { email, password });
-      const { access_token, user } = response.data;
-      setToken(access_token);
-      setUser(user);
-      setIsNewUser(true); // Mark as new user for onboarding
-      axios.defaults.headers.common['Authorization'] = `Bearer ${access_token}`;
-      apiService.setAuthToken(access_token);
-      await AsyncStorage.setItem('token', access_token);
+      await connectionService.ensureConnection();
+      
+      await AuthService.register({ email, password });
+      
+      // New user after registration
+      setIsNewUser(true);
+      
       return { success: true };
-    } catch (error: unknown) {
-      console.error('Registration failed:', error);
-      ErrorHandlingService.showError(error, { 
-        action: 'register',
-        source: 'AuthContext'
-      });
-      const errorMessage = error && typeof error === 'object' && 'response' in error 
-        ? (error.response as any)?.data?.detail || 'Registration failed'
-        : 'Registration failed';
+    } catch (error: any) {
+      let errorMessage = 'Registration failed';
+      
+      if (error?.response?.data?.detail) {
+        errorMessage = error.response.data.detail;
+      } else if (error?.message) {
+        errorMessage = error.message;
+      }
+      
+      console.error('Registration error:', errorMessage);
+      
       return { success: false, error: errorMessage };
     }
   };
 
   const logout = async () => {
-    setToken(null);
-    setUser(null);
-    setIsNewUser(false);
-    delete axios.defaults.headers.common['Authorization'];
-    apiService.setAuthToken(null);
-    await AsyncStorage.removeItem('token');
+    try {
+      await AuthService.logout();
+      setIsNewUser(false);
+      
+      // Clear additional app-specific storage
+      await AsyncStorage.multiRemove(['feed_selected_articles']);
+    } catch (error) {
+      console.error('Error during logout:', error);
+    }
   };
 
   const forceLogout = async () => {
-    setToken(null);
-    setUser(null);
-    setIsNewUser(false);
-    delete axios.defaults.headers.common['Authorization'];
-    apiService.setAuthToken(null);
-    
-    // Clear all AsyncStorage auth-related items
+    // Used for debugging - force logout and clear all data
     try {
+      await AuthService.logout();
+      setIsNewUser(false);
+      
+      // Clear all AsyncStorage auth-related items
       await AsyncStorage.multiRemove([
-        'token',
-        'user',
         'isNewUser',
         'feed_selected_articles'
       ]);
     } catch (error) {
       console.error('Error clearing auth storage:', error);
     }
-    
-    // Force reload by setting loading state
-    setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
-    }, 100);
   };
 
   const handleAuthError = async () => {
     try {
-      // Clear storage with error handling
+      // AuthService handles auth token cleanup
+      await AuthService.logout();
+      
+      // Clear app-specific storage
       await AsyncStorage.multiRemove([
-        'token',
-        'user', 
         'isNewUser',
         'feed_selected_articles'
       ]).catch(err => console.warn('Storage clear error:', err));
       
-      // Clear headers safely
-      delete axios.defaults.headers.common['Authorization'];
-      apiService.setAuthToken(null);
-      
-      // Reset state
-      setToken(null);
-      setUser(null);
+      // Reset app-specific state
       setIsNewUser(false);
       
     } catch (error) {
@@ -243,9 +208,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   const value = {
-    user,
-    token,
-    loading,
+    user: authState.user,
+    token: authState.token,
+    loading: authState.isLoading,
+    isAuthenticated: authState.isAuthenticated,
     isNewUser,
     login,
     register,

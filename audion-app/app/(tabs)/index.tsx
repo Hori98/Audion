@@ -11,6 +11,7 @@ import {
   PanResponder,
   Dimensions,
   ScrollView,
+  RefreshControl,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
@@ -30,6 +31,13 @@ import ArticleReader from '../../components/ArticleReader';
 import OptimizedArticleList from '../../components/OptimizedArticleList';
 import SingleGenreDropdown from '../../components/SingleGenreDropdown';
 import GlobalEventService from '../../services/GlobalEventService';
+import HeroCarousel from '../../components/HeroCarousel';
+import FeatureCard from '../../components/cards/FeatureCard';
+import StandardCard from '../../components/cards/StandardCard';
+import BriefCard from '../../components/cards/BriefCard';
+import { useAudio } from '../../context/AudioContext';
+import UnifiedFloatingButtons from '../../components/UnifiedFloatingButtons';
+// import MiniPlayer from '../../components/MiniPlayer'; // Removed - using global MiniPlayer from _layout.tsx
 
 // Constants
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:8003';
@@ -41,6 +49,7 @@ export default function MainScreen() {
   const { token } = useAuth();
   const { theme } = useTheme();
   const router = useRouter();
+  const { playAudio } = useAudio();
   
   // Simplified state management like the working version
   const [articles, setArticles] = useState<Article[]>([]);
@@ -218,6 +227,86 @@ export default function MainScreen() {
     }
   };
 
+  const convertArticleToDirectTTS = async (article: Article) => {
+    try {
+      const directTTSResponse = await axios.post(
+        `${API}/audio/direct-tts`,
+        {
+          article_id: article.id,
+          title: article.title,
+          content: article.summary || article.title,
+          voice_language: "ja-JP",
+          voice_name: "nova"
+        },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      if (directTTSResponse.data?.audio_url) {
+        return {
+          id: directTTSResponse.data.id,
+          title: directTTSResponse.data.title || article.title,
+          audio_url: directTTSResponse.data.audio_url,
+          duration: directTTSResponse.data.duration || 180,
+          created_at: directTTSResponse.data.created_at,
+        };
+      }
+    } catch (error) {
+      console.error('Error creating direct TTS:', error);
+      throw error;
+    }
+    return null;
+  };
+
+  const convertArticleToAudioItem = async (article: Article) => {
+    try {
+      const audioResponse = await axios.post(
+        `${API}/audio/create`,
+        { articles: [article] },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      if (audioResponse.data?.audio_url) {
+        return {
+          id: audioResponse.data.id,
+          title: audioResponse.data.title || article.title,
+          audio_url: audioResponse.data.audio_url,
+          duration: audioResponse.data.duration || 180,
+          created_at: new Date().toISOString(),
+          script: audioResponse.data.script,
+        };
+      }
+    } catch (error) {
+      console.error('Error creating audio:', error);
+      throw error;
+    }
+    return null;
+  };
+
+  const handlePlayPress = async (article: Article) => {
+    try {
+      setCreatingAudio(true);
+      const audioItem = await convertArticleToDirectTTS(article);
+      if (audioItem) {
+        await playAudio(audioItem);
+        
+        // Record interaction
+        await PersonalizationService.recordInteraction({
+          action: 'play',
+          contentId: article.id,
+          contentType: 'article',
+          category: article.genre || 'General',
+          source: article.source_name,
+          timestamp: Date.now(),
+          engagementLevel: 'high',
+        });
+      }
+    } catch (error) {
+      Alert.alert('エラー', '音声の作成に失敗しました');
+    } finally {
+      setCreatingAudio(false);
+    }
+  };
+
   const handleArticlePress = async (article: Article) => {
     // Save reading history
     const newHistory = new Map(readingHistory);
@@ -227,7 +316,7 @@ export default function MainScreen() {
     
     // Record interaction
     await PersonalizationService.recordInteraction({
-      action: 'play',
+      action: 'read',
       contentId: article.id,
       contentType: 'article',
       category: article.genre || 'General',
@@ -334,26 +423,141 @@ export default function MainScreen() {
     );
   }
 
+  // Split articles into sections for new UI
+  const getArticleSections = (articles: Article[]) => {
+    if (articles.length === 0) {
+      return { heroArticles: [], forYouArticles: [], briefArticles: [] };
+    }
+
+    // Sort by score/freshness - assuming newer articles are better for hero
+    const sortedArticles = [...articles].sort((a, b) => {
+      const aTime = new Date(a.published_at).getTime();
+      const bTime = new Date(b.published_at).getTime();
+      return bTime - aTime; // Newer first
+    });
+
+    // Hero: Top 3 most recent/important articles
+    const heroArticles = sortedArticles.slice(0, 3);
+    
+    // For You: Next 8-10 articles (personalized section)
+    const forYouArticles = sortedArticles.slice(3, 13);
+    
+    // Brief: Remaining articles for quick consumption
+    const briefArticles = sortedArticles.slice(13);
+
+    return { heroArticles, forYouArticles, briefArticles };
+  };
+
+  const { heroArticles, forYouArticles, briefArticles } = getArticleSections(filteredArticles);
+
   return (
     <SafeAreaView 
       style={[styles.container, { backgroundColor: theme.background }]}
       {...edgeSwipeResponder.panHandlers}
     >
-      {/* Genre Filter Only - Dropdown Style */}
-      <SingleGenreDropdown
-        genres={GENRES}
-        selectedGenre={selectedGenre}
-        onGenreChange={setSelectedGenre}
-      />
+      <ScrollView
+        style={styles.scrollView}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={[theme.primary]}
+            progressBackgroundColor={theme.surface}
+          />
+        }
+      >
+        {/* Genre Filter Only - Dropdown Style */}
+        <SingleGenreDropdown
+          genres={GENRES}
+          selectedGenre={selectedGenre}
+          onGenreChange={setSelectedGenre}
+        />
 
-      {/* Articles List - Using OptimizedArticleList like before */}
-      <OptimizedArticleList
-        articles={filteredArticles}
-        onArticlePress={handleArticlePress}
-        refreshing={refreshing}
-        onRefresh={onRefresh}
-        loading={loading}
-      />
+        {/* Loading State */}
+        {loading && (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={theme.primary} />
+            <Text style={[styles.loadingText, { color: theme.textSecondary }]}>
+              記事を読み込み中...
+            </Text>
+          </View>
+        )}
+
+        {/* Hero Carousel Section */}
+        {!loading && heroArticles.length > 0 && (
+          <HeroCarousel
+            articles={heroArticles}
+            onArticlePress={handleArticlePress}
+            onPlayPress={handlePlayPress}
+          />
+        )}
+
+
+        {/* For You Section */}
+        {!loading && forYouArticles.length > 0 && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={[styles.sectionTitle, { color: theme.text }]}>
+                あなたにおすすめ
+              </Text>
+              <Text style={[styles.sectionSubtitle, { color: theme.textSecondary }]}>
+                AIが選んだパーソナライズされた記事
+              </Text>
+            </View>
+            
+            {forYouArticles.map((article, index) => (
+              <FeatureCard
+                key={article.id}
+                article={article}
+                onPress={handleArticlePress}
+                onPlayPress={handlePlayPress}
+                isRead={readingHistory.has(article.id)}
+              />
+            ))}
+          </View>
+        )}
+
+        {/* Brief Section */}
+        {!loading && briefArticles.length > 0 && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={[styles.sectionTitle, { color: theme.text }]}>
+                最新ニュース
+              </Text>
+              <Text style={[styles.sectionSubtitle, { color: theme.textSecondary }]}>
+                サッと読める短報
+              </Text>
+            </View>
+            
+            {briefArticles.map((article, index) => (
+              <BriefCard
+                key={article.id}
+                article={article}
+                onPress={handleArticlePress}
+                onPlayPress={handlePlayPress}
+                isRead={readingHistory.has(article.id)}
+              />
+            ))}
+          </View>
+        )}
+
+        {/* Empty State */}
+        {!loading && filteredArticles.length === 0 && (
+          <View style={styles.emptyContainer}>
+            <Ionicons name="newspaper-outline" size={64} color={theme.textSecondary} />
+            <Text style={[styles.emptyTitle, { color: theme.text }]}>
+              記事が見つかりません
+            </Text>
+            <Text style={[styles.emptySubtitle, { color: theme.textSecondary }]}>
+              フィルターを変更するか、RSSソースを追加してください
+            </Text>
+          </View>
+        )}
+
+        {/* Bottom Padding for Audio Creation Button */}
+        <View style={styles.bottomPadding} />
+      </ScrollView>
 
       {/* Search Modal */}
       <Modal
@@ -395,19 +599,21 @@ export default function MainScreen() {
         </SafeAreaView>
       </Modal>
 
-      {/* Auto-Pick Floating Button */}
-      <TouchableOpacity
-        style={[styles.floatingButton, { backgroundColor: theme.primary }]}
-        onPress={createAudioFromArticles}
-        disabled={creatingAudio || articles.length === 0}
-        activeOpacity={0.8}
-      >
-        {creatingAudio ? (
-          <ActivityIndicator size={24} color="#fff" />
-        ) : (
-          <Ionicons name="sparkles" size={24} color="#fff" />
-        )}
-      </TouchableOpacity>
+      {/* Unified Floating Buttons */}
+      <UnifiedFloatingButtons
+        actions={[
+          {
+            icon: 'sparkles',
+            onPress: createAudioFromArticles,
+            disabled: creatingAudio || articles.length === 0,
+            loading: creatingAudio,
+            visible: articles.length > 0,
+            style: 'primary',
+            accessibilityLabel: 'Auto-pick articles and create audio',
+            accessibilityHint: 'Let AI automatically select best articles and create podcast'
+          }
+        ]}
+      />
 
       {/* Article Reader Modal */}
       <ArticleReader
@@ -418,6 +624,9 @@ export default function MainScreen() {
           setSelectedArticle(null);
         }}
       />
+
+      {/* Mini Player */}
+      {/* MiniPlayer removed - handled globally in _layout.tsx */}
     </SafeAreaView>
   );
 }
@@ -426,7 +635,58 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  // Removed old header styles - now handled by main header
+  scrollView: {
+    flex: 1,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 60,
+    gap: 12,
+  },
+  loadingText: {
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  section: {
+    marginTop: 24,
+    marginBottom: 16,
+  },
+  sectionHeader: {
+    paddingHorizontal: 16,
+    marginBottom: 16,
+  },
+  sectionTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    marginBottom: 4,
+  },
+  sectionSubtitle: {
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 80,
+    paddingHorizontal: 32,
+    gap: 16,
+  },
+  emptyTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    textAlign: 'center',
+  },
+  emptySubtitle: {
+    fontSize: 14,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  bottomPadding: {
+    height: 180, // Space for floating button + MiniPlayer + tab bar
+  },
   searchModal: {
     flex: 1,
   },
@@ -453,24 +713,5 @@ const styles = StyleSheet.create({
   },
   placeholder: {
     width: 40,
-  },
-  // Genre styles removed - now handled by SlideGenreNavigation component
-  floatingButton: {
-    position: 'absolute',
-    bottom: 20,
-    right: 20,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
   },
 });

@@ -6,7 +6,7 @@ import { ThemeProvider } from '../context/ThemeContext';
 import { LanguageProvider } from '../context/LanguageContext';
 import { Slot, useRouter, useSegments } from 'expo-router';
 import { ActivityIndicator, View, Alert } from 'react-native';
-import MiniPlayer from '../components/MiniPlayer';
+import MiniPlayerV2 from '../components/MiniPlayerV2';
 import FullScreenPlayer from '../components/FullScreenPlayer';
 import ChapterSourceButton from '../components/ChapterSourceButton';
 import { useAudio } from '../context/AudioContext';
@@ -76,7 +76,7 @@ const InitialLayout = () => {
     <View style={{ flex: 1 }}>
       <Slot />
       <ChapterSourceButtonWrapper />
-      <MiniPlayer />
+      <MiniPlayerV2 />
       <FullScreenPlayer />
     </View>
   );

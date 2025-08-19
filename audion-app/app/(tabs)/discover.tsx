@@ -229,6 +229,7 @@ export default function DiscoverScreen() {
       
       <ScrollView 
         style={styles.content}
+        contentContainerStyle={{ paddingBottom: 160 }}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
         }

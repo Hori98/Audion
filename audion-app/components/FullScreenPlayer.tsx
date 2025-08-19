@@ -55,6 +55,42 @@ export default function FullScreenPlayer() {
   const scrollViewRef = React.useRef<ScrollView>(null);
   const progressBarRef = React.useRef<View>(null);
   const progressBarWidth = React.useRef(0);
+  
+  // PanResponder for drag operations - moved to top level to maintain hooks order
+  const panResponder = React.useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (evt, gestureState) => {
+        return Math.abs(gestureState.dx) > 5 || Math.abs(gestureState.dy) > 5;
+      },
+      onPanResponderGrant: (evt, gestureState) => {
+        // Start dragging
+        setIsDragging(true);
+        const locationX = evt.nativeEvent.locationX;
+        if (progressBarWidth.current > 0) {
+          const percentage = Math.max(0, Math.min(100, (locationX / progressBarWidth.current) * 100));
+          setDragPosition(percentage);
+        }
+      },
+      onPanResponderMove: (evt, gestureState) => {
+        // Continue dragging
+        if (progressBarWidth.current > 0) {
+          const locationX = evt.nativeEvent.locationX;
+          const percentage = Math.max(0, Math.min(100, (locationX / progressBarWidth.current) * 100));
+          setDragPosition(percentage);
+        }
+      },
+      onPanResponderRelease: (evt, gestureState) => {
+        // End dragging and seek
+        setIsDragging(false);
+        if (duration > 0 && progressBarWidth.current > 0) {
+          const locationX = evt.nativeEvent.locationX;
+          const percentage = Math.max(0, Math.min(100, (locationX / progressBarWidth.current) * 100));
+          const newPosition = (percentage / 100) * duration;
+          seekTo(newPosition);
+        }
+      },
+    })
+  ).current;
 
   // Auto-open script when requested from mini player
   React.useEffect(() => {
@@ -207,41 +243,7 @@ export default function FullScreenPlayer() {
   const progressPercentage = duration > 0 ? (position / duration) * 100 : 0;
   const displayProgressPercentage = isDragging ? dragPosition : progressPercentage;
 
-  // PanResponder for drag operations
-  const panResponder = React.useRef(
-    PanResponder.create({
-      onMoveShouldSetPanResponder: (evt, gestureState) => {
-        return Math.abs(gestureState.dx) > 5 || Math.abs(gestureState.dy) > 5;
-      },
-      onPanResponderGrant: (evt, gestureState) => {
-        // Start dragging
-        setIsDragging(true);
-        const locationX = evt.nativeEvent.locationX;
-        if (progressBarWidth.current > 0) {
-          const percentage = Math.max(0, Math.min(100, (locationX / progressBarWidth.current) * 100));
-          setDragPosition(percentage);
-        }
-      },
-      onPanResponderMove: (evt, gestureState) => {
-        // Continue dragging
-        if (progressBarWidth.current > 0) {
-          const locationX = evt.nativeEvent.locationX;
-          const percentage = Math.max(0, Math.min(100, (locationX / progressBarWidth.current) * 100));
-          setDragPosition(percentage);
-        }
-      },
-      onPanResponderRelease: (evt, gestureState) => {
-        // End dragging and seek
-        setIsDragging(false);
-        if (duration > 0 && progressBarWidth.current > 0) {
-          const locationX = evt.nativeEvent.locationX;
-          const percentage = Math.max(0, Math.min(100, (locationX / progressBarWidth.current) * 100));
-          const newPosition = (percentage / 100) * duration;
-          seekTo(newPosition);
-        }
-      },
-    })
-  ).current;
+  // PanResponder moved to top level to maintain hooks order
 
   const handleSeek = (percentage: number) => {
     if (duration > 0 && isFinite(percentage) && percentage >= 0 && percentage <= 100) {

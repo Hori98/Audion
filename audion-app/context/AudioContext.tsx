@@ -49,6 +49,10 @@ interface AudioContextType {
   // Chapter navigation
   currentChapter: CurrentChapter | null;
   
+  // 🆕 Audio queue state
+  audioQueue: AudioItem[];
+  currentQueueIndex: number;
+  
   // UI state
   showMiniPlayer: boolean;
   showFullScreenPlayer: boolean;
@@ -70,6 +74,15 @@ interface AudioContextType {
   // Chapter actions
   getCurrentChapter: () => CurrentChapter | null;
   openCurrentChapterSource: () => Promise<void>;
+  
+  // 🆕 Audio queue actions
+  addToQueue: (audioItem: AudioItem) => void;
+  removeFromQueue: (audioId: string) => void;
+  clearQueue: () => void;
+  playNext: () => Promise<void>;
+  playPrevious: () => Promise<void>;
+  skipToQueueItem: (index: number) => Promise<void>;
+  moveQueueItem: (fromIndex: number, toIndex: number) => void;
   
   // 🆕 Download actions
   downloadAudio: (audioItem: AudioItem) => Promise<void>;
@@ -108,6 +121,10 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   const [openDirectToScript, setOpenDirectToScript] = useState(false);
   const [playStartTime, setPlayStartTime] = useState<number | null>(null);
   const [currentChapter, setCurrentChapter] = useState<CurrentChapter | null>(null);
+  
+  // 🆕 Audio queue states
+  const [audioQueue, setAudioQueue] = useState<AudioItem[]>([]);
+  const [currentQueueIndex, setCurrentQueueIndex] = useState(0);
   
   // 🆕 Download states
   const [downloadProgress, setDownloadProgress] = useState<Map<string, number>>(new Map());
@@ -427,6 +444,70 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     
     // Clear background audio notification
     await backgroundAudioService.clearNowPlaying();
+  };
+
+  // 🆕 Audio queue management functions
+  const addToQueue = (audioItem: AudioItem) => {
+    setAudioQueue(prev => [...prev, audioItem]);
+  };
+
+  const removeFromQueue = (audioId: string) => {
+    setAudioQueue(prev => prev.filter(item => item.id !== audioId));
+    setCurrentQueueIndex(prev => {
+      const newQueue = audioQueue.filter(item => item.id !== audioId);
+      if (prev >= newQueue.length) return Math.max(0, newQueue.length - 1);
+      return prev;
+    });
+  };
+
+  const clearQueue = () => {
+    setAudioQueue([]);
+    setCurrentQueueIndex(0);
+  };
+
+  const playNext = async () => {
+    if (currentQueueIndex < audioQueue.length - 1) {
+      const nextIndex = currentQueueIndex + 1;
+      setCurrentQueueIndex(nextIndex);
+      await playAudio(audioQueue[nextIndex]);
+    }
+  };
+
+  const playPrevious = async () => {
+    if (currentQueueIndex > 0) {
+      const prevIndex = currentQueueIndex - 1;
+      setCurrentQueueIndex(prevIndex);
+      await playAudio(audioQueue[prevIndex]);
+    }
+  };
+
+  const skipToQueueItem = async (index: number) => {
+    if (index >= 0 && index < audioQueue.length) {
+      setCurrentQueueIndex(index);
+      await playAudio(audioQueue[index]);
+    }
+  };
+
+  const moveQueueItem = (fromIndex: number, toIndex: number) => {
+    if (fromIndex < 0 || fromIndex >= audioQueue.length || toIndex < 0 || toIndex >= audioQueue.length) {
+      return;
+    }
+    
+    setAudioQueue(prev => {
+      const newQueue = [...prev];
+      const [movedItem] = newQueue.splice(fromIndex, 1);
+      newQueue.splice(toIndex, 0, movedItem);
+      return newQueue;
+    });
+    
+    // Update current index if needed
+    if (fromIndex === currentQueueIndex) {
+      setCurrentQueueIndex(toIndex);
+    } else if (fromIndex < currentQueueIndex && toIndex >= currentQueueIndex) {
+      setCurrentQueueIndex(prev => prev - 1);
+    } else if (fromIndex > currentQueueIndex && toIndex <= currentQueueIndex) {
+      setCurrentQueueIndex(prev => prev + 1);
+    }
   };
 
   const seekTo = async (newPosition: number) => {
@@ -824,6 +905,9 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     sound,
     playbackRate,
     currentChapter,
+    // 🆕 Audio queue state
+    audioQueue,
+    currentQueueIndex,
     showMiniPlayer,
     showFullScreenPlayer,
     openDirectToScript,
@@ -839,6 +923,14 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     setShowFullScreenPlayer: setShowFullScreenPlayerWithScript,
     getCurrentChapter,
     openCurrentChapterSource,
+    // 🆕 Audio queue actions
+    addToQueue,
+    removeFromQueue,
+    clearQueue,
+    playNext,
+    playPrevious,
+    skipToQueueItem,
+    moveQueueItem,
     // 🆕 Download actions
     downloadAudio,
     removeDownload,
