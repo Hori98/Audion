@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, RefreshControl, SafeAreaView, Modal } from 'react-native';
 import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
 import { useAudio } from '../../context/AudioContext';
@@ -9,6 +9,7 @@ import { format } from 'date-fns';
 import { Ionicons } from '@expo/vector-icons';
 import LoadingIndicator from '../../components/LoadingIndicator';
 import SearchBar from '../../components/SearchBar';
+import GlobalEventService from '../../services/GlobalEventService';
 
 interface CommunityAudioItem {
   id: string;
@@ -38,8 +39,19 @@ export default function DiscoverScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<'all' | 'community' | 'official' | 'trending'>('all');
+  const [showSearchModal, setShowSearchModal] = useState(false);
 
   const API = process.env.EXPO_PUBLIC_BACKEND_URL ? `${process.env.EXPO_PUBLIC_BACKEND_URL}/api` : 'http://localhost:8003/api';
+
+  // Global event listener for search modal
+  useEffect(() => {
+    const eventService = GlobalEventService.getInstance();
+    const unsubscribe = eventService.onDiscoverSearchTrigger(() => {
+      setShowSearchModal(true);
+    });
+
+    return unsubscribe;
+  }, []);
 
   useFocusEffect(
     React.useCallback(() => {
@@ -181,13 +193,8 @@ export default function DiscoverScreen() {
   });
 
   return (
-    <View style={styles.container}>
-      {/* Search Bar */}
-      <SearchBar
-        value={searchQuery}
-        onChangeText={setSearchQuery}
-        placeholder="Search community audio..."
-      />
+    <SafeAreaView style={styles.container}>
+      {/* Removed header - moved to main navigation header */}
       
       {/* Category Filter */}
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoryFilter}>
@@ -226,10 +233,9 @@ export default function DiscoverScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
         }
       >
-        <View style={styles.header}>
-          <Ionicons name="compass-outline" size={24} color={theme.primary} />
-          <Text style={styles.headerTitle}>発見</Text>
-          <Text style={styles.headerSubtitle}>コミュニティと運営の音声コンテンツ</Text>
+        <View style={styles.sectionHeader}>
+          <Ionicons name="compass-outline" size={20} color={theme.primary} />
+          <Text style={styles.sectionTitle}>コミュニティと運営の音声コンテンツ</Text>
         </View>
 
         {filteredAudio.length === 0 ? (
@@ -317,7 +323,66 @@ export default function DiscoverScreen() {
           </Text>
         </View>
       </ScrollView>
-    </View>
+
+      {/* Search Modal */}
+      <Modal
+        visible={showSearchModal}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setShowSearchModal(false)}
+      >
+        <SafeAreaView style={[styles.searchModal, { backgroundColor: theme.background }]}>
+          <View style={styles.searchModalHeader}>
+            <TouchableOpacity
+              onPress={() => setShowSearchModal(false)}
+              style={styles.closeButton}
+            >
+              <Ionicons name="close" size={24} color={theme.text} />
+            </TouchableOpacity>
+            <Text style={[styles.searchModalTitle, { color: theme.text }]}>
+              音声を検索
+            </Text>
+            <View style={styles.placeholder} />
+          </View>
+          
+          <SearchBar
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholder="音声コンテンツを検索..."
+            autoFocus={true}
+          />
+          
+          <ScrollView style={styles.searchResults}>
+            {filteredAudio.length === 0 ? (
+              <View style={styles.noResults}>
+                <Ionicons name="search" size={48} color={theme.textMuted} />
+                <Text style={[styles.noResultsText, { color: theme.textMuted }]}>
+                  {searchQuery.trim() ? '検索結果がありません' : '検索キーワードを入力してください'}
+                </Text>
+              </View>
+            ) : (
+              filteredAudio.slice(0, 10).map((audio) => (
+                <TouchableOpacity
+                  key={audio.id}
+                  style={[styles.searchResultItem, { backgroundColor: theme.surface }]}
+                  onPress={() => {
+                    setShowSearchModal(false);
+                    handlePlayAudio(audio);
+                  }}
+                >
+                  <Text style={[styles.searchResultTitle, { color: theme.text }]} numberOfLines={2}>
+                    {audio.title}
+                  </Text>
+                  <Text style={[styles.searchResultCreator, { color: theme.textSecondary }]}>
+                    {audio.creator?.name}
+                  </Text>
+                </TouchableOpacity>
+              ))
+            )}
+          </ScrollView>
+        </SafeAreaView>
+      </Modal>
+    </SafeAreaView>
   );
 }
 
@@ -326,21 +391,86 @@ const createStyles = (theme: any) => StyleSheet.create({
     flex: 1,
     backgroundColor: theme.background,
   },
-  categoryFilter: {
-    paddingHorizontal: 20,
+  // Removed old header styles - now handled by main header
+  searchModal: {
+    flex: 1,
+  },
+  searchModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
     paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E5E5',
+  },
+  closeButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  searchModalTitle: {
+    flex: 1,
+    fontSize: 18,
+    fontWeight: 'bold',
+    textAlign: 'center',
+  },
+  placeholder: {
+    width: 40,
+  },
+  searchResults: {
+    flex: 1,
+    paddingHorizontal: 16,
+  },
+  noResults: {
+    alignItems: 'center',
+    paddingVertical: 60,
+  },
+  noResultsText: {
+    fontSize: 16,
+    marginTop: 16,
+    textAlign: 'center',
+  },
+  searchResultItem: {
+    padding: 16,
+    marginVertical: 4,
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  searchResultTitle: {
+    fontSize: 16,
+    fontWeight: '500',
+    marginBottom: 4,
+  },
+  searchResultCreator: {
+    fontSize: 12,
+  },
+  categoryFilter: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    height: 68, // Fixed height matching GenreSlideNavigation
+    backgroundColor: theme.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.border,
   },
   categoryButton: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingVertical: 12,
     marginRight: 12,
     borderRadius: 20,
     backgroundColor: theme.card,
     borderWidth: 1,
     borderColor: theme.border,
     gap: 6,
+    height: 44, // Fixed height for consistency with GenreSlideNavigation
+    minWidth: 80, // Minimum width for better touch targets
   },
   categoryButtonActive: {
     backgroundColor: theme.primary,
@@ -358,20 +488,16 @@ const createStyles = (theme: any) => StyleSheet.create({
     flex: 1,
     paddingHorizontal: 20,
   },
-  header: {
+  sectionHeader: {
+    flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 24,
+    paddingVertical: 16,
+    gap: 8,
   },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
     color: theme.text,
-    marginTop: 8,
-  },
-  headerSubtitle: {
-    fontSize: 14,
-    color: theme.textSecondary,
-    marginTop: 4,
   },
   emptyState: {
     alignItems: 'center',

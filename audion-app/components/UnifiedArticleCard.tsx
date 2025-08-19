@@ -1,336 +1,252 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Image, Dimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { Article } from '../types';
-import { format } from 'date-fns';
+
+const { width: screenWidth } = Dimensions.get('window');
 
 interface UnifiedArticleCardProps {
   article: Article;
   onPress: (article: Article) => void;
-  showActions?: boolean;
-  isSelected?: boolean;
-  onToggleSelection?: (article: Article) => void;
-  onLike?: (article: Article) => void;
-  onDislike?: (article: Article) => void;
-  onArchive?: (article: Article) => void;
-  onBookmark?: (article: Article) => void;
-  isLiked?: boolean;
-  isDisliked?: boolean;
-  isArchived?: boolean;
-  isBookmarked?: boolean;
+  onReadLaterToggle?: (article: Article, event: any) => void;
+  readLaterStatus?: boolean;
+  showReadingIndicator?: boolean;
   isRead?: boolean;
-  variant?: 'default' | 'compact' | 'detailed';
+  style?: any;
 }
+
+const formatDate = (dateString: string) => {
+  try {
+    return new Date(dateString).toLocaleDateString();
+  } catch {
+    return 'Unknown Date';
+  }
+};
 
 export default function UnifiedArticleCard({
   article,
   onPress,
-  showActions = false,
-  isSelected = false,
-  onToggleSelection,
-  onLike,
-  onDislike,
-  onArchive,
-  onBookmark,
-  isLiked = false,
-  isDisliked = false,
-  isArchived = false,
-  isBookmarked = false,
+  onReadLaterToggle,
+  readLaterStatus = false,
+  showReadingIndicator = false,
   isRead = false,
-  variant = 'default',
+  style
 }: UnifiedArticleCardProps) {
   const { theme } = useTheme();
-  const styles = createStyles(theme);
 
-  const getVariantStyles = () => {
-    switch (variant) {
-      case 'compact':
-        return styles.compactCard;
-      case 'detailed':
-        return styles.detailedCard;
-      default:
-        return styles.defaultCard;
+  const handlePress = () => {
+    onPress(article);
+  };
+
+  const handleReadLaterPress = (event: any) => {
+    event.stopPropagation();
+    if (onReadLaterToggle) {
+      onReadLaterToggle(article, event);
     }
   };
 
-  const handleMainPress = () => {
-    if (onToggleSelection && isSelected !== undefined) {
-      onToggleSelection(article);
-    } else {
-      onPress(article);
-    }
-  };
-
-  const formatDate = (dateString: string) => {
-    try {
-      return format(new Date(dateString), 'MMM dd, HH:mm');
-    } catch {
-      return 'Unknown date';
-    }
-  };
+  // Check if article has image
+  const hasImage = article.image_url && article.image_url.trim() !== '';
 
   return (
     <TouchableOpacity
-      style={[
-        styles.container,
-        getVariantStyles(),
-        isSelected && styles.selected,
-        isRead && styles.readArticle,
-      ]}
-      onPress={handleMainPress}
+      style={[styles.articleCard, { backgroundColor: theme.surface }, style]}
+      onPress={handlePress}
       activeOpacity={0.7}
     >
-      {/* Selection indicator */}
-      {isSelected !== undefined && (
-        <View style={styles.selectionIndicator}>
-          <Ionicons
-            name={isSelected ? 'checkmark-circle' : 'ellipse-outline'}
-            size={20}
-            color={isSelected ? theme.primary : theme.textMuted}
-          />
-        </View>
-      )}
-
-      {/* Article Image */}
-      {article.image_url && variant !== 'compact' && (
-        <View style={styles.imageContainer}>
-          <Image
-            source={{ uri: article.image_url }}
-            style={styles.articleImage}
-            resizeMode="cover"
-          />
-        </View>
-      )}
-
-      {/* Content */}
-      <View style={styles.contentContainer}>
+      <View style={styles.cardContent}>
         {/* Header */}
-        <View style={styles.header}>
-          <Text style={styles.sourceName} numberOfLines={1}>
+        <View style={styles.articleHeader}>
+          <Text style={[styles.articleSource, { color: theme.textMuted }]}>
             {article.source_name}
           </Text>
-          <Text style={styles.date}>
-            {formatDate(article.published_at || article.created_at)}
-          </Text>
+          {showReadingIndicator && isRead && (
+            <View style={[styles.readIndicator, { backgroundColor: theme.success }]}>
+              <Text style={styles.readIndicatorText}>✓</Text>
+            </View>
+          )}
         </View>
 
-        {/* Title */}
-        <Text
-          style={[
-            styles.title,
-            variant === 'compact' && styles.compactTitle,
-            isRead && styles.readTitle,
-          ]}
-          numberOfLines={variant === 'compact' ? 2 : 3}
-        >
-          {article.title}
-        </Text>
-
-        {/* Summary */}
-        {variant !== 'compact' && article.summary && (
-          <Text
-            style={[styles.summary, isRead && styles.readSummary]}
-            numberOfLines={2}
-          >
-            {article.summary}
-          </Text>
-        )}
-
-        {/* Genre */}
-        {article.genre && article.genre !== 'General' && (
-          <View style={styles.genreContainer}>
-            <Text style={styles.genre}>{article.genre}</Text>
+        {/* Main content area with fixed height */}
+        <View style={styles.mainContent}>
+          {/* Left side - Text content */}
+          <View style={[styles.textContent, hasImage ? styles.textContentWithImage : styles.textContentFull]}>
+            <Text style={[styles.articleTitle, { color: theme.text }]} numberOfLines={hasImage ? 2 : 3}>
+              {article.title}
+            </Text>
+            
+            <Text 
+              style={[styles.articleSummary, { color: theme.textSecondary }]} 
+              numberOfLines={hasImage ? 2 : 3}
+            >
+              {article.summary}
+            </Text>
           </View>
-        )}
 
-        {/* Actions */}
-        {showActions && (
-          <View style={styles.actionsContainer}>
-            {onLike && (
-              <TouchableOpacity
-                style={[
-                  styles.actionButton,
-                  isLiked && { backgroundColor: theme.success },
-                ]}
-                onPress={() => onLike(article)}
-              >
-                <Ionicons
-                  name={isLiked ? 'heart' : 'heart-outline'}
-                  size={16}
-                  color={isLiked ? '#fff' : theme.textMuted}
-                />
-              </TouchableOpacity>
-            )}
+          {/* Right side - Thumbnail if available */}
+          {hasImage && (
+            <View style={styles.imageContainer}>
+              <Image
+                source={{ uri: article.image_url }}
+                style={styles.thumbnail}
+                resizeMode="cover"
+                onError={() => console.warn('Failed to load image:', article.image_url)}
+              />
+            </View>
+          )}
+        </View>
 
-            {onDislike && (
-              <TouchableOpacity
-                style={[
-                  styles.actionButton,
-                  isDisliked && { backgroundColor: theme.error },
-                ]}
-                onPress={() => onDislike(article)}
-              >
-                <Ionicons
-                  name={isDisliked ? 'heart-dislike' : 'heart-dislike-outline'}
-                  size={16}
-                  color={isDisliked ? '#fff' : theme.textMuted}
-                />
-              </TouchableOpacity>
-            )}
-
-            {onBookmark && (
-              <TouchableOpacity
-                style={[
-                  styles.actionButton,
-                  isBookmarked && { backgroundColor: theme.warning },
-                ]}
-                onPress={() => onBookmark(article)}
-              >
-                <Ionicons
-                  name={isBookmarked ? 'bookmark' : 'bookmark-outline'}
-                  size={16}
-                  color={isBookmarked ? '#fff' : theme.textMuted}
-                />
-              </TouchableOpacity>
-            )}
-
-            {onArchive && (
-              <TouchableOpacity
-                style={[
-                  styles.actionButton,
-                  isArchived && { backgroundColor: theme.secondary },
-                ]}
-                onPress={() => onArchive(article)}
-              >
-                <Ionicons
-                  name={isArchived ? 'archive' : 'archive-outline'}
-                  size={16}
-                  color={isArchived ? '#fff' : theme.textMuted}
-                />
-              </TouchableOpacity>
+        {/* Footer */}
+        <View style={styles.articleFooter}>
+          <View style={styles.articleMeta}>
+            <Text style={[styles.articleDate, { color: theme.textMuted }]}>
+              {formatDate(article.published_at || article.published)}
+            </Text>
+            {article.genre && (
+              <View style={[styles.genreTag, { backgroundColor: theme.secondary }]}>
+                <Text style={[styles.genreTagText, { color: theme.primary }]}>
+                  {article.genre}
+                </Text>
+              </View>
             )}
           </View>
-        )}
+
+          {/* Read Later Button */}
+          {onReadLaterToggle && (
+            <TouchableOpacity
+              style={[
+                styles.readLaterButton, 
+                { backgroundColor: readLaterStatus ? theme.primary : theme.surface }
+              ]}
+              onPress={handleReadLaterPress}
+              activeOpacity={0.7}
+            >
+              <Ionicons
+                name={readLaterStatus ? "bookmark" : "bookmark-outline"}
+                size={16}
+                color={readLaterStatus ? '#fff' : theme.textMuted}
+              />
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
     </TouchableOpacity>
   );
 }
 
-const createStyles = (theme: any) => StyleSheet.create({
-  container: {
-    backgroundColor: theme.card,
-    borderRadius: 12,
-    marginVertical: 6,
-    marginHorizontal: 16,
-    overflow: 'hidden',
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-  },
-  defaultCard: {
-    // Default styling
-  },
-  compactCard: {
-    marginVertical: 3,
-  },
-  detailedCard: {
+const styles = StyleSheet.create({
+  articleCard: {
     marginVertical: 8,
+    marginHorizontal: 16,
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    minHeight: 160, // Fixed minimum height for consistency
   },
-  selected: {
-    borderWidth: 2,
-    borderColor: theme.primary,
-  },
-  readArticle: {
-    opacity: 0.7,
-  },
-  selectionIndicator: {
-    position: 'absolute',
-    top: 12,
-    right: 12,
-    zIndex: 1,
-    backgroundColor: theme.card,
-    borderRadius: 10,
-    padding: 2,
-  },
-  imageContainer: {
-    height: 120,
-    width: '100%',
-    backgroundColor: theme.surface,
-  },
-  articleImage: {
-    width: '100%',
-    height: '100%',
-  },
-  contentContainer: {
+  cardContent: {
     padding: 16,
+    height: '100%',
+    justifyContent: 'space-between',
   },
-  header: {
+  articleHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 8,
   },
-  sourceName: {
+  articleSource: {
     fontSize: 12,
-    fontWeight: '600',
-    color: theme.primary,
-    flex: 1,
-  },
-  date: {
-    fontSize: 11,
-    color: theme.textMuted,
-  },
-  title: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: theme.text,
-    lineHeight: 22,
-    marginBottom: 8,
-  },
-  compactTitle: {
-    fontSize: 14,
-    lineHeight: 18,
-  },
-  readTitle: {
-    color: theme.textSecondary,
-  },
-  summary: {
-    fontSize: 14,
-    color: theme.textSecondary,
-    lineHeight: 18,
-    marginBottom: 8,
-  },
-  readSummary: {
-    color: theme.textMuted,
-  },
-  genreContainer: {
-    alignSelf: 'flex-start',
-    marginBottom: 8,
-  },
-  genre: {
-    fontSize: 11,
-    color: theme.accent,
-    backgroundColor: theme.surface,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 4,
     fontWeight: '500',
   },
-  actionsContainer: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: 8,
-    marginTop: 4,
-  },
-  actionButton: {
-    backgroundColor: theme.surface,
-    borderRadius: 16,
-    padding: 8,
-    minWidth: 32,
-    alignItems: 'center',
+  readIndicator: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
     justifyContent: 'center',
+    alignItems: 'center',
+  },
+  readIndicatorText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: 'bold',
+  },
+  mainContent: {
+    flexDirection: 'row',
+    flex: 1,
+    marginBottom: 8,
+    minHeight: 80, // Ensure consistent content area height
+  },
+  textContent: {
+    justifyContent: 'flex-start',
+  },
+  textContentWithImage: {
+    flex: 1,
+    marginRight: 12,
+  },
+  textContentFull: {
+    flex: 1,
+  },
+  articleTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 6,
+    lineHeight: 22,
+  },
+  articleSummary: {
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  imageContainer: {
+    width: 80,
+    height: 80,
+    borderRadius: 8,
+    overflow: 'hidden',
+    backgroundColor: '#f0f0f0', // Placeholder background
+  },
+  thumbnail: {
+    width: '100%',
+    height: '100%',
+  },
+  articleFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 'auto', // Push to bottom
+    minHeight: 32, // Consistent footer height
+  },
+  articleMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  articleDate: {
+    fontSize: 12,
+    marginRight: 8,
+  },
+  genreTag: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    marginLeft: 8,
+  },
+  genreTagText: {
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  readLaterButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
   },
 });
