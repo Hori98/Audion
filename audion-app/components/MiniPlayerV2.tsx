@@ -74,15 +74,16 @@ export default function MiniPlayerV2() {
                       pathname.includes('/(tabs)') ||
                       pathname.startsWith('/(tabs)');
     
-    // Calculate position with minimal gaps - stack from bottom approach
-    const baseTabHeight = Platform.OS === 'ios' ? 49 + insets.bottom : 56;
+    // Calculate position with minimal gaps - stack from bottom approach (corrected)
+    const baseTabHeight = Platform.OS === 'ios' ? 49 : 56;
+    const tabBarTotalHeight = baseTabHeight + insets.bottom; // Actual tab bar total height
     const safeArea = insets.bottom || 0;
     
     // Minimal gap - just 4-6px to avoid overlap
     const minimalGap = Platform.OS === 'web' ? 6 : 4;
     
     const bottomOffset = isTabRoute 
-      ? baseTabHeight + minimalGap
+      ? tabBarTotalHeight + minimalGap
       : safeArea + minimalGap;
 
     // Only log in development mode

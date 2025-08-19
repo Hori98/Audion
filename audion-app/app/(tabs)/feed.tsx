@@ -1378,8 +1378,8 @@ export default function FeedScreen() {
           styles.selectionCountInfo, 
           { 
             backgroundColor: theme.accent,
-            // Position above the buttons with 72px offset (56px button height + 16px gap)
-            bottom: showMiniPlayer ? 232 : 156, // Adjusted for UnifiedFloatingButtons positioning
+            // Position above the buttons: button height (56px) + button gap (8px) + info gap (8px) = 72px
+            bottom: showMiniPlayer ? 152 : 72, // Corrected for proper tab bar height
           }
         ]}>
           <Text style={[styles.selectionCountText, { color: theme.primary }]}>
