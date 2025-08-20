@@ -189,6 +189,14 @@ export default function QuickSettingsScreen() {
       onPress: () => router.push('/sources')
     },
     {
+      id: 'archive',
+      title: 'Archive',
+      subtitle: 'Manage archived articles and bookmarks',
+      icon: 'bookmark-outline',
+      type: 'navigation',
+      onPress: () => router.push('/(tabs)/archive')
+    },
+    {
       id: 'theme',
       title: t('settings.theme'),
       subtitle: t('settings.themeSubtitle', { theme: getThemeDisplayName() }),

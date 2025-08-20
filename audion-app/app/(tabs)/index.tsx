@@ -36,7 +36,7 @@ import FeatureCard from '../../components/cards/FeatureCard';
 import StandardCard from '../../components/cards/StandardCard';
 import BriefCard from '../../components/cards/BriefCard';
 import { useAudio } from '../../context/AudioContext';
-import UnifiedFloatingButtons from '../../components/UnifiedFloatingButtons';
+import HomeActionBar from '../../components/HomeActionBar';
 // import MiniPlayer from '../../components/MiniPlayer'; // Removed - using global MiniPlayer from _layout.tsx
 
 // Constants
@@ -331,7 +331,7 @@ export default function MainScreen() {
   };
 
   const createAudioFromArticles = async () => {
-    if (articles.length === 0) {
+    if (filteredArticles.length === 0) {
       Alert.alert('No Articles', 'Please add some RSS sources and refresh to get articles.');
       return;
     }
@@ -392,7 +392,13 @@ export default function MainScreen() {
                 Alert.alert('No Selection', 'AI could not find suitable articles for podcast creation. Try again later.');
               }
             } catch (error: any) {
-              Alert.alert('Error', error.response?.data?.detail || 'Failed to auto-pick articles');
+              console.error('Home AutoPick Error:', error);
+              console.error('Error Details:', {
+                message: error.message,
+                response: error.response?.data,
+                status: error.response?.status
+              });
+              Alert.alert('Error', error.response?.data?.detail || error.message || 'Failed to auto-pick articles');
             } finally {
               setCreatingAudio(false);
             }
@@ -472,6 +478,14 @@ export default function MainScreen() {
           genres={GENRES}
           selectedGenre={selectedGenre}
           onGenreChange={setSelectedGenre}
+        />
+
+        {/* Home Action Bar - Context-aware AutoPick */}
+        <HomeActionBar
+          currentGenre={selectedGenre}
+          onAutoPick={createAudioFromArticles}
+          isCreating={creatingAudio}
+          articlesCount={filteredArticles.length}
         />
 
         {/* Loading State */}
@@ -599,21 +613,6 @@ export default function MainScreen() {
         </SafeAreaView>
       </Modal>
 
-      {/* Unified Floating Buttons */}
-      <UnifiedFloatingButtons
-        actions={[
-          {
-            icon: 'sparkles',
-            onPress: createAudioFromArticles,
-            disabled: creatingAudio || articles.length === 0,
-            loading: creatingAudio,
-            visible: articles.length > 0,
-            style: 'primary',
-            accessibilityLabel: 'Auto-pick articles and create audio',
-            accessibilityHint: 'Let AI automatically select best articles and create podcast'
-          }
-        ]}
-      />
 
       {/* Article Reader Modal */}
       <ArticleReader

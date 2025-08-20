@@ -35,7 +35,7 @@ import OptimizedArticleList from '../../components/OptimizedArticleList';
 import DualFilterUI from '../../components/DualFilterUI';
 import FeedFilterMenu from '../../components/FeedFilterMenu';
 import GlobalEventService from '../../services/GlobalEventService';
-import UnifiedFloatingButtons from '../../components/UnifiedFloatingButtons';
+import FeedActionBar from '../../components/FeedActionBar';
 
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:8003';
 const API = `${BACKEND_URL}/api`;
@@ -141,11 +141,21 @@ export default function FeedScreen() {
       setShowFilterMenu(true);
     });
 
+    const unsubscribeAutoPick = eventService.on('feed:autopick', () => {
+      handleCreateAutoPickAudio();
+    });
+
+    const unsubscribeManualPick = eventService.on('feed:manualpick', () => {
+      toggleSelectionMode();
+    });
+
     return () => {
       unsubscribeSearch();
       unsubscribeFilter();
+      unsubscribeAutoPick();
+      unsubscribeManualPick();
     };
-  }, []);
+  }, [handleCreateAutoPickAudio, toggleSelectionMode]);
 
   // 検索クエリ変更時の処理（履歴保存含む）
   const handleSearchChange = async (query: string) => {
@@ -1012,7 +1022,7 @@ export default function FeedScreen() {
 
   // Create audio from this week's read articles
   const handleCreateAutoPickAudio = async () => {
-    if (articles.length === 0) {
+    if (filteredArticles.length === 0) {
       Alert.alert('No Articles', 'Please add some RSS sources and refresh to get articles.');
       return;
     }
@@ -1074,7 +1084,13 @@ export default function FeedScreen() {
                 Alert.alert('No Selection', 'AI could not find suitable articles for podcast creation. Try again later.');
               }
             } catch (error: any) {
-              Alert.alert('Error', error.response?.data?.detail || 'Failed to auto-pick articles');
+              console.error('Feed AutoPick Error:', error);
+              console.error('Error Details:', {
+                message: error.message,
+                response: error.response?.data,
+                status: error.response?.status
+              });
+              Alert.alert('Error', error.response?.data?.detail || error.message || 'Failed to auto-pick articles');
             } finally {
               setCreatingAudio(false);
             }
@@ -1322,6 +1338,17 @@ export default function FeedScreen() {
         onGenreChange={setSelectedGenre}
       />
 
+      {/* Feed Action Bar - Unified controls */}
+      <FeedActionBar
+        articlesCount={filteredArticles.length}
+        selectedCount={selectedArticleIds.length}
+        selectionMode={selectionMode}
+        isCreating={creatingAudio}
+        onAutoPick={handleCreateAutoPickAudio}
+        onToggleSelection={toggleSelectionMode}
+        onReadStatusFilter={() => setShowFilterMenu(true)}
+      />
+
       {/* Articles List - Using OptimizedArticleList (EXACTLY LIKE HOME TAB) */}
       <OptimizedArticleList
         articles={filteredArticles}
@@ -1334,43 +1361,6 @@ export default function FeedScreen() {
 
       {/* Selection Count moved to floating section above */}
 
-      {/* Unified Floating Buttons */}
-      <UnifiedFloatingButtons
-        actions={[
-          // Manual Pick Button - Always visible (rightmost)
-          {
-            icon: 'list',
-            onPress: toggleSelectionMode,
-            disabled: creatingAudio,
-            visible: true,
-            style: selectionMode ? 'primary' : 'secondary',
-            accessibilityLabel: selectionMode ? "Exit manual selection mode" : "Start manual article selection",
-            accessibilityHint: selectionMode ? "Tap to exit manual selection mode" : "Tap to manually select articles for audio creation"
-          },
-          // Auto-Pick Button - Show when not in selection mode (middle)
-          {
-            icon: 'sparkles',
-            onPress: handleCreateAutoPickAudio,
-            disabled: creatingAudio,
-            loading: creatingAudio,
-            visible: !selectionMode && articles.length > 0,
-            style: 'secondary',
-            accessibilityLabel: 'Auto-pick articles and create audio',
-            accessibilityHint: 'Let AI automatically select best articles and create podcast'
-          },
-          // Create Audio Button - Show in selection mode when articles selected (leftmost)
-          {
-            icon: 'musical-notes',
-            onPress: handleCreateAudio,
-            disabled: creatingAudio,
-            loading: creatingAudio,
-            visible: selectionMode && selectedArticleIds.length > 0,
-            style: 'success',
-            accessibilityLabel: `Create audio from ${selectedArticleIds.length} selected articles`,
-            accessibilityHint: 'Tap to create audio from selected articles'
-          }
-        ]}
-      />
 
       {/* Selection Count Info - Show in selection mode */}
       {selectionMode && selectedArticleIds.length > 0 && (
@@ -1378,8 +1368,8 @@ export default function FeedScreen() {
           styles.selectionCountInfo, 
           { 
             backgroundColor: theme.accent,
-            // Position above the buttons: button height (56px) + button gap (8px) + info gap (8px) = 72px
-            bottom: showMiniPlayer ? 152 : 72, // Corrected for proper tab bar height
+            // Simple positioning above buttons (adjusted for native)
+            bottom: showMiniPlayer ? 160 : 120, // Adjusted for reduced button position
           }
         ]}>
           <Text style={[styles.selectionCountText, { color: theme.primary }]}>
