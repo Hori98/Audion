@@ -8,7 +8,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import axios from 'axios';
 import GlobalEventService from '../../services/GlobalEventService';
-import TabBarService from '../../services/TabBarService';
 
 // TODO: Future Twitter-like UI enhancements
 // 1. Add tab selection UI between header and content (similar to Twitter's Home/Following tabs)
@@ -152,31 +151,6 @@ const CustomHeader = () => {
 
         {/* Right side - Dynamic icons based on current tab */}
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          {/* Feed Filter Menu Button - Only show on Feed tab */}
-          {currentTab === 'feed' && (
-            <TouchableOpacity
-              onPress={handleFilterPress}
-              style={{
-                width: 32,
-                height: 32,
-                borderRadius: 16,
-                backgroundColor: theme.surface,
-                justifyContent: 'center',
-                alignItems: 'center',
-                shadowColor: '#000',
-                shadowOffset: { width: 0, height: 1 },
-                shadowOpacity: 0.1,
-                shadowRadius: 2,
-                elevation: 2,
-              }}
-              activeOpacity={0.7}
-              accessibilityRole="button"
-              accessibilityLabel="Open filter menu"
-              accessibilityHint="Access reading status filters"
-            >
-              <Ionicons name="menu" size={16} color={theme.textSecondary} />
-            </TouchableOpacity>
-          )}
 
           {/* Search Button - Show on Home, Feed, and Discover tabs */}
           {(currentTab === 'index' || currentTab === 'feed' || currentTab === 'discover') && (
@@ -218,34 +192,80 @@ export default function AppLayout() {
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
   
-  // Correct tab bar implementation - let React Navigation handle safe area properly
-  const baseTabBarHeight = Platform.OS === 'ios' ? 49 : 56;
-  
-  // Debug logging in development
-  React.useEffect(() => {
-    if (__DEV__) {
-      console.log(`📱 TabBar Debug:
-        Platform: ${Platform.OS}
-        SafeArea Bottom: ${insets.bottom}
-        Base Tab Bar Height: ${baseTabBarHeight}
-      `);
-    }
-  }, [insets.bottom]);
+  // Custom tab bar - simple implementation without measurement
+  const CustomTabBar = ({ state, descriptors, navigation }: any) => {
+
+    return (
+      <View 
+        style={{
+          flexDirection: 'row',
+          backgroundColor: theme.tabBarBackground,
+          borderTopColor: theme.border,
+          borderTopWidth: 1,
+          paddingBottom: insets.bottom,
+          zIndex: 1000,
+          elevation: Platform.OS === 'android' ? 8 : 0,
+        }}
+      >
+        {state.routes.map((route: any, index: number) => {
+          const { options } = descriptors[route.key];
+          const label = options.tabBarLabel || options.title || route.name;
+          const isFocused = state.index === index;
+
+          const onPress = () => {
+            const event = navigation.emit({
+              type: 'tabPress',
+              target: route.key,
+              canPreventDefault: true,
+            });
+
+            if (!isFocused && !event.defaultPrevented) {
+              navigation.navigate(route.name, route.params);
+            }
+          };
+
+          const color = isFocused ? theme.primary : theme.tabBarInactive;
+          const IconComponent = options.tabBarIcon;
+
+          return (
+            <TouchableOpacity
+              key={route.key}
+              accessibilityRole="button"
+              accessibilityState={isFocused ? { selected: true } : {}}
+              accessibilityLabel={options.tabBarAccessibilityLabel}
+              testID={options.tabBarTestID}
+              onPress={onPress}
+              style={{
+                flex: 1,
+                alignItems: 'center',
+                justifyContent: 'center',
+                paddingVertical: 8,
+                paddingHorizontal: 4,
+              }}
+            >
+              {IconComponent && <IconComponent color={color} size={24} />}
+              <Text style={{
+                color,
+                fontSize: 12,
+                marginTop: 2,
+                textAlign: 'center',
+              }}>
+                {label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    );
+  };
   
   return (
     <Tabs
       initialRouteName="index"
+      tabBar={CustomTabBar}
       screenOptions={{
         tabBarActiveTintColor: theme.primary,
         tabBarInactiveTintColor: theme.tabBarInactive,
-        tabBarStyle: {
-          backgroundColor: theme.tabBarBackground,
-          borderTopColor: theme.border,
-          height: baseTabBarHeight, // Base height only
-          paddingBottom: insets.bottom, // Full safe area for Home Indicator clearance
-          zIndex: 1000, // Ensure tab bar is above other elements
-          elevation: Platform.OS === 'android' ? 8 : 0,
-        },
         header: () => <CustomHeader />,
         headerTitle: '', // Remove tab names from header
         headerShown: true,
@@ -284,15 +304,6 @@ export default function AppLayout() {
           tabBarLabel: 'Playlist',
           tabBarIcon: ({ color, size }) => <Ionicons name="musical-notes-outline" color={color} size={size} />,
           href: '/(tabs)/playlist'
-        }}
-      />
-      <Tabs.Screen
-        name="archive"
-        options={{
-          title: 'Archive',
-          tabBarLabel: 'Archive',
-          tabBarIcon: ({ color, size }) => <Ionicons name="bookmark-outline" color={color} size={size} />,
-          href: '/(tabs)/archive'
         }}
       />
     </Tabs>

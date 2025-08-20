@@ -8,11 +8,16 @@ class SimpleEventEmitter {
     }
   }
 
-  public on(event: string, callback: () => void): void {
+  public on(event: string, callback: () => void): () => void {
     if (!this.listeners[event]) {
       this.listeners[event] = [];
     }
     this.listeners[event].push(callback);
+    
+    // Return unsubscribe function
+    return () => {
+      this.off(event, callback);
+    };
   }
 
   public off(event: string, callback: () => void): void {
@@ -47,6 +52,15 @@ class GlobalEventService extends SimpleEventEmitter {
 
   public triggerDiscoverSearch() {
     this.emit('discover:search:open');
+  }
+
+  // Feed action events
+  public triggerFeedAutoPick() {
+    this.emit('feed:autopick');
+  }
+
+  public triggerFeedManualPick() {
+    this.emit('feed:manualpick');
   }
 
   // Feed filter menu events

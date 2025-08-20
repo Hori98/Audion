@@ -14,6 +14,14 @@ class ApiService {
   private authErrorHandler?: () => Promise<void>;
 
   private constructor() {
+    // Debug logging for mobile
+    if (__DEV__) {
+      console.log(`📱 ApiService Debug:
+        Base URL: ${API_CONFIG.apiURL}
+        Backend URL from env: ${process.env.EXPO_PUBLIC_BACKEND_URL}
+      `);
+    }
+
     this.instance = axios.create({
       baseURL: API_CONFIG.apiURL,
       timeout: API_CONFIG.timeout,
@@ -50,9 +58,14 @@ class ApiService {
     this.instance.interceptors.request.use(
       (config) => {
         console.log(`[API] ${config.method?.toUpperCase()} ${config.url}`);
+        console.log(`[API] Full URL: ${config.baseURL}${config.url}`);
+        console.log(`[API] Timeout: ${config.timeout}ms`);
         return config;
       },
-      (error) => Promise.reject(error)
+      (error) => {
+        console.error('[API] Request setup error:', error);
+        return Promise.reject(error);
+      }
     );
 
     // Response interceptor for common error handling
@@ -66,6 +79,21 @@ class ApiService {
         const url = error.config?.url;
         
         console.error(`[API] Error: ${status} ${url}`, error.response?.data || error.message);
+        
+        // Enhanced error logging for mobile debugging
+        if (!error.response) {
+          console.error('[API] Network Error Details:', {
+            message: error.message,
+            code: error.code,
+            stack: error.stack,
+            config: {
+              url: error.config?.url,
+              baseURL: error.config?.baseURL,
+              timeout: error.config?.timeout,
+              method: error.config?.method
+            }
+          });
+        }
         
         if (status === 401 && this.authErrorHandler) {
           await this.authErrorHandler();
