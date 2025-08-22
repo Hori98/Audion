@@ -58,6 +58,10 @@ interface AudioContextType {
   showFullScreenPlayer: boolean;
   openDirectToScript: boolean;
   
+  // 🆕 Streaming mode state
+  isStreamingMode: boolean;
+  streamingProcessingComplete: boolean;
+  
   // 🆕 Download state
   downloadProgress: Map<string, number>; // audioId -> progress (0-100)
   downloadingAudios: Set<string>; // Currently downloading audio IDs
@@ -104,6 +108,11 @@ interface AudioContextType {
   
   // Analytics
   recordInteraction: (interactionType: string, metadata?: any) => Promise<void>;
+  
+  // 🆕 Streaming mode actions
+  setStreamingMode: (enabled: boolean) => void;
+  markStreamingProcessingComplete: () => void;
+  playAudioStreaming: (audioItem: AudioItem) => Promise<void>;
 }
 
 const AudioContext = createContext<AudioContextType | undefined>(undefined);
@@ -121,6 +130,13 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   const [openDirectToScript, setOpenDirectToScript] = useState(false);
   const [playStartTime, setPlayStartTime] = useState<number | null>(null);
   const [currentChapter, setCurrentChapter] = useState<CurrentChapter | null>(null);
+  
+  // 🆕 Streaming mode states
+  const [isStreamingMode, setIsStreamingMode] = useState(false);
+  const [streamingProcessingComplete, setStreamingProcessingComplete] = useState(false);
+  
+  // 🆕 Seeking lock to prevent interruption
+  const [isSeeking, setIsSeeking] = useState(false);
   
   // 🆕 Audio queue states
   const [audioQueue, setAudioQueue] = useState<AudioItem[]>([]);
@@ -511,6 +527,11 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   };
 
   const seekTo = async (newPosition: number) => {
+    // Prevent concurrent seeking operations
+    if (isSeeking) {
+      console.warn('AudioContext: Seek operation already in progress, ignoring new request');
+      return;
+    }
     
     if (!sound) {
       console.warn('AudioContext: No sound object available for seeking');
@@ -527,6 +548,9 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
+    // Set seeking lock
+    setIsSeeking(true);
+
     try {
       // Get current status to ensure sound is loaded
       const status = await sound.getStatusAsync();
@@ -536,39 +560,39 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
+      // Small delay to ensure audio is stable
+      await new Promise(resolve => setTimeout(resolve, 50));
 
-      // Pause before seeking for better reliability
-      const wasPlaying = status.isPlaying;
-      if (wasPlaying) {
-        await sound.pauseAsync();
-      }
-
-      // Perform the seek operation
+      // Perform the seek operation with improved reliability
       await sound.setPositionAsync(newPosition, {
-        toleranceMillisBefore: 1000,
-        toleranceMillisAfter: 1000,
+        toleranceMillisBefore: 500,
+        toleranceMillisAfter: 500,
       });
 
       // Update position state immediately
       setPosition(newPosition);
 
-      // Resume playback if it was playing before
-      if (wasPlaying) {
-        await sound.playAsync();
-      }
-
-      // Verify the seek worked
-      const newStatus = await sound.getStatusAsync();
+      console.log(`AudioContext: Successfully seeked to ${newPosition}ms`);
 
     } catch (error) {
       console.error('AudioContext: Error during seek operation:', error);
-      // Fallback: try a simpler seek approach
-      try {
-        await sound.setPositionAsync(newPosition);
-        setPosition(newPosition);
-      } catch (fallbackError) {
-        console.error('AudioContext: Fallback seek also failed:', fallbackError);
+      
+      // Only try fallback if the sound is still valid
+      if (sound) {
+        try {
+          // Wait a bit before fallback
+          await new Promise(resolve => setTimeout(resolve, 100));
+          await sound.setPositionAsync(newPosition);
+          setPosition(newPosition);
+          console.log('AudioContext: Fallback seek succeeded');
+        } catch (fallbackError) {
+          console.error('AudioContext: Fallback seek also failed:', fallbackError);
+          // Don't throw error, just log it to prevent UI crashes
+        }
       }
+    } finally {
+      // Always clear the seeking lock
+      setIsSeeking(false);
     }
   };
 
@@ -603,6 +627,32 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       setShowMiniPlayer(false);
       setShowFullScreenPlayer(false);
       setPlayStartTime(null);
+    }
+  };
+
+  // 🆕 Streaming mode functions
+  const setStreamingMode = (enabled: boolean) => {
+    setIsStreamingMode(enabled);
+    if (!enabled) {
+      setStreamingProcessingComplete(false);
+    }
+  };
+
+  const markStreamingProcessingComplete = () => {
+    setStreamingProcessingComplete(true);
+  };
+
+  const playAudioStreaming = async (audioItem: AudioItem) => {
+    // Enable streaming mode
+    setStreamingMode(true);
+    setStreamingProcessingComplete(false);
+    
+    // Play audio normally
+    await playAudio(audioItem);
+    
+    // For instant audio, processing is already complete
+    if (audioItem.id.includes('instant_') || audioItem.title?.includes('Instant Audio')) {
+      markStreamingProcessingComplete();
     }
   };
 
@@ -911,6 +961,9 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     showMiniPlayer,
     showFullScreenPlayer,
     openDirectToScript,
+    // 🆕 Streaming mode state
+    isStreamingMode,
+    streamingProcessingComplete,
     // 🆕 Download states
     downloadProgress,
     downloadingAudios,
@@ -946,6 +999,10 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     getBackgroundAudioCapabilities,
     cleanupAudio,
     recordInteraction,
+    // 🆕 Streaming mode actions
+    setStreamingMode,
+    markStreamingProcessingComplete,
+    playAudioStreaming,
   };
 
   return <AudioContext.Provider value={value}>{children}</AudioContext.Provider>;

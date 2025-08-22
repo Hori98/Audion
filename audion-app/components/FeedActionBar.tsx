@@ -19,6 +19,7 @@ interface FeedActionBarProps {
   selectedCount: number;
   selectionMode: boolean;
   isCreating: boolean;
+  currentReadFilter: string;
   onAutoPick: () => void;
   onToggleSelection: () => void;
   onReadStatusFilter: () => void;
@@ -29,6 +30,7 @@ export default function FeedActionBar({
   selectedCount,
   selectionMode,
   isCreating,
+  currentReadFilter,
   onAutoPick,
   onToggleSelection,
   onReadStatusFilter,
@@ -39,9 +41,17 @@ export default function FeedActionBar({
     return null;
   }
 
+  // Check if ManualPick should be available (for "Read" and "This Week's Reads" filters)
+  const isManualPickAvailable = currentReadFilter === 'Read' || currentReadFilter === "This Week's Reads";
+
   const getContextText = () => {
     if (selectionMode) {
-      return `${selectedCount} selected from ${articlesCount} articles`;
+      const filterType = currentReadFilter === "This Week's Reads" ? "this week's reads" : "read articles";
+      return `${selectedCount} selected from ${articlesCount} ${filterType}`;
+    }
+    if (isManualPickAvailable) {
+      const filterType = currentReadFilter === "This Week's Reads" ? "this week's reads" : "read articles";
+      return `${articlesCount} ${filterType} available`;
     }
     return `${articlesCount} articles available`;
   };
@@ -85,27 +95,29 @@ export default function FeedActionBar({
           />
         </TouchableOpacity>
 
-        {/* Manual Selection Toggle */}
-        <TouchableOpacity
-          style={[
-            styles.actionButton, 
-            styles.smallButton,
-            { 
-              backgroundColor: selectionMode ? theme.primary : theme.surface,
-              borderColor: theme.primary,
-              borderWidth: selectionMode ? 0 : 1,
-            }
-          ]}
-          onPress={onToggleSelection}
-          disabled={isCreating}
-          activeOpacity={0.8}
-        >
-          <Ionicons 
-            name="list" 
-            size={14} 
-            color={selectionMode ? '#fff' : theme.primary} 
-          />
-        </TouchableOpacity>
+        {/* Manual Selection Toggle - Show for Read articles and This Week's Reads */}
+        {isManualPickAvailable && (
+          <TouchableOpacity
+            style={[
+              styles.actionButton, 
+              styles.smallButton,
+              { 
+                backgroundColor: selectionMode ? theme.primary : theme.surface,
+                borderColor: theme.primary,
+                borderWidth: selectionMode ? 0 : 1,
+              }
+            ]}
+            onPress={onToggleSelection}
+            disabled={isCreating}
+            activeOpacity={0.8}
+          >
+            <Ionicons 
+              name="list" 
+              size={14} 
+              color={selectionMode ? '#fff' : theme.primary} 
+            />
+          </TouchableOpacity>
+        )}
 
         {/* Auto-Pick or Create Button */}
         <TouchableOpacity
@@ -127,7 +139,7 @@ export default function FeedActionBar({
             <Text style={styles.buttonText}>
               {isCreating ? 'Creating...' : 
                selectionMode && selectedCount > 0 ? 'Create' : 
-               'Auto-Pick'}
+               isManualPickAvailable ? 'Auto-Pick' : 'Auto-Pick'}
             </Text>
           </View>
         </TouchableOpacity>

@@ -14,10 +14,35 @@ interface OptimizedArticleListProps {
   refreshing?: boolean;
   onRefresh?: () => void;
   loading?: boolean;
+  readingHistory?: Map<string, Date>;
+  archivedArticles?: Set<string>;
+  feedLikedArticles?: Set<string>;
+  feedDislikedArticles?: Set<string>;
+  // Selection mode support
+  selectionMode?: boolean;
+  selectedArticleIds?: string[];
+  onToggleSelection?: (articleId: string) => void;
+  onLongPress?: (article: Article) => void;
 }
 
 // メモ化されたアーティクルアイテムコンポーネント
-const ArticleItem = memo(({ item, onPress }: { item: Article; onPress: (article: Article) => void }) => {
+const ArticleItem = memo(({ 
+  item, 
+  onPress, 
+  selectionMode = false, 
+  isSelected = false, 
+  onToggleSelection,
+  onLongPress,
+  isRead = false
+}: { 
+  item: Article; 
+  onPress: (article: Article) => void;
+  selectionMode?: boolean;
+  isSelected?: boolean;
+  onToggleSelection?: (articleId: string) => void;
+  onLongPress?: (article: Article) => void;
+  isRead?: boolean;
+}) => {
   const { theme } = useTheme();
   const { token } = useAuth();
   const [isBookmarked, setIsBookmarked] = useState<boolean>(false);
@@ -111,7 +136,7 @@ const ArticleItem = memo(({ item, onPress }: { item: Article; onPress: (article:
   return (
     <TouchableOpacity
       style={{
-        backgroundColor: theme.surface,
+        backgroundColor: isSelected ? theme.primary + '20' : theme.surface,
         padding: 16,
         borderRadius: 12,
         marginVertical: 4,
@@ -121,11 +146,46 @@ const ArticleItem = memo(({ item, onPress }: { item: Article; onPress: (article:
         shadowOpacity: 0.08,
         shadowRadius: 2,
         elevation: 2,
+        borderWidth: isSelected ? 2 : 0,
+        borderColor: isSelected ? theme.primary : 'transparent',
+        opacity: isRead ? 0.7 : 1,
       }}
-      onPress={() => onPress(item)}
+      onPress={() => {
+        if (selectionMode && onToggleSelection) {
+          onToggleSelection(item.id);
+        } else {
+          onPress(item);
+        }
+      }}
+      onLongPress={() => {
+        if (onLongPress) {
+          onLongPress(item);
+        }
+      }}
       activeOpacity={0.7}
+      disabled={false} // Allow selection for all articles (filtering is handled at Feed level)
     >
       <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
+        {/* Selection indicator */}
+        {selectionMode && (
+          <View style={{ marginRight: 8, paddingTop: 2 }}>
+            <View style={{
+              width: 20,
+              height: 20,
+              borderRadius: 10,
+              borderWidth: 2,
+              borderColor: isSelected ? theme.primary : theme.border,
+              backgroundColor: isSelected ? theme.primary : 'transparent',
+              justifyContent: 'center',
+              alignItems: 'center',
+            }}>
+              {isSelected && (
+                <Ionicons name="checkmark" size={12} color="#fff" />
+              )}
+            </View>
+          </View>
+        )}
+
         {/* Text content */}
         <View style={{ flex: 1, marginRight: 12 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
@@ -138,6 +198,35 @@ const ArticleItem = memo(({ item, onPress }: { item: Article; onPress: (article:
               }}>
                 {item.source_name || 'Unknown Source'}
               </Text>
+              
+              {/* Read status indicator */}
+              {isRead && (
+                <>
+                  <View style={{ 
+                    width: 3, 
+                    height: 3, 
+                    borderRadius: 1.5, 
+                    backgroundColor: theme.textMuted,
+                    marginHorizontal: 8
+                  }} />
+                  <View style={{
+                    backgroundColor: theme.primary,
+                    paddingHorizontal: 6,
+                    paddingVertical: 2,
+                    borderRadius: 8,
+                    marginRight: 8,
+                  }}>
+                    <Text style={{ 
+                      fontSize: 9, 
+                      color: '#fff',
+                      fontWeight: '600'
+                    }}>
+                      既読
+                    </Text>
+                  </View>
+                </>
+              )}
+              
               <View style={{ 
                 width: 3, 
                 height: 3, 
@@ -268,15 +357,31 @@ const OptimizedArticleList: React.FC<OptimizedArticleListProps> = ({
   onArticlePress,
   refreshing = false,
   onRefresh,
-  loading = false
+  loading = false,
+  readingHistory,
+  archivedArticles,
+  feedLikedArticles,
+  feedDislikedArticles,
+  selectionMode = false,
+  selectedArticleIds = [],
+  onToggleSelection,
+  onLongPress
 }) => {
   const { theme } = useTheme();
 
   const renderArticleItem: ListRenderItem<Article> = useCallback(
     ({ item }) => (
-      <ArticleItem item={item} onPress={onArticlePress} />
+      <ArticleItem 
+        item={item} 
+        onPress={onArticlePress}
+        selectionMode={selectionMode}
+        isSelected={selectedArticleIds.includes(item.id)}
+        onToggleSelection={onToggleSelection}
+        onLongPress={onLongPress}
+        isRead={readingHistory ? readingHistory.has(item.id) : false}
+      />
     ),
-    [onArticlePress]
+    [onArticlePress, selectionMode, selectedArticleIds, onToggleSelection, onLongPress, readingHistory]
   );
 
   const getItemLayout = useCallback(
