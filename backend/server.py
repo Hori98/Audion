@@ -300,6 +300,21 @@ class AudioCreationRequest(BaseModel):
     voice_language: Optional[str] = "en-US"  # Voice language: 'en-US', 'ja-JP'
     voice_name: Optional[str] = "alloy"  # OpenAI voice name
 
+class DirectTTSRequest(BaseModel):
+    article_id: str
+    title: str
+    content: str
+    voice_language: Optional[str] = "en-US"
+    voice_name: Optional[str] = "alloy"
+
+class DirectTTSResponse(BaseModel):
+    id: str
+    title: str
+    audio_url: str
+    duration: int
+    article_id: str
+    created_at: datetime
+
 class RenameRequest(BaseModel):
     new_title: str
 
@@ -864,18 +879,9 @@ async def convert_text_to_speech(text: str, voice_language: str = "en-US", voice
         # Log voice settings
         logging.info(f"Using voice language: {voice_language}, voice: {voice_name}")
         
-        # Enhanced bug tracking for Japanese language issue
-        if voice_language == "ja-JP":
-            script_preview = text[:100] + "..." if len(text) > 100 else text
-            logging.info(f"🎌 Japanese TTS - Language: {voice_language}, Voice: {voice_name}, Length: {len(text)} chars")
-            if "English" in text[:500] or any(word in text[:500] for word in ["the", "and", "in", "on", "at"]):
-                logging.error(f"🚨 POTENTIAL BUG: Japanese language requested but script contains English words!")
-                logging.error(f"🚨 Script start: {text[:200]}")
-        
-        # Check for script language consistency
-        if voice_language == "ja-JP" and not any(char in text[:200] for char in "あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよらりるれろわをんがぎぐげござじずぜぞだぢづでどばびぶべぼぱぴぷぺぽ"):
-            logging.error(f"🚨 SCRIPT LANGUAGE MISMATCH: Japanese TTS requested but no Japanese characters found in script!")
-            logging.error(f"🚨 Script language appears to be: {'English' if any(word in text[:200] for word in ['the', 'and', 'is', 'are', 'of']) else 'Unknown'}")
+        # Basic voice validation (reduced logging)
+        if voice_language == "ja-JP" and any(word in text[:200] for word in ["the", "and", "is", "are", "of"]):
+            logging.warning(f"Language mismatch: Japanese TTS with English content")
         
         client = openai.AsyncOpenAI(api_key=OPENAI_API_KEY)
         response = await client.audio.speech.create(
@@ -884,44 +890,28 @@ async def convert_text_to_speech(text: str, voice_language: str = "en-US", voice
             input=text,
         )
         logging.info("OpenAI TTS request completed successfully")
-        
-        logging.info(f"Type of OpenAI TTS response: {type(response)}")
-        logging.info(f"Type of response.content: {type(response.content)}")
 
         audio_content = b''
         if hasattr(response.content, '__aiter__'):
             async for chunk in response.content.aiter_bytes():
                 audio_content += chunk
-            logging.info("Read audio_content from async stream.")
         elif isinstance(response.content, bytes):
             audio_content = response.content
-            logging.info("Assumed audio_content is already bytes.")
         else:
             raise TypeError(f"Unexpected type for response.content: {type(response.content)}")
-
-        logging.info(f"Type of audio_content after processing: {type(audio_content)}")
-        logging.info(f"Length of audio_content: {len(audio_content)}")
 
         audio_stream = io.BytesIO(audio_content)
         audio_info = MP3(audio_stream)
         duration = int(audio_info.info.length)
 
         audio_filename = f"audio_{uuid.uuid4()}.mp3"
-        logging.info(f"Processing audio file: {audio_filename}, size: {len(audio_content)} bytes")
-
-        # Debug: Log AWS credentials status
-        logging.info(f"AWS_ACCESS_KEY_ID present: {bool(AWS_ACCESS_KEY_ID)}")
-        logging.info(f"AWS_SECRET_ACCESS_KEY present: {bool(AWS_SECRET_ACCESS_KEY)}")
-        logging.info(f"AWS_ACCESS_KEY_ID starts with: {AWS_ACCESS_KEY_ID[:10] if AWS_ACCESS_KEY_ID else 'None'}...")
         
         # Try S3 upload first, fallback to local storage
         if AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY and AWS_ACCESS_KEY_ID != "your-aws-access-key":
             try:
-                logging.info("Attempting S3 upload...")
                 public_url = await upload_to_s3(audio_content, audio_filename)
-                logging.info(f"Successfully uploaded to S3: {public_url}")
             except Exception as s3_error:
-                logging.warning(f"S3 upload failed, falling back to local storage: {s3_error}")
+                logging.warning(f"S3 upload failed, using local storage: {s3_error}")
                 # Fallback to local storage
                 project_root = Path(__file__).parent.parent
                 audio_dir = project_root / "audio_files"
@@ -933,9 +923,7 @@ async def convert_text_to_speech(text: str, voice_language: str = "en-US", voice
                 
                 server_port = os.getenv('SERVER_PORT', '8000')
                 public_url = f"http://localhost:{server_port}/audio/{audio_filename}"
-                logging.info(f"Fallback: Audio saved locally at {public_url}")
         else:
-            logging.info(f"AWS condition failed - KEY:{bool(AWS_ACCESS_KEY_ID)} SECRET:{bool(AWS_SECRET_ACCESS_KEY)} NOT_DEFAULT:{AWS_ACCESS_KEY_ID != 'your-aws-access-key' if AWS_ACCESS_KEY_ID else False}")
             # Use local storage
             project_root = Path(__file__).parent.parent
             audio_dir = project_root / "audio_files"
@@ -947,7 +935,6 @@ async def convert_text_to_speech(text: str, voice_language: str = "en-US", voice
             
             server_port = os.getenv('SERVER_PORT', '8000')
             public_url = f"http://localhost:{server_port}/audio/{audio_filename}"
-            logging.info(f"Audio saved locally: {public_url}")
         
         return {"url": public_url, "duration": duration}
 
@@ -955,6 +942,75 @@ async def convert_text_to_speech(text: str, voice_language: str = "en-US", voice
         logging.error(f"OpenAI TTS conversion or Blob upload error: {e}")
         mock_url, mock_duration = create_mock_audio_file()
         return {"url": mock_url, "duration": mock_duration}
+
+async def convert_text_to_speech_fast(text: str, voice_language: str = "en-US", voice_name: str = "alloy") -> dict:
+    """Optimized TTS function for instant audio - minimal logging, faster processing"""
+    try:
+        # Minimal logging for speed
+        logging.info(f"🚀 FAST TTS: {len(text)} chars")
+        
+        # Use faster TTS model and settings
+        client = openai.AsyncOpenAI(api_key=OPENAI_API_KEY)
+        response = await client.audio.speech.create(
+            model="tts-1",  # Fastest model
+            voice=voice_name,
+            input=text,
+            speed=1.0  # Standard speed for faster processing
+        )
+        
+        # Streamlined audio processing
+        audio_content = b''
+        if hasattr(response.content, '__aiter__'):
+            async for chunk in response.content.aiter_bytes():
+                audio_content += chunk
+        else:
+            audio_content = response.content
+
+        # Get accurate duration with MP3 parsing (essential for proper functionality)
+        audio_stream = io.BytesIO(audio_content)
+        audio_info = MP3(audio_stream)
+        duration = int(audio_info.info.length)
+        
+        # Fast file naming and storage
+        audio_filename = f"instant_{uuid.uuid4().hex[:8]}.mp3"
+        
+        # 🆕 Try S3 upload first for permanent storage, fallback to local for streaming speed
+        if AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY and AWS_ACCESS_KEY_ID != "your-aws-access-key":
+            try:
+                public_url = await upload_to_s3(audio_content, audio_filename)
+                logging.info(f"⚡ FAST TTS: S3 upload successful: {public_url}")
+            except Exception as s3_error:
+                logging.warning(f"⚡ FAST TTS: S3 upload failed, using local storage: {s3_error}")
+                # Fallback to local storage for immediate streaming
+                backend_dir = Path(__file__).parent
+                audio_dir = backend_dir / "audio_files"
+                audio_dir.mkdir(exist_ok=True)
+                
+                audio_path = audio_dir / audio_filename
+                with open(audio_path, 'wb') as f:
+                    f.write(audio_content)
+                
+                server_port = os.getenv('SERVER_PORT', '8000')
+                public_url = f"http://localhost:{server_port}/audio/{audio_filename}"
+        else:
+            # Use local storage for immediate streaming
+            backend_dir = Path(__file__).parent
+            audio_dir = backend_dir / "audio_files"
+            audio_dir.mkdir(exist_ok=True)
+            
+            audio_path = audio_dir / audio_filename
+            with open(audio_path, 'wb') as f:
+                f.write(audio_content)
+            
+            server_port = os.getenv('SERVER_PORT', '8000')
+            public_url = f"http://localhost:{server_port}/audio/{audio_filename}"
+        
+        logging.info(f"⚡ FAST TTS complete: {public_url}")
+        return {"url": public_url, "duration": duration}
+
+    except Exception as e:
+        logging.error(f"Fast TTS error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Fast TTS failed: {str(e)}")
 
 # Auto-Pick Algorithm Functions
 async def get_or_create_user_profile(user_id: str) -> UserProfile:
@@ -1131,7 +1187,7 @@ def calculate_article_score(article: Article, user_profile: UserProfile, selecte
     final_score = personal_affinity * contextual_relevance * diversity_factor
     
     # Exploration noise (larger range for better discovery)
-    exploration_noise = random.uniform(-0.1, 0.1)
+    exploration_noise = random.uniform(-0.3, 0.3)  # Increased range for more variety
     final_score += exploration_noise
     
     return max(0.1, final_score)  # Ensure positive score
@@ -2063,6 +2119,173 @@ async def create_audio(request: AudioCreationRequest, http_request: Request, cur
         logging.error(f"Audio creation error: {e}")
         logging.error(f"Full traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/audio/direct-tts", response_model=DirectTTSResponse, tags=["Audio"])
+async def create_direct_tts(request: DirectTTSRequest, current_user: User = Depends(get_current_user)):
+    """Create audio directly from article content using TTS without AI summarization"""
+    try:
+        # Create full text content for TTS
+        full_content = f"{request.title}. {request.content}"
+        
+        # Use existing TTS function
+        tts_result = await convert_text_to_speech(
+            full_content, 
+            voice_language=request.voice_language,
+            voice_name=request.voice_name
+        )
+        audio_url = tts_result["url"]
+        duration = tts_result["duration"]
+        
+        # Create direct TTS record in database
+        direct_tts_id = str(uuid.uuid4())
+        direct_tts_doc = {
+            "id": direct_tts_id,
+            "user_id": current_user.id,
+            "title": request.title,
+            "audio_url": audio_url,
+            "duration": duration,
+            "article_id": request.article_id,
+            "created_at": datetime.utcnow(),
+            "type": "direct_tts"
+        }
+        
+        await db.direct_tts.insert_one(direct_tts_doc)
+        
+        return DirectTTSResponse(
+            id=direct_tts_id,
+            title=request.title,
+            audio_url=audio_url,
+            duration=duration,
+            article_id=request.article_id,
+            created_at=datetime.utcnow()
+        )
+        
+    except Exception as e:
+        logger.error(f"Error creating direct TTS: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to create direct TTS: {str(e)}")
+
+@app.post("/api/audio/instant-multi", response_model=AudioCreation, tags=["Audio"])
+async def create_instant_multi_audio(request: AudioCreationRequest, current_user: User = Depends(get_current_user)):
+    """Create instant audio from multiple articles using direct TTS (2-5 seconds)"""
+    start_time = datetime.utcnow()
+    try:
+        logging.info(f"🚀 INSTANT MULTI: Start - User: {current_user.id}, Articles: {len(request.article_ids)}")
+        
+        # Get articles from database
+        article_ids = request.article_ids
+        logging.info(f"📚 INSTANT MULTI: Fetching articles from DB")
+        articles_cursor = db.articles.find({"id": {"$in": article_ids}})
+        articles = await articles_cursor.to_list(length=None)
+        logging.info(f"📚 INSTANT MULTI: Found {len(articles)} articles in DB")
+        
+        if not articles:
+            logging.error(f"❌ INSTANT MULTI: No articles found for IDs: {article_ids}")
+            raise HTTPException(status_code=404, detail="No articles found")
+        
+        # Create optimized script for instant playback (improved length)
+        logging.info(f"📝 INSTANT MULTI: Creating optimized script")
+        script_parts = []
+        for i, article in enumerate(articles):
+            title = article.get('title', '')[:100]  # Longer titles for better content
+            # Use summary with better length for meaningful content
+            summary = article.get('summary', '')[:150] if article.get('summary') else ""
+            if summary:
+                script_parts.append(f"{title}。{summary}")
+            else:
+                script_parts.append(f"{title}")
+        
+        # Use all articles provided (remove 3-article limit)
+        instant_script = "今日のニュース。" + "。".join(script_parts)
+        # Increase limit for better content while maintaining reasonable speed
+        if len(instant_script) > 800:
+            instant_script = instant_script[:800] + "。"
+        
+        logging.info(f"📝 INSTANT MULTI: Script ready - {len(instant_script)} chars")
+        
+        # Direct TTS conversion (fast - no AI processing)
+        logging.info(f"🎤 INSTANT MULTI: Starting TTS conversion")
+        tts_start = datetime.utcnow()
+        tts_result = await convert_text_to_speech_fast(
+            instant_script,
+            voice_language=request.voice_language or "ja-JP",
+            voice_name=request.voice_name or "alloy"
+        )
+        tts_duration = (datetime.utcnow() - tts_start).total_seconds()
+        logging.info(f"🎤 INSTANT MULTI: TTS completed in {tts_duration:.1f}s")
+        
+        # Generate chapters for streaming audio (same as traditional system)
+        logging.info(f"📑 INSTANT MULTI: Generating chapters")
+        chapters = []
+        if len(articles) > 1:
+            chapter_duration_seconds = tts_result["duration"] // len(articles)
+            
+            for i, article in enumerate(articles):
+                chapter_start_time = i * chapter_duration_seconds * 1000  # Convert to milliseconds
+                chapter_end_time = ((i + 1) * chapter_duration_seconds if i < len(articles) - 1 else tts_result["duration"]) * 1000
+                
+                # Get original URL using same logic as regular audio creation
+                original_url = ""
+                
+                # First, try to get URL from provided article_urls (for auto-pick)
+                if request.article_urls and i < len(request.article_urls):
+                    original_url = request.article_urls[i]
+                    logging.info(f"📑 INSTANT MULTI: Using provided URL for article {i}: {original_url}")
+                else:
+                    # Fallback to database lookup (for feed articles)
+                    original_url = article.get("link", "")
+                    logging.info(f"📑 INSTANT MULTI: Using DB URL for article {i}: {original_url}")
+                
+                chapters.append({
+                    "title": article.get('title', ''),
+                    "start_time": chapter_start_time,
+                    "end_time": chapter_end_time,
+                    "original_url": original_url
+                })
+        
+        # Save to database as regular audio creation
+        logging.info(f"💾 INSTANT MULTI: Saving to database with chapters")
+        audio_id = str(uuid.uuid4())
+        title = f"Instant Audio - {len(articles)} articles"
+        
+        audio_doc = {
+            "id": audio_id,
+            "user_id": current_user.id,
+            "title": title,
+            "audio_url": tts_result["url"],
+            "duration": tts_result["duration"],
+            "article_ids": article_ids,
+            "article_titles": [a.get('title', '') for a in articles],
+            "article_urls": [a.get('link', '') for a in articles],
+            "created_at": datetime.utcnow(),
+            "type": "instant_multi",
+            "prompt_style": "instant",
+            "script": instant_script,  # Store full script for access
+            "chapters": chapters  # Add chapters for navigation
+        }
+        
+        await db.audio_creations.insert_one(audio_doc)
+        
+        total_duration = (datetime.utcnow() - start_time).total_seconds()
+        logging.info(f"🎉 INSTANT MULTI: Complete in {total_duration:.1f}s - Audio ID: {audio_id}")
+        
+        return AudioCreation(
+            id=audio_id,
+            user_id=current_user.id,
+            title=title,
+            audio_url=tts_result["url"],
+            duration=tts_result["duration"],
+            article_ids=article_ids,
+            article_titles=[a.get('title', '') for a in articles],
+            article_urls=[a.get('link', '') for a in articles],
+            created_at=datetime.utcnow(),
+            script=instant_script,  # Full script for access
+            chapters=chapters  # Chapters for navigation and URL jumping
+        )
+        
+    except Exception as e:
+        error_duration = (datetime.utcnow() - start_time).total_seconds()
+        logging.error(f"❌ INSTANT MULTI: Failed after {error_duration:.1f}s - {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to create instant audio: {str(e)}")
 
 @app.get("/api/audio/library", response_model=List[AudioCreation], tags=["Audio"])
 async def get_audio_library(current_user: User = Depends(get_current_user)):

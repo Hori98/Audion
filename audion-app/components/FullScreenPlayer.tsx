@@ -19,6 +19,7 @@ import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { format } from 'date-fns';
 import axios from 'axios';
+import ChapterSourceButton from './ChapterSourceButton';
 // Removed expo-web-browser - using native reader mode instead
 
 const { width } = Dimensions.get('window');
@@ -408,10 +409,14 @@ export default function FullScreenPlayer() {
   const handleViewOriginalArticle = async (originalUrl: string) => {
     if (originalUrl) {
       try {
-        // Navigate to native reader mode instead of external browser
-        // Note: FullScreenPlayer might need article context for proper reader mode
-        console.warn('FullScreenPlayer: Article context needed for reader mode');
-        // Fallback: could implement article lookup by URL here
+        // Open external browser with the original article URL
+        if (Platform.OS === 'web') {
+          window.open(originalUrl, '_blank');
+        } else {
+          // For native platforms, use Linking
+          const { Linking } = require('react-native');
+          await Linking.openURL(originalUrl);
+        }
       } catch (error) {
         console.error('Error opening article:', error);
         Alert.alert('Error', 'Failed to open the original article.');
@@ -493,6 +498,9 @@ export default function FullScreenPlayer() {
             </TouchableOpacity>
           </View>
         )}
+
+        {/* Chapter Source Button - URL jumping functionality */}
+        <ChapterSourceButton visible={true} />
 
         {/* Scrollable Content */}
         <ScrollView 

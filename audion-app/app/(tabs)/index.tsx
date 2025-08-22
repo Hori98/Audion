@@ -16,6 +16,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
+import { useAudio } from '../../context/AudioContext';
 import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
 import axios from 'axios';
@@ -35,7 +36,6 @@ import HeroCarousel from '../../components/HeroCarousel';
 import FeatureCard from '../../components/cards/FeatureCard';
 import StandardCard from '../../components/cards/StandardCard';
 import BriefCard from '../../components/cards/BriefCard';
-import { useAudio } from '../../context/AudioContext';
 import HomeActionBar from '../../components/HomeActionBar';
 // import MiniPlayer from '../../components/MiniPlayer'; // Removed - using global MiniPlayer from _layout.tsx
 
@@ -49,7 +49,7 @@ export default function MainScreen() {
   const { token } = useAuth();
   const { theme } = useTheme();
   const router = useRouter();
-  const { playAudio } = useAudio();
+  const { playAudio, playAudioStreaming } = useAudio();
   
   // Simplified state management like the working version
   const [articles, setArticles] = useState<Article[]>([]);
@@ -346,59 +346,92 @@ export default function MainScreen() {
           onPress: async () => {
             setCreatingAudio(true);
             try {
-              // AutoPick should respect current genre selection
+              console.log('🏠 HOME AUTOPICK: Starting instant autopick');
+              
+              // AutoPick should respect current genre selection  
               const autoPickRequest = {
                 max_articles: 5,
                 ...(selectedGenre !== 'All' && { preferred_genres: [selectedGenre] })
               };
               
+              console.log('🏠 HOME AUTOPICK: Requesting articles with genre:', selectedGenre);
               const autoPickResponse = await axios.post(
                 `${API}/auto-pick`,
                 autoPickRequest,
-                { headers: { Authorization: `Bearer ${token}` } }
+                { 
+                  headers: { Authorization: `Bearer ${token}` },
+                  timeout: 15000
+                }
               );
+              console.log('🏠 HOME AUTOPICK: Got articles:', autoPickResponse.data?.length);
               
               if (autoPickResponse.data && autoPickResponse.data.length > 0) {
-                const audioResponse = await axios.post(
-                  `${API}/audio/create`,
-                  { articles: autoPickResponse.data },
-                  { headers: { Authorization: `Bearer ${token}` } }
+                // Create instant audio using same format as Feed AutoPick
+                const autoPickArticles = autoPickResponse.data;
+                const requestData = {
+                  article_ids: autoPickArticles.map((a: any) => a.id),
+                  article_titles: autoPickArticles.map((a: any) => a.title),
+                  article_urls: autoPickArticles.map((a: any) => a.link || ''),
+                  prompt_style: 'instant',
+                  custom_prompt: null,
+                  voice_language: 'ja-JP',
+                  voice_name: 'alloy'
+                };
+
+                console.log('🏠 HOME AUTOPICK: Creating instant audio');
+                const instantResponse = await axios.post(
+                  `${API}/audio/instant-multi`,
+                  requestData,
+                  { 
+                    headers: { Authorization: `Bearer ${token}` },
+                    timeout: 15000  // Extended timeout for TTS processing
+                  }
                 );
                 
-                if (audioResponse.data?.audio_url) {
-                  Alert.alert(
-                    'Success!', 
-                    `AI selected ${autoPickResponse.data.length} articles and created your personalized podcast. Check your library!`
-                  );
+                if (instantResponse.data?.audio_url) {
+                  // Immediately start background streaming playback
+                  const audioItem = {
+                    id: instantResponse.data.id,
+                    title: instantResponse.data.title,
+                    audio_url: instantResponse.data.audio_url,
+                    duration: instantResponse.data.duration || 0,
+                    created_at: new Date().toISOString(),
+                    script: instantResponse.data.script || ''
+                  };
+                  
+                  // Start streaming playback immediately
+                  console.log('🏠 HOME AUTOPICK: Starting streaming playback');
+                  await playAudioStreaming(audioItem);
                   
                   await PersonalizationService.recordInteraction({
                     action: 'complete',
-                    contentId: audioResponse.data.id,
+                    contentId: instantResponse.data.id,
                     contentType: 'audio',
                     category: 'Auto-Pick Podcast',
                     timestamp: Date.now(),
                     engagementLevel: 'high',
                   });
                   
-                  await NotificationService.getInstance().sendAudioReadyNotification(
-                    audioResponse.data.title || 'Your AI Podcast',
-                    autoPickResponse.data.length,
-                    audioResponse.data.id
-                  );
+                  console.log(`🏠 HOME AUTOPICK: Success - ${audioItem.title}`);
                 } else {
-                  Alert.alert('Error', 'Failed to create audio from selected articles');
+                  throw new Error('No audio URL received from server');
                 }
               } else {
                 Alert.alert('No Selection', 'AI could not find suitable articles for podcast creation. Try again later.');
               }
             } catch (error: any) {
-              console.error('Home AutoPick Error:', error);
-              console.error('Error Details:', {
-                message: error.message,
-                response: error.response?.data,
-                status: error.response?.status
-              });
-              Alert.alert('Error', error.response?.data?.detail || error.message || 'Failed to auto-pick articles');
+              console.error('🏠 HOME AUTOPICK: Error:', error);
+              let errorMessage = 'Failed to auto-pick articles';
+              if (error.response?.status === 422) {
+                errorMessage = 'Invalid article data. Please try refreshing articles.';
+              } else if (error.response?.status === 429) {
+                errorMessage = 'Server is busy. Please wait a moment and try again.';
+              } else if (error.code === 'ECONNABORTED') {
+                errorMessage = 'Request timed out. Please try again.';
+              } else if (error.response?.data?.detail) {
+                errorMessage = error.response.data.detail;
+              }
+              Alert.alert('Error', errorMessage);
             } finally {
               setCreatingAudio(false);
             }

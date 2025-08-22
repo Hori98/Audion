@@ -77,9 +77,9 @@ def calculate_genre_scores(title: str, summary: str) -> Dict[str, float]:
         logging.error(f"Error in calculate_genre_scores: {e}")
         return {genre: 0.0 for genre in GENRE_KEYWORDS.keys()}
 
-def classify_article_genre(title: str, summary: str, threshold: float = 1.0) -> str:
+def classify_article_genre(title: str, summary: str, threshold: float = 2.0) -> str:
     """
-    Classify article genre based on content analysis.
+    Enhanced classify article genre with conflict resolution.
     
     Args:
         title: Article title
@@ -96,17 +96,74 @@ def classify_article_genre(title: str, summary: str, threshold: float = 1.0) -> 
         if not scores:
             return "General"
         
-        max_genre = max(scores.items(), key=lambda x: x[1])
+        # Sort scores to get top candidates
+        sorted_scores = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+        top_genre, top_score = sorted_scores[0]
         
         # Check if the score meets the threshold
-        if max_genre[1] >= threshold:
-            return max_genre[0]
-        else:
+        if top_score < threshold:
             return "General"
+        
+        # Handle conflicts between closely scored genres
+        if len(sorted_scores) > 1:
+            second_genre, second_score = sorted_scores[1]
+            
+            # If scores are very close (within 20%), apply conflict resolution
+            if second_score > 0 and (top_score - second_score) / top_score < 0.2:
+                resolved_genre = _resolve_genre_conflict(title, summary, top_genre, second_genre, top_score, second_score)
+                if resolved_genre:
+                    return resolved_genre
+        
+        return top_genre
             
     except Exception as e:
         logging.error(f"Error classifying article genre: {e}")
         return "General"
+
+def _resolve_genre_conflict(title: str, summary: str, genre1: str, genre2: str, score1: float, score2: float) -> Optional[str]:
+    """
+    Resolve conflicts between closely scored genres using additional logic.
+    """
+    try:
+        text = (title + " " + summary).lower()
+        
+        # Politics vs Technology conflict - prioritize politics if political context is strong
+        if {genre1, genre2} == {"Politics", "Technology"}:
+            political_indicators = ["election", "vote", "campaign", "government", "policy", "congress", "president", "political"]
+            tech_indicators = ["software", "app", "startup", "innovation", "platform"]
+            
+            political_count = sum(1 for indicator in political_indicators if indicator in text)
+            tech_count = sum(1 for indicator in tech_indicators if indicator in text)
+            
+            if political_count > tech_count:
+                return "Politics"
+            elif tech_count > political_count:
+                return "Technology"
+        
+        # Business vs Technology conflict - check for financial context
+        if {genre1, genre2} == {"Business", "Technology"}:
+            business_indicators = ["market", "stock", "financial", "revenue", "profit", "investment", "company earnings"]
+            
+            if any(indicator in text for indicator in business_indicators):
+                return "Business"
+            else:
+                return "Technology"
+        
+        # Politics vs World conflict - check for international context
+        if {genre1, genre2} == {"Politics", "World"}:
+            international_indicators = ["international", "foreign", "global", "country", "nation", "overseas", "diplomatic"]
+            
+            if any(indicator in text for indicator in international_indicators):
+                return "World"
+            else:
+                return "Politics"
+        
+        # Default: return the genre with higher score
+        return genre1 if score1 > score2 else genre2
+        
+    except Exception as e:
+        logging.error(f"Error resolving genre conflict: {e}")
+        return genre1 if score1 > score2 else genre2
 
 def filter_articles_by_genre(articles: List[Article], genre: str) -> List[Article]:
     """

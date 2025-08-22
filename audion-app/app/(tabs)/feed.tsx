@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert, RefreshControl, Modal, Platform, Animated, Easing, TextInput, SafeAreaView, Linking, PanResponder, Dimensions } from 'react-native';
 import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
@@ -36,6 +36,48 @@ import DualFilterUI from '../../components/DualFilterUI';
 import FeedFilterMenu from '../../components/FeedFilterMenu';
 import GlobalEventService from '../../services/GlobalEventService';
 import FeedActionBar from '../../components/FeedActionBar';
+import ManualPickPanel from '../../components/ManualPickPanel';
+
+// Memory optimization utilities
+const MemoryUtils = {
+  forceGarbageCollection: () => {
+    if (global.gc) {
+      global.gc();
+    }
+  },
+  
+  clearLargeArrays: (...arrays: any[]) => {
+    arrays.forEach(arr => {
+      if (Array.isArray(arr)) {
+        arr.length = 0;
+      }
+    });
+  },
+  
+  // Chunked processing to prevent memory spikes
+  processInChunks: async <T, R>(
+    items: T[], 
+    processor: (item: T) => R, 
+    chunkSize: number = 10
+  ): Promise<R[]> => {
+    const results: R[] = [];
+    
+    for (let i = 0; i < items.length; i += chunkSize) {
+      const chunk = items.slice(i, i + chunkSize);
+      for (const item of chunk) {
+        results.push(processor(item));
+      }
+      
+      // Allow garbage collection between chunks
+      if (i % 50 === 0) {
+        await new Promise(resolve => setTimeout(resolve, 0));
+        MemoryUtils.forceGarbageCollection();
+      }
+    }
+    
+    return results;
+  }
+};
 
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:8003';
 const API = `${BACKEND_URL}/api`;
@@ -51,7 +93,7 @@ interface RSSSource {
 
 export default function FeedScreen() {
   const { token } = useAuth();
-  const { showMiniPlayer } = useAudio();
+  const { showMiniPlayer, playAudio, playAudioStreaming } = useAudio();
   const { theme } = useTheme();
   const { currentVoiceLanguage } = useLanguage();
   const { t } = useTranslation();
@@ -63,9 +105,7 @@ export default function FeedScreen() {
   const [selectedGenre, setSelectedGenre] = useState<string>('All');
   const [selectedSource, setSelectedSource] = useState<string>('All Sources'); // Added back for Feed tab dual filtering
   const [selectedReadingFilter, setSelectedReadingFilter] = useState('All Articles');
-  const [selectedArticleIds, setSelectedArticleIds] = useState<string[]>([]); // Global selection state
-  const [allArticlesMap, setAllArticlesMap] = useState<Map<string, Article>>(new Map()); // Track all articles across filters
-  const [normalizedArticlesMap, setNormalizedArticlesMap] = useState<Map<string, Article>>(new Map()); // Track articles by normalized ID
+  const [selectedArticleIds, setSelectedArticleIds] = useState<string[]>([]); // Simplified selection state
   const [creatingAudio, setCreatingAudio] = useState(false); // Added state
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [createdAudio, setCreatedAudio] = useState<any>(null);
@@ -188,7 +228,12 @@ export default function FeedScreen() {
         if (token && token !== '') {
           await loadGlobalSelection();
           await loadArchivedArticles();
-          await loadReadingHistory();
+          
+          // Load reading history and set it
+          const history = await loadReadingHistoryFromStorage();
+          console.log(`Feed: Loaded reading history with ${history.size} entries`);
+          setReadingHistory(history);
+          
           await loadReadLaterStatus();
           // Force refresh sources to get latest changes from sources screen
           await fetchSources(true);
@@ -250,33 +295,32 @@ export default function FeedScreen() {
     }
   };
 
-  // Load reading history from AsyncStorage
-  const loadReadingHistory = async () => {
+  // Load reading history from AsyncStorage (unified with Home implementation)
+  const loadReadingHistoryFromStorage = async (): Promise<Map<string, Date>> => {
     try {
-      const savedHistory = await AsyncStorage.getItem('reading_history');
-      if (savedHistory) {
-        const parsed = JSON.parse(savedHistory);
-        // Convert string dates back to Date objects
-        const historyMap = new Map();
-        Object.entries(parsed).forEach(([articleId, dateStr]) => {
-          historyMap.set(articleId, new Date(dateStr as string));
+      const history = await AsyncStorage.getItem('reading_history');
+      if (history) {
+        const parsed = JSON.parse(history);
+        const map = new Map();
+        Object.entries(parsed).forEach(([key, value]) => {
+          map.set(key, new Date(value as string));
         });
-        setReadingHistory(historyMap);
+        return map;
       }
     } catch (error) {
-      console.error('Error loading reading history:', error);
+      console.warn('Error loading reading history:', error);
     }
+    return new Map();
   };
 
-  // Save reading history to AsyncStorage
-  const saveReadingHistory = async (historyMap: Map<string, Date>) => {
+  const saveReadingHistoryToStorage = async (history: Map<string, Date>) => {
     try {
       const historyObj = Object.fromEntries(
-        Array.from(historyMap.entries()).map(([key, value]) => [key, value.toISOString()])
+        Array.from(history.entries()).map(([key, value]) => [key, value.toISOString()])
       );
       await AsyncStorage.setItem('reading_history', JSON.stringify(historyObj));
     } catch (error) {
-      console.error('Error saving reading history:', error);
+      console.warn('Error saving reading history:', error);
     }
   };
 
@@ -385,49 +429,76 @@ export default function FeedScreen() {
     return readDate >= weekStart;
   };
 
-  // Filter articles based on reading status and search query (using SearchUtils)
-  const getFilteredArticles = (): Article[] => {
-    let filteredArticles = articles;
-
-    // Apply reading filter first
-    switch (selectedReadingFilter) {
-      case 'Unread':
-        filteredArticles = articles.filter(article => !readingHistory.has(article.id));
-        break;
-      case 'Read':
-        filteredArticles = articles.filter(article => readingHistory.has(article.id));
-        break;
-      case 'This Week\'s Reads':
-        filteredArticles = articles.filter(article => isReadThisWeek(article.id));
-        break;
-      case 'All Articles':
-      default:
-        filteredArticles = articles;
-        break;
+  // Filter articles based on reading status, source, genre, and search query (memoized)
+  // Memory-optimized filteredArticles with early returns
+  const filteredArticles = useMemo((): Article[] => {
+    // Early return for empty articles to prevent unnecessary processing
+    if (!articles || articles.length === 0) {
+      return [];
     }
 
-    // Apply search and genre filters using SearchUtils (same as Home tab)
-    return SearchUtils.filterArticles(filteredArticles, {
-      searchQuery: searchQuery.trim(),
-      genre: selectedGenre,
-    });
-  };
+    // Use efficient filtering with early returns and minimal object creation
+    const hasReadingFilter = selectedReadingFilter !== 'All Articles';
+    const hasSourceFilter = selectedSource !== 'All Sources';
+    const hasSearchQuery = searchQuery.trim().length > 0;
+    const hasGenreFilter = selectedGenre !== 'All';
 
-  // Normalize articles to prevent duplicates across filters
-  const normalizeArticles = (articles: Article[]): Article[] => {
-    const normalizedMap = new Map<string, Article>();
-    
-    articles.forEach(article => {
-      const normalizedId = generateNormalizedId(article);
-      const articleWithNormalizedId = { ...article, normalizedId };
-      
-      // If we already have this normalized article, keep the first one but update the map
-      if (!normalizedMap.has(normalizedId)) {
-        normalizedMap.set(normalizedId, articleWithNormalizedId);
+    // If no filters applied, return original array (no copying)
+    if (!hasReadingFilter && !hasSourceFilter && !hasSearchQuery && !hasGenreFilter) {
+      return articles;
+    }
+
+    let filtered = articles;
+
+    // Apply READING filter first (most selective)
+    if (hasReadingFilter) {
+      switch (selectedReadingFilter) {
+        case 'Unread':
+          filtered = filtered.filter(article => !readingHistory.has(article.id));
+          break;
+        case 'Read':
+          filtered = filtered.filter(article => readingHistory.has(article.id));
+          break;
+        case 'This Week\'s Reads':
+          filtered = filtered.filter(article => isReadThisWeek(article.id));
+          break;
       }
-    });
+    }
+
+    // Apply SOURCE filter (Feed specific)
+    if (hasSourceFilter) {
+      filtered = filtered.filter(article => article.source_name === selectedSource);
+    }
+
+    // Apply search and genre filters using SearchUtils (optimized)
+    if (hasSearchQuery || hasGenreFilter) {
+      filtered = SearchUtils.filterArticles(filtered, {
+        searchQuery: searchQuery.trim(),
+        genre: selectedGenre,
+      });
+    }
+
+    console.log(`Feed Filter Debug: ${selectedReadingFilter} filter applied, ${filtered.length}/${articles.length} articles`);
+    return filtered;
+  }, [articles, selectedReadingFilter, selectedSource, selectedGenre, searchQuery, readingHistory]);
+
+  // Memory-optimized article normalization
+  const normalizeArticles = (articles: Article[]): Article[] => {
+    // Use Set for faster lookups and reduced memory
+    const seenIds = new Set<string>();
+    const result: Article[] = [];
     
-    return Array.from(normalizedMap.values());
+    for (const article of articles) {
+      const normalizedId = generateNormalizedId(article);
+      
+      if (!seenIds.has(normalizedId)) {
+        seenIds.add(normalizedId);
+        // Only add normalizedId property if needed, reduce object spread
+        result.push(Object.assign(article, { normalizedId }));
+      }
+    }
+    
+    return result;
   };
 
   // Save global selection state to AsyncStorage
@@ -491,28 +562,7 @@ export default function FeedScreen() {
         setTimeout(() => {
           }, 100);
         
-        // Update global articles maps
-        setAllArticlesMap(prevMap => {
-          const newMap = new Map(prevMap);
-          normalizedCachedArticles.forEach((article: Article) => {
-            newMap.set(article.id, article);
-          });
-          return newMap;
-        });
-        
-        setNormalizedArticlesMap(prevMap => {
-          const newMap = new Map(prevMap);
-          normalizedCachedArticles.forEach((article: Article) => {
-            if (article.normalizedId) {
-              newMap.set(article.normalizedId, article);
-            }
-          });
-          // Force UI update after articles are loaded
-          setTimeout(() => {
-              }, 100);
-          
-          return newMap;
-        });
+        // Simplified - removed complex map management
         
         setLoading(false);
         return;
@@ -536,28 +586,7 @@ export default function FeedScreen() {
       setTimeout(() => {
       }, 100);
       
-      // Update global articles maps
-      setAllArticlesMap(prevMap => {
-        const newMap = new Map(prevMap);
-        normalizedArticles.forEach((article: Article) => {
-          newMap.set(article.id, article);
-        });
-        return newMap;
-      });
-      
-      setNormalizedArticlesMap(prevMap => {
-        const newMap = new Map(prevMap);
-        normalizedArticles.forEach((article: Article) => {
-          if (article.normalizedId) {
-            newMap.set(article.normalizedId, article);
-          }
-        });
-        // Force UI update after articles are loaded
-        setTimeout(() => {
-          }, 100);
-        
-        return newMap;
-      });
+      // Simplified - removed complex map management
     } catch (error: any) {
       console.error('Error fetching articles:', error);
       ErrorHandlingService.showError(error, { 
@@ -594,12 +623,13 @@ export default function FeedScreen() {
     // Save reading history
     const newHistory = new Map(readingHistory);
     newHistory.set(article.id, new Date());
+    console.log(`Feed: Marking article ${article.id} as read. History size: ${newHistory.size}`);
     setReadingHistory(newHistory);
     await saveReadingHistoryToStorage(newHistory);
     
     // Record interaction
     await PersonalizationService.recordInteraction({
-      action: 'play',
+      action: 'read',
       contentId: article.id,
       contentType: 'article',
       category: article.genre || 'General',
@@ -613,16 +643,6 @@ export default function FeedScreen() {
     setShowArticleReader(true);
   };
 
-  const saveReadingHistoryToStorage = async (history: Map<string, Date>) => {
-    try {
-      const historyObj = Object.fromEntries(
-        Array.from(history.entries()).map(([key, value]) => [key, value.toISOString()])
-      );
-      await AsyncStorage.setItem('reading_history', JSON.stringify(historyObj));
-    } catch (error) {
-      console.warn('Error saving reading history:', error);
-    }
-  };
 
   const toggleArticleSelection = (articleId: string) => {
     // Find the article and get its normalized ID
@@ -657,19 +677,22 @@ export default function FeedScreen() {
   };
 
   // Clear all selections (optimized for Web)
+  // Memory-optimized selection clearing
   const clearAllSelections = () => {
     if (Platform.OS === 'web') {
       // For Web: Clear selections gradually to prevent freeze
       setSelectedArticleIds([]);
       saveGlobalSelection([]);
-      // Delay UI update to allow React to process the state changes
+      // Force garbage collection after clearing large arrays
       setTimeout(() => {
+        MemoryUtils.forceGarbageCollection();
       }, 200);
     } else {
-      // For native: Immediate clearing
+      // For native: Immediate clearing with memory cleanup
       setSelectedArticleIds([]);
       saveGlobalSelection([]);
       setTimeout(() => {
+        MemoryUtils.forceGarbageCollection();
       }, 50);
     }
     // Exit selection mode when clearing all
@@ -678,66 +701,43 @@ export default function FeedScreen() {
 
   // Remove specific article from selection (using normalized ID)
   const removeFromSelection = (articleId: string) => {
-    // The articleId passed here is actually the article's original ID, but we store normalized IDs
-    // Find the article and get its normalized ID
-    const article = Array.from(normalizedArticlesMap.values()).find(a => a.id === articleId);
-    if (article && article.normalizedId) {
-      const newSelection = selectedArticleIds.filter(id => id !== article.normalizedId);
-      setSelectedArticleIds(newSelection);
-      saveGlobalSelection(newSelection);
-    }
+    // Simplified removal - just use the article ID directly
+    const newSelection = selectedArticleIds.filter(id => id !== articleId);
+    setSelectedArticleIds(newSelection);
+    saveGlobalSelection(newSelection);
   };
 
-  // Select all articles in current filter
+  // Select all articles in current filter - simplified
   const selectAllInCurrentFilter = () => {
-    const currentNormalizedIds = articles.map(article => article.normalizedId).filter(id => id !== undefined) as string[];
-    
-    const newSelection = [...new Set([...selectedArticleIds, ...currentNormalizedIds])];
-    
+    const currentArticleIds = filteredArticles.map(article => article.id);
+    const newSelection = [...new Set([...selectedArticleIds, ...currentArticleIds])];
     setSelectedArticleIds(newSelection);
     saveGlobalSelection(newSelection);
-    
-    // Force UI update for Web environment
-    if (Platform.OS === 'web') {
-    } else {
-    }
-    
   };
 
-  // Deselect all articles in current filter
+  // Deselect all articles in current filter - simplified
   const deselectAllInCurrentFilter = () => {
-    const currentNormalizedIds = new Set(articles.map(article => article.normalizedId).filter(id => id !== undefined));
-    const newSelection = selectedArticleIds.filter(id => !currentNormalizedIds.has(id));
+    const currentArticleIds = new Set(filteredArticles.map(article => article.id));
+    const newSelection = selectedArticleIds.filter(id => !currentArticleIds.has(id));
     setSelectedArticleIds(newSelection);
     saveGlobalSelection(newSelection);
-    
-    // Force UI update for Web environment
-    if (Platform.OS === 'web') {
-    } else {
-    }
   };
 
-  // Check if all current articles are selected
+  // Check if all current articles are selected - simplified
   const areAllCurrentArticlesSelected = () => {
-    if (articles.length === 0) return false;
-    return articles.every(article => article.normalizedId && selectedArticleIds.includes(article.normalizedId));
+    if (filteredArticles.length === 0) return false;
+    return filteredArticles.every(article => selectedArticleIds.includes(article.id));
   };
 
-  // Get count of selected articles in current filter
+  // Get count of selected articles in current filter - simplified
   const getSelectedInCurrentFilterCount = () => {
-    const currentNormalizedIds = new Set(articles.map(article => article.normalizedId).filter(id => id !== undefined));
-    return selectedArticleIds.filter(id => currentNormalizedIds.has(id)).length;
+    const currentArticleIds = new Set(filteredArticles.map(article => article.id));
+    return selectedArticleIds.filter(id => currentArticleIds.has(id)).length;
   };
 
-  // Get selected articles with full data
+  // Get selected articles with full data - simplified
   const getSelectedArticles = () => {
-    const selectedArticles = selectedArticleIds
-      .map(normalizedId => {
-        const article = normalizedArticlesMap.get(normalizedId);
-        return article;
-      })
-      .filter((article): article is Article => article !== undefined);
-    return selectedArticles;
+    return filteredArticles.filter(article => selectedArticleIds.includes(article.id));
   };
 
   // Toggle Selection Mode (Pattern B)
@@ -1019,85 +1019,309 @@ export default function FeedScreen() {
     }
   };
 
+  // Instant auto-pick audio creation (2-5 seconds)
+  const handleInstantAutoPickAudio = async () => {
+    setCreatingAudio(true);
+    
+    try {
+      console.log('InstantAutoPick: Starting instant audio creation');
+      
+      // Use same auto-pick logic to select articles
+      const autoPickRequest = {
+        max_articles: 5,
+        ...(selectedGenre !== 'All' && { preferred_genres: [selectedGenre] }),
+        ...(selectedSource !== 'All Sources' && { preferred_sources: [selectedSource] })
+      };
+      
+      const autoPickResponse = await axios.post(
+        `${API}/auto-pick`,
+        autoPickRequest,
+        { 
+          headers: { Authorization: `Bearer ${token}` },
+          timeout: 15000
+        }
+      );
+      
+      if (autoPickResponse.data && autoPickResponse.data.length > 0) {
+        // Create instant audio using new endpoint
+        const autoPickArticles = autoPickResponse.data;
+        const requestData = {
+          article_ids: autoPickArticles.map((a: any) => a.id),
+          article_titles: autoPickArticles.map((a: any) => a.title),
+          article_urls: autoPickArticles.map((a: any) => a.link || ''),
+          prompt_style: 'instant',
+          custom_prompt: null,
+          voice_language: 'ja-JP',
+          voice_name: 'alloy'
+        };
 
-  // Create audio from this week's read articles
+        // Add debug headers if bypass is enabled
+        const audioHeaders: any = { Authorization: `Bearer ${token}` };
+        if (require('../../services/DebugService').default.shouldBypassSubscriptionLimits()) {
+          audioHeaders['X-Debug-Bypass-Limits'] = 'true';
+          audioHeaders['X-Debug-Mode'] = 'true';
+        }
+
+        const instantResponse = await axios.post(
+          `${API}/audio/instant-multi`,
+          requestData,
+          { 
+            headers: audioHeaders,
+            timeout: 15000 // Extended timeout for TTS processing
+          }
+        );
+        
+        if (instantResponse.data?.audio_url) {
+          // Immediately start background streaming playback
+          const audioItem = {
+            id: instantResponse.data.id,
+            title: instantResponse.data.title,
+            audio_url: instantResponse.data.audio_url,
+            duration: instantResponse.data.duration || 0,
+            created_at: new Date().toISOString(),
+            script: instantResponse.data.script || ''
+          };
+          
+          // Start streaming playback immediately
+          await playAudioStreaming(audioItem);
+          
+          console.log(`⚡ Instant streaming started: ${audioItem.title}`);
+        } else {
+          throw new Error('No audio URL received from server');
+        }
+      } else {
+        Alert.alert('No Selection', 'AI could not find suitable articles. Try again later.');
+      }
+    } catch (error: any) {
+      console.error('InstantAutoPick Error:', error);
+      let errorMessage = 'Failed to create instant audio';
+      if (error.response?.status === 422) {
+        errorMessage = 'Invalid article data. Please try refreshing articles.';
+      } else if (error.response?.status === 429) {
+        errorMessage = 'Server is busy. Please wait a moment and try again.';
+      } else if (error.response?.data?.detail) {
+        errorMessage = error.response.data.detail;
+      }
+      Alert.alert('Error', errorMessage);
+    } finally {
+      setCreatingAudio(false);
+      if (global.gc) {
+        global.gc();
+      }
+    }
+  };
+
+  // Instant auto-pick audio creation
   const handleCreateAutoPickAudio = async () => {
     if (filteredArticles.length === 0) {
       Alert.alert('No Articles', 'Please add some RSS sources and refresh to get articles.');
       return;
     }
 
-    Alert.alert(
-      'Auto-Pick & Create Podcast',
-      'Let AI automatically select the best articles and create a personalized podcast for you?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Auto-Pick',
-          onPress: async () => {
-            setCreatingAudio(true);
-            try {
-              // AutoPick should respect BOTH source and genre filters (dual filtering)
-              const autoPickRequest = {
-                max_articles: 5,
-                ...(selectedGenre !== 'All' && { preferred_genres: [selectedGenre] }),
-                ...(selectedSource !== 'All Sources' && { preferred_sources: [selectedSource] })
-              };
-              
-              const autoPickResponse = await axios.post(
-                `${API}/auto-pick`,
-                autoPickRequest,
-                { headers: { Authorization: `Bearer ${token}` } }
-              );
-              
-              if (autoPickResponse.data && autoPickResponse.data.length > 0) {
-                const audioResponse = await axios.post(
-                  `${API}/audio/create`,
-                  { articles: autoPickResponse.data },
-                  { headers: { Authorization: `Bearer ${token}` } }
-                );
-                
-                if (audioResponse.data?.audio_url) {
-                  Alert.alert(
-                    'Success!', 
-                    `AI selected ${autoPickResponse.data.length} articles and created your personalized podcast. Check your library!`
-                  );
-                  
-                  await PersonalizationService.recordInteraction({
-                    action: 'complete',
-                    contentId: audioResponse.data.id,
-                    contentType: 'audio',
-                    category: 'Auto-Pick Podcast',
-                    timestamp: Date.now(),
-                    engagementLevel: 'high',
-                  });
-                  
-                  await NotificationService.getInstance().sendAudioReadyNotification(
-                    audioResponse.data.title || 'Your AI Podcast',
-                    autoPickResponse.data.length,
-                    audioResponse.data.id
-                  );
-                } else {
-                  Alert.alert('Error', 'Failed to create audio from selected articles');
-                }
-              } else {
-                Alert.alert('No Selection', 'AI could not find suitable articles for podcast creation. Try again later.');
-              }
-            } catch (error: any) {
-              console.error('Feed AutoPick Error:', error);
-              console.error('Error Details:', {
-                message: error.message,
-                response: error.response?.data,
-                status: error.response?.status
-              });
-              Alert.alert('Error', error.response?.data?.detail || error.message || 'Failed to auto-pick articles');
-            } finally {
-              setCreatingAudio(false);
-            }
+    await handleInstantAutoPickAudio();
+  };
+
+  // Instant manual audio creation (2-5 seconds)
+  const handleCreateInstantManualAudio = async () => {
+    if (selectedArticleIds.length === 0) {
+      Alert.alert('No Selection', 'Please select articles to create audio from.');
+      return;
+    }
+
+    setCreatingAudio(true);
+    
+    try {
+      console.log(`InstantManualPick: Creating instant audio from ${selectedArticleIds.length} articles`);
+      
+      const selectedArticles = filteredArticles.filter(article => 
+        selectedArticleIds.includes(article.id) || 
+        (article.normalizedId && selectedArticleIds.includes(article.normalizedId))
+      );
+
+      if (selectedArticles.length === 0) {
+        Alert.alert('Error', 'No selected articles found.');
+        return;
+      }
+
+      const requestData = {
+        article_ids: selectedArticles.map(a => a.id),
+        article_titles: selectedArticles.map(a => a.title),
+        article_urls: selectedArticles.map(a => a.link || ''),
+        prompt_style: 'instant',
+        custom_prompt: null,
+        voice_language: 'ja-JP',
+        voice_name: 'alloy'
+      };
+
+      // Add debug headers if bypass is enabled
+      const audioHeaders: any = { Authorization: `Bearer ${token}` };
+      if (require('../../services/DebugService').default.shouldBypassSubscriptionLimits()) {
+        audioHeaders['X-Debug-Bypass-Limits'] = 'true';
+        audioHeaders['X-Debug-Mode'] = 'true';
+      }
+
+      const instantResponse = await axios.post(
+        `${API}/audio/instant-multi`,
+        requestData,
+        { 
+          headers: audioHeaders,
+          timeout: 15000 // Extended timeout for TTS processing
+        }
+      );
+      
+      if (instantResponse.data?.audio_url) {
+        // Immediately start background streaming playback
+        const audioItem = {
+          id: instantResponse.data.id,
+          title: instantResponse.data.title,
+          audio_url: instantResponse.data.audio_url,
+          duration: instantResponse.data.duration || 0,
+          created_at: new Date().toISOString(),
+          script: instantResponse.data.script || ''
+        };
+        
+        // Start streaming playback immediately
+        await playAudioStreaming(audioItem);
+        
+        // Clear selection and exit
+        clearAllSelections();
+        setSelectionMode(false);
+        
+        console.log(`⚡ Instant streaming started: ${audioItem.title}`);
+      } else {
+        throw new Error('No audio URL received from server');
+      }
+    } catch (error: any) {
+      console.error('InstantManualPick Error:', error);
+      let errorMessage = 'Failed to create instant audio';
+      if (error.response?.status === 422) {
+        errorMessage = 'Invalid article data. Please try selecting different articles.';
+      } else if (error.response?.status === 429) {
+        errorMessage = 'Server is busy. Please wait a moment and try again.';
+      } else if (error.response?.data?.detail) {
+        errorMessage = error.response.data.detail;
+      }
+      Alert.alert('Error', errorMessage);
+    } finally {
+      setCreatingAudio(false);
+      MemoryUtils.forceGarbageCollection();
+    }
+  };
+
+  // Memory-optimized manual audio creation
+  const handleCreateManualAudio = async (promptStyle: string = 'standard', customPrompt: string = '') => {
+    if (selectedArticleIds.length === 0) {
+      Alert.alert('No Selection', 'Please select articles to create audio from.');
+      return;
+    }
+
+    setCreatingAudio(true);
+    
+    // Clear memory before heavy operations
+    if (global.gc) {
+      global.gc();
+    }
+    
+    try {
+      // Memory-efficient article retrieval using direct array processing
+      const selectedSet = new Set(selectedArticleIds);
+      const selectedArticles: Article[] = [];
+      
+      // Process articles in chunks to prevent memory spikes
+      const chunkSize = 10;
+      for (let i = 0; i < filteredArticles.length; i += chunkSize) {
+        const chunk = filteredArticles.slice(i, i + chunkSize);
+        for (const article of chunk) {
+          if (selectedSet.has(article.id) || 
+              (article.normalizedId && selectedSet.has(article.normalizedId))) {
+            selectedArticles.push({
+              id: article.id,
+              title: article.title,
+              link: article.link,
+              // Only include essential properties to reduce memory
+            } as Article);
           }
         }
-      ]
-    );
+        
+        // Allow garbage collection between chunks
+        if (i % 50 === 0) {
+          await new Promise(resolve => setTimeout(resolve, 0));
+        }
+      }
+
+      if (selectedArticles.length === 0) {
+        Alert.alert('Error', 'No selected articles found. Please try selecting articles again.');
+        setSelectionMode(false);
+        clearAllSelections();
+        return;
+      }
+
+      console.log(`ManualPick: Creating audio from ${selectedArticles.length} articles`);
+
+      // Memory-efficient request data construction
+      const requestData = {
+        article_ids: selectedArticles.map(a => a.id),
+        article_titles: selectedArticles.map(a => a.title),
+        article_urls: selectedArticles.map(a => a.link || ''),
+        prompt_style: promptStyle || 'recommended',
+        custom_prompt: customPrompt || null,
+        voice_language: 'ja-JP',
+        voice_name: 'alloy'
+      };
+
+      // Clear selectedArticles array to free memory
+      selectedArticles.length = 0;
+
+      // Add debug headers if bypass is enabled
+      const audioHeaders: any = { Authorization: `Bearer ${token}` };
+      if (require('../../services/DebugService').default.shouldBypassSubscriptionLimits()) {
+        audioHeaders['X-Debug-Bypass-Limits'] = 'true';
+        audioHeaders['X-Debug-Mode'] = 'true';
+      }
+
+      const audioResponse = await axios.post(
+        `${API}/audio/create`,
+        requestData,
+        { 
+          headers: audioHeaders,
+          timeout: 60000 // Increase to 60 seconds for TTS processing
+        }
+      );
+      
+      if (audioResponse.data?.audio_url) {
+        setCreatedAudio(audioResponse.data);
+        setShowSuccessModal(true);
+        
+        // Clear selection and exit
+        clearAllSelections();
+        setSelectionMode(false);
+      } else {
+        throw new Error('No audio URL received from server');
+      }
+    } catch (error: any) {
+      console.error('ManualPick Error:', error);
+      let errorMessage = 'Failed to create audio';
+      if (error.response?.status === 422) {
+        errorMessage = 'Invalid article data. Please try selecting different articles.';
+      } else if (error.response?.status === 429) {
+        errorMessage = 'Server is busy. Please wait a moment and try again.';
+      } else if (error.response?.data?.detail) {
+        errorMessage = error.response.data.detail;
+      }
+      Alert.alert('Error', errorMessage);
+    } finally {
+      setCreatingAudio(false);
+      // Force garbage collection after completion
+      if (global.gc) {
+        global.gc();
+      }
+    }
+  };
+
+  // Handle canceling manual pick mode
+  const handleCancelManualPick = () => {
+    setSelectionMode(false);
+    clearAllSelections();
   };
 
   const handleCreateWeeklyAudio = async () => {
@@ -1295,34 +1519,6 @@ export default function FeedScreen() {
     );
   }
 
-  // Apply DUAL filters (Source + Genre) for Feed tab
-  const articlesArray = Array.isArray(articles) ? articles : [];
-  
-  let filteredArticles = articlesArray;
-  
-  // Apply search query filter
-  if (searchQuery.trim()) {
-    filteredArticles = filteredArticles.filter(article => 
-      article.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      article.summary?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      article.source_name?.toLowerCase().includes(searchQuery.toLowerCase())
-    );
-  }
-  
-  // Apply SOURCE filter (first level)
-  if (selectedSource !== 'All Sources') {
-    filteredArticles = filteredArticles.filter(article => 
-      article.source_name === selectedSource
-    );
-  }
-  
-  // Apply GENRE filter (second level)
-  if (selectedGenre !== 'All') {
-    filteredArticles = filteredArticles.filter(article => 
-      article.genre === selectedGenre
-    );
-  }
-
   return (
     <SafeAreaView 
       style={[styles.container, { backgroundColor: theme.background }]}
@@ -1344,6 +1540,7 @@ export default function FeedScreen() {
         selectedCount={selectedArticleIds.length}
         selectionMode={selectionMode}
         isCreating={creatingAudio}
+        currentReadFilter={selectedReadingFilter}
         onAutoPick={handleCreateAutoPickAudio}
         onToggleSelection={toggleSelectionMode}
         onReadStatusFilter={() => setShowFilterMenu(true)}
@@ -1356,11 +1553,31 @@ export default function FeedScreen() {
         refreshing={refreshing}
         onRefresh={onRefresh}
         loading={loading}
+        readingHistory={readingHistory}
+        archivedArticles={archivedArticles}
+        feedLikedArticles={feedLikedArticles}
+        feedDislikedArticles={feedDislikedArticles}
+        selectionMode={selectionMode}
+        selectedArticleIds={selectedArticleIds}
+        onToggleSelection={(articleId: string) => {
+          if (selectedArticleIds.includes(articleId)) {
+            setSelectedArticleIds(prev => prev.filter(id => id !== articleId));
+          } else {
+            setSelectedArticleIds(prev => [...prev, articleId]);
+          }
+        }}
+        onLongPress={handleArticlePress} // Long press shows article for preview
       />
 
-
-      {/* Selection Count moved to floating section above */}
-
+      {/* Manual Pick Panel - Show when in selection mode for read articles or this week's reads */}
+      {selectionMode && (selectedReadingFilter === 'Read' || selectedReadingFilter === "This Week's Reads") && (
+        <ManualPickPanel
+          selectedCount={selectedArticleIds.length}
+          onCreateInstantAudio={handleCreateInstantManualAudio}
+          onCancel={handleCancelManualPick}
+          isCreating={creatingAudio}
+        />
+      )}
 
       {/* Selection Count Info - Show in selection mode */}
       {selectionMode && selectedArticleIds.length > 0 && (
@@ -1429,12 +1646,12 @@ export default function FeedScreen() {
           
           <ScrollView style={styles.searchResults}>
             {(() => {
-              const filteredArticles = getFilteredArticles().filter(article =>
+              const searchFilteredArticles = filteredArticles.filter(article =>
                 article.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
                 article.summary?.toLowerCase().includes(searchQuery.toLowerCase())
               );
               
-              return filteredArticles.length === 0 ? (
+              return searchFilteredArticles.length === 0 ? (
                 <View style={styles.noResults}>
                   <Ionicons name="search" size={48} color={theme.textMuted} />
                   <Text style={[styles.noResultsText, { color: theme.textMuted }]}>
@@ -1442,7 +1659,7 @@ export default function FeedScreen() {
                   </Text>
                 </View>
               ) : (
-                filteredArticles.slice(0, 20).map((article) => (
+                searchFilteredArticles.slice(0, 20).map((article) => (
                   <TouchableOpacity
                     key={article.id}
                     style={[styles.searchResultItem, { backgroundColor: theme.surface }]}

@@ -156,9 +156,9 @@ const getFilterDescription = (filter: string): string => {
     case 'Unread':
       return 'まだ読んでいない記事のみ';
     case 'Read':
-      return '既読の記事のみ';
+      return '既読の記事のみ（手動選択可能）';
     case "This Week's Reads":
-      return '今週読んだ記事のみ';
+      return '今週読んだ記事のみ（手動選択可能）';
     default:
       return '';
   }

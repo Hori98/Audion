@@ -25,6 +25,7 @@ import { useTheme } from '../context/ThemeContext';
 import { format } from 'date-fns';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { usePathname } from 'expo-router';
+import ChapterSourceButton from './ChapterSourceButton';
 
 export default function MiniPlayerV2() {
   const {
@@ -78,9 +79,9 @@ export default function MiniPlayerV2() {
     let bottomOffset;
     
     if (Platform.OS === 'web') {
-      bottomOffset = isTabRoute ? 10 : 10; // Simple web positioning
+      bottomOffset = isTabRoute ? 80 : 20; // Higher positioning to avoid footer overlap
     } else {
-      bottomOffset = isTabRoute ? 50 : 30; // Reduced native positioning - closer to footer
+      bottomOffset = isTabRoute ? 100 : 50; // Much higher positioning above footer
     }
 
     // Only log in development mode
@@ -227,6 +228,9 @@ export default function MiniPlayerV2() {
           ]}
         />
       </View>
+
+      {/* Chapter Source Button - Compact overlay for URL jumping */}
+      <ChapterSourceButton visible={true} />
 
       {/* Main content */}
       <View style={styles.content}>

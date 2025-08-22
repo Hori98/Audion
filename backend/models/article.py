@@ -34,17 +34,22 @@ class MisreadingFeedback(BaseModel):
     expected_text: Optional[str] = None  # What should have been said
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
-# Genre classification constants
+# Genre classification constants - Updated for frontend consistency
 GENRE_KEYWORDS = {
     "Technology": {
         "high": ["ai", "artificial intelligence", "machine learning", "blockchain", "cryptocurrency", "bitcoin", "ethereum", "nft", "metaverse", "vr", "virtual reality", "ar", "augmented reality", "cloud computing", "cybersecurity", "data privacy", "algorithm", "neural network", "quantum computing", "5g", "internet of things", "iot", "robotics", "automation"],
         "medium": ["tech", "technology", "software", "app", "platform", "digital", "online", "internet", "web", "mobile", "smartphone", "iphone", "android", "google", "apple", "microsoft", "amazon", "facebook", "meta", "twitter", "tesla", "spacex", "openai", "chatgpt"],
         "low": ["startup", "innovation", "disruption", "silicon valley", "venture capital", "vc", "ipo", "saas", "fintech", "edtech", "medtech"]
     },
-    "Finance": {
-        "high": ["stock market", "nasdaq", "dow jones", "s&p 500", "federal reserve", "fed", "interest rate", "inflation", "recession", "gdp", "unemployment", "economic growth", "monetary policy", "fiscal policy", "central bank"],
-        "medium": ["finance", "financial", "economy", "economic", "market", "stock", "share", "investment", "investor", "trading", "bank", "banking", "credit", "loan", "mortgage", "insurance", "pension", "retirement"],
-        "low": ["business", "corporate", "earnings", "revenue", "profit", "loss", "merger", "acquisition", "dividend", "portfolio", "asset"]
+    "Business": {
+        "high": ["stock market", "nasdaq", "dow jones", "s&p 500", "federal reserve", "fed", "interest rate", "inflation", "recession", "gdp", "unemployment", "economic growth", "monetary policy", "fiscal policy", "central bank", "earnings", "revenue", "profit", "merger", "acquisition"],
+        "medium": ["business", "finance", "financial", "economy", "economic", "market", "stock", "share", "investment", "investor", "trading", "bank", "banking", "credit", "loan", "mortgage", "insurance", "pension", "retirement", "corporate", "company", "enterprise"],
+        "low": ["dividend", "portfolio", "asset", "commerce", "industry", "sector", "management", "executive", "ceo", "cfo"]
+    },
+    "Breaking News": {
+        "high": ["breaking", "urgent", "alert", "developing", "live", "just in", "update", "emergency", "crisis", "incident", "accident", "disaster", "attack", "shooting", "explosion", "fire", "earthquake", "flood"],
+        "medium": ["news", "latest", "report", "announcement", "statement", "press release", "briefing", "conference", "witness", "investigation", "police", "rescue", "evacuate"],
+        "low": ["happened", "occurred", "confirmed", "officials", "authorities", "spokesperson", "sources"]
     },
     "Sports": {
         "high": ["olympic", "olympics", "world cup", "super bowl", "champions league", "nba finals", "world series", "masters tournament", "wimbledon", "uefa", "fifa"],
@@ -52,9 +57,14 @@ GENRE_KEYWORDS = {
         "low": ["football", "soccer", "basketball", "baseball", "tennis", "golf", "hockey", "boxing", "mma", "racing"]
     },
     "Politics": {
-        "high": ["president", "prime minister", "congress", "parliament", "senate", "supreme court", "election", "vote", "campaign", "democracy", "republican", "democrat", "conservative", "liberal", "legislation", "bill"],
-        "medium": ["politics", "political", "government", "policy", "minister", "senator", "congressman", "mayor", "governor", "diplomat", "embassy", "foreign policy", "domestic policy"],
-        "low": ["administration", "cabinet", "bureaucracy", "regulation", "governance", "public sector", "civil service", "law"]
+        "high": ["president", "prime minister", "congress", "parliament", "senate", "supreme court", "election", "vote", "campaign", "democracy", "republican", "democrat", "conservative", "liberal", "legislation", "bill", "political party", "impeachment", "filibuster", "caucus", "primary election"],
+        "medium": ["politics", "political", "government", "policy", "minister", "senator", "congressman", "mayor", "governor", "diplomat", "embassy", "foreign policy", "domestic policy", "white house", "capitol", "pentagon", "state department"],
+        "low": ["administration", "cabinet", "bureaucracy", "regulation", "governance", "public sector", "civil service", "law", "ballot", "polling", "voter"]
+    },
+    "World": {
+        "high": ["international", "global", "worldwide", "foreign", "overseas", "diplomatic", "embassy", "united nations", "un", "nato", "eu", "european union", "g7", "g20", "summit", "treaty", "sanctions", "peace talks", "conflict", "war"],
+        "medium": ["world", "country", "nation", "national", "border", "immigration", "refugee", "asylum", "trade war", "tariff", "export", "import", "alliance", "cooperation", "bilateral", "multilateral"],
+        "low": ["international relations", "foreign affairs", "cross-border", "transnational", "overseas", "abroad", "region", "regional"]
     },
     "Health": {
         "high": ["covid", "coronavirus", "pandemic", "vaccine", "vaccination", "hospital", "doctor", "physician", "surgeon", "medical", "medicine", "healthcare", "patient", "treatment", "therapy", "diagnosis", "symptom", "disease", "virus", "bacteria"],
