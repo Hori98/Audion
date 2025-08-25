@@ -77,6 +77,7 @@ export default function UserProfileModal() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: '#000000',
   },
   header: {
     flexDirection: 'row',
@@ -91,6 +92,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 24,
     fontWeight: 'bold',
+    color: '#ffffff',
   },
   closeButton: {
     padding: 8,
@@ -108,22 +110,32 @@ const styles = StyleSheet.create({
   userInfo: {
     alignItems: 'center',
     marginBottom: 48,
+    backgroundColor: '#1a1a1a',
+    padding: 24,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#333333',
   },
   displayName: {
     fontSize: 28,
     fontWeight: 'bold',
+    color: '#ffffff',
     marginBottom: 8,
   },
   email: {
     fontSize: 16,
-    opacity: 0.8,
+    color: '#888888',
     marginBottom: 12,
   },
   tier: {
     fontSize: 14,
-    opacity: 0.6,
+    color: '#666666',
     textTransform: 'uppercase',
     letterSpacing: 1,
+    backgroundColor: '#333333',
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 12,
   },
   actions: {
     flex: 1,
