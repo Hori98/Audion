@@ -20,7 +20,17 @@ export default function TabLayout() {
   const colorScheme = useColorScheme();
   const { isAuthenticated, isLoading, user } = useAuth();
 
-  // Show loading spinner while checking authentication
+  // Always call all hooks - no conditional hooks
+  const headerShown = useClientOnlyValue(false, true);
+
+  // Handle authentication redirect
+  React.useEffect(() => {
+    if (!isLoading && !isAuthenticated) {
+      router.replace('/auth/login');
+    }
+  }, [isLoading, isAuthenticated]);
+
+  // Show loading state
   if (isLoading) {
     return (
       <View style={{ 
@@ -41,22 +51,16 @@ export default function TabLayout() {
     );
   }
 
-  // Redirect to login if not authenticated
-  React.useEffect(() => {
-    if (!isLoading && !isAuthenticated) {
-      router.replace('/auth/login');
-    }
-  }, [isLoading, isAuthenticated]);
-
+  // Show empty view while redirecting
   if (!isAuthenticated) {
-    return null;
+    return <View style={{ flex: 1, backgroundColor: '#000000' }} />;
   }
 
   return (
     <Tabs
       screenOptions={{
         tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
-        headerShown: useClientOnlyValue(false, true),
+        headerShown: headerShown,
         tabBarStyle: {
           backgroundColor: colorScheme === 'dark' ? '#000000' : '#ffffff',
         },
