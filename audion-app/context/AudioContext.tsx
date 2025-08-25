@@ -5,6 +5,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import DownloadService, { DownloadProgress } from '../services/DownloadService';
 import BackgroundAudioService from '../services/BackgroundAudioService';
 import OfflineAudioService from '../services/OfflineAudioService';
+import globalAudioManager from '../services/GlobalAudioManager';
 
 interface AudioItem {
   id: string;
@@ -214,6 +215,28 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     initializeBackgroundAudio();
   }, []);
 
+  // Register with GlobalAudioManager
+  useEffect(() => {
+    const stopCallback = async () => {
+      console.log('🎵 AudioContext: Stop callback triggered by GlobalAudioManager');
+      if (sound) {
+        await sound.unloadAsync();
+      }
+      setCurrentAudio(null);
+      setIsPlaying(false);
+      setIsLoading(false);
+      setPosition(0);
+      setDuration(0);
+      setShowMiniPlayer(false);
+    };
+
+    globalAudioManager.registerStopCallback('legacy', stopCallback);
+    
+    return () => {
+      globalAudioManager.unregisterStopCallback('legacy');
+    };
+  }, [sound]);
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
@@ -225,6 +248,9 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const playAudio = async (audioItem: AudioItem) => {
+    // Request audio control from GlobalAudioManager (will stop other systems)
+    await globalAudioManager.requestAudioControl('legacy');
+    
     setIsLoading(true);
 
     try {

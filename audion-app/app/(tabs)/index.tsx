@@ -16,7 +16,8 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
-import { useAudio } from '../../context/AudioContext';
+import { useUnifiedAudio } from '../../context/UnifiedAudioContext';
+import { useLanguage } from '../../context/LanguageContext';
 import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
 import axios from 'axios';
@@ -37,6 +38,9 @@ import FeatureCard from '../../components/cards/FeatureCard';
 import StandardCard from '../../components/cards/StandardCard';
 import BriefCard from '../../components/cards/BriefCard';
 import HomeActionBar from '../../components/HomeActionBar';
+import AutoPickService from '../../services/AutoPickService';
+import AudioCreationProgress from '../../components/AudioCreationProgress';
+import SubscriptionService from '../../services/SubscriptionService';
 // import MiniPlayer from '../../components/MiniPlayer'; // Removed - using global MiniPlayer from _layout.tsx
 
 // Constants
@@ -49,7 +53,8 @@ export default function MainScreen() {
   const { token } = useAuth();
   const { theme } = useTheme();
   const router = useRouter();
-  const { playAudio, playAudioStreaming } = useAudio();
+  const { playInstantAudio } = useUnifiedAudio();
+  const { currentVoiceLanguage } = useLanguage();
   
   // Simplified state management like the working version
   const [articles, setArticles] = useState<Article[]>([]);
@@ -62,6 +67,11 @@ export default function MainScreen() {
   const [showSearchModal, setShowSearchModal] = useState(false);
   const [selectedArticle, setSelectedArticle] = useState<Article | null>(null);
   const [showArticleReader, setShowArticleReader] = useState(false);
+  // Progress tracking for audio creation
+  const [showProgress, setShowProgress] = useState(false);
+  const [progressValue, setProgressValue] = useState(0);
+  const [progressStage, setProgressStage] = useState<'articles' | 'script' | 'audio' | 'complete'>('articles');
+  const [articlesCount, setArticlesCount] = useState<number>();
 
   // Edge swipe for tab navigation
   const edgeSwipeResponder = PanResponder.create({
@@ -235,7 +245,7 @@ export default function MainScreen() {
           article_id: article.id,
           title: article.title,
           content: article.summary || article.title,
-          voice_language: "ja-JP",
+          voice_language: currentVoiceLanguage,
           voice_name: "nova"
         },
         { headers: { Authorization: `Bearer ${token}` } }
@@ -344,94 +354,44 @@ export default function MainScreen() {
         {
           text: 'Auto-Pick',
           onPress: async () => {
-            setCreatingAudio(true);
-            try {
-              console.log('🏠 HOME AUTOPICK: Starting instant autopick');
-              
-              // AutoPick should respect current genre selection  
-              const autoPickRequest = {
-                max_articles: 5,
-                ...(selectedGenre !== 'All' && { preferred_genres: [selectedGenre] })
-              };
-              
-              console.log('🏠 HOME AUTOPICK: Requesting articles with genre:', selectedGenre);
-              const autoPickResponse = await axios.post(
-                `${API}/auto-pick`,
-                autoPickRequest,
-                { 
-                  headers: { Authorization: `Bearer ${token}` },
-                  timeout: 15000
-                }
-              );
-              console.log('🏠 HOME AUTOPICK: Got articles:', autoPickResponse.data?.length);
-              
-              if (autoPickResponse.data && autoPickResponse.data.length > 0) {
-                // Create instant audio using same format as Feed AutoPick
-                const autoPickArticles = autoPickResponse.data;
-                const requestData = {
-                  article_ids: autoPickArticles.map((a: any) => a.id),
-                  article_titles: autoPickArticles.map((a: any) => a.title),
-                  article_urls: autoPickArticles.map((a: any) => a.link || ''),
-                  prompt_style: 'instant',
-                  custom_prompt: null,
-                  voice_language: 'ja-JP',
-                  voice_name: 'alloy'
-                };
+            // Validate preconditions
+            const validation = AutoPickService.getInstance().canExecuteAutoPick(filteredArticles.length);
+            if (!validation.canExecute) {
+              Alert.alert('No Articles', validation.reason);
+              return;
+            }
 
-                console.log('🏠 HOME AUTOPICK: Creating instant audio');
-                const instantResponse = await axios.post(
-                  `${API}/audio/instant-multi`,
-                  requestData,
-                  { 
-                    headers: { Authorization: `Bearer ${token}` },
-                    timeout: 15000  // Extended timeout for TTS processing
-                  }
-                );
-                
-                if (instantResponse.data?.audio_url) {
-                  // Immediately start background streaming playback
-                  const audioItem = {
-                    id: instantResponse.data.id,
-                    title: instantResponse.data.title,
-                    audio_url: instantResponse.data.audio_url,
-                    duration: instantResponse.data.duration || 0,
-                    created_at: new Date().toISOString(),
-                    script: instantResponse.data.script || ''
-                  };
-                  
-                  // Start streaming playback immediately
-                  console.log('🏠 HOME AUTOPICK: Starting streaming playback');
-                  await playAudioStreaming(audioItem);
-                  
-                  await PersonalizationService.recordInteraction({
-                    action: 'complete',
-                    contentId: instantResponse.data.id,
-                    contentType: 'audio',
-                    category: 'Auto-Pick Podcast',
-                    timestamp: Date.now(),
-                    engagementLevel: 'high',
-                  });
-                  
-                  console.log(`🏠 HOME AUTOPICK: Success - ${audioItem.title}`);
-                } else {
-                  throw new Error('No audio URL received from server');
+            setCreatingAudio(true);
+            setShowProgress(true);
+            setProgressValue(0);
+            setProgressStage('articles');
+            
+            try {
+              // Get user's max articles limit from subscription
+              const maxArticles = await SubscriptionService.getInstance().getMaxArticlesLimit(token!);
+              
+              // 🆕 Use unified AutoPick service with progress tracking and new AudioPlayer
+              await AutoPickService.getInstance().executeAutoPick({
+                token: token!,
+                selectedGenre,
+                context: 'home',
+                playInstantAudio: playInstantAudio,
+                voiceLanguage: currentVoiceLanguage,
+                maxArticles,
+                onProgress: (progress, stage, count) => {
+                  setProgressValue(progress);
+                  setProgressStage(stage);
+                  if (count) setArticlesCount(count);
                 }
-              } else {
-                Alert.alert('No Selection', 'AI could not find suitable articles for podcast creation. Try again later.');
-              }
-            } catch (error: any) {
-              console.error('🏠 HOME AUTOPICK: Error:', error);
-              let errorMessage = 'Failed to auto-pick articles';
-              if (error.response?.status === 422) {
-                errorMessage = 'Invalid article data. Please try refreshing articles.';
-              } else if (error.response?.status === 429) {
-                errorMessage = 'Server is busy. Please wait a moment and try again.';
-              } else if (error.code === 'ECONNABORTED') {
-                errorMessage = 'Request timed out. Please try again.';
-              } else if (error.response?.data?.detail) {
-                errorMessage = error.response.data.detail;
-              }
-              Alert.alert('Error', errorMessage);
+              });
+              
+              // Hide progress after completion
+              setTimeout(() => {
+                setShowProgress(false);
+              }, 2000);
+            } catch (error) {
+              // Error handling is done in the service
+              setShowProgress(false);
             } finally {
               setCreatingAudio(false);
             }
@@ -462,32 +422,160 @@ export default function MainScreen() {
     );
   }
 
-  // Split articles into sections for new UI
-  const getArticleSections = (articles: Article[]) => {
-    if (articles.length === 0) {
-      return { heroArticles: [], forYouArticles: [], briefArticles: [] };
-    }
+  // State for personalized article sections
+  const [articleSections, setArticleSections] = useState<{
+    heroArticles: Article[];
+    forYouArticles: Article[];
+    briefArticles: Article[];
+  }>({ heroArticles: [], forYouArticles: [], briefArticles: [] });
 
-    // Sort by score/freshness - assuming newer articles are better for hero
-    const sortedArticles = [...articles].sort((a, b) => {
-      const aTime = new Date(a.published_at).getTime();
-      const bTime = new Date(b.published_at).getTime();
-      return bTime - aTime; // Newer first
-    });
+  // State for learning progress
+  const [learningProgress, setLearningProgress] = useState<{
+    totalInteractions: number;
+    learningStage: 'initial' | 'learning' | 'trained';
+    accuracy: number;
+    progressPercent: number;
+    message: string;
+  } | null>(null);
 
-    // Hero: Top 3 most recent/important articles
-    const heroArticles = sortedArticles.slice(0, 3);
-    
-    // For You: Next 8-10 articles (personalized section)
-    const forYouArticles = sortedArticles.slice(3, 13);
-    
-    // Brief: Remaining articles for quick consumption
-    const briefArticles = sortedArticles.slice(13);
+  // Apply personalization to article sections - FIXED to prevent infinite loops
+  useEffect(() => {
+    const applyPersonalization = async () => {
+      // Early return if no articles to avoid unnecessary processing
+      if (!articles || articles.length === 0) {
+        setArticleSections({ heroArticles: [], forYouArticles: [], briefArticles: [] });
+        return;
+      }
 
-    return { heroArticles, forYouArticles, briefArticles };
-  };
+      try {
+        // Load user preferences from PersonalizationService
+        const preferences = await PersonalizationService.loadPreferences();
+        const context = PersonalizationService.getCurrentContext();
+        
+        // Create scored articles based on user preferences and recency
+        const scoredArticles = filteredArticles.map(article => {
+          // Validate article data to prevent NaN
+          if (!article || !article.published_at) {
+            return {
+              article,
+              score: 0,
+              debug: { finalScore: 0, recencyScore: 0, genreScore: 0, sourceScore: 0 }
+            };
+          }
 
-  const { heroArticles, forYouArticles, briefArticles } = getArticleSections(filteredArticles);
+          // Base recency score with safety checks
+          const publishedTime = new Date(article.published_at).getTime();
+          const currentTime = Date.now();
+          
+          // Ensure valid timestamps
+          if (isNaN(publishedTime) || publishedTime > currentTime) {
+            return {
+              article,
+              score: 0,
+              debug: { finalScore: 0, recencyScore: 0, genreScore: 0, sourceScore: 0 }
+            };
+          }
+
+          const hoursOld = Math.max(0, (currentTime - publishedTime) / (1000 * 60 * 60));
+          const recencyScore = Math.max(0, Math.min(100, 100 - hoursOld * 2)); // Clamp 0-100
+          
+          // Genre preference score with safety
+          const genre = article.genre || 'General';
+          const genrePreference = Math.max(0.1, preferences.favoriteCategories[genre] || 1.0);
+          const genreScore = Math.max(0, Math.min(100, genrePreference * 20)); // Clamp 0-100
+          
+          // Source reliability score with safety
+          const sourceReliability = Math.max(1, Math.min(10, preferences.contentPreferences.sourceReliability[article.source_name] || 5.0));
+          const sourceScore = Math.max(0, Math.min(100, sourceReliability * 10)); // Clamp 0-100
+          
+          // Engagement-based weighting with safety
+          const engagementMultiplier = Math.max(0.1, Math.min(2.0, preferences.playbackPatterns.engagementScore || 0.5));
+          
+          // Time-of-day preference boost with safety
+          let timeBoost = 1.0;
+          if (Array.isArray(preferences.playbackPatterns.preferredTimeOfDay) && 
+              preferences.playbackPatterns.preferredTimeOfDay.includes(context.timeOfDay)) {
+            timeBoost = 1.2;
+          }
+          
+          // Calculate final score with multiple safety checks
+          const baseScore = (recencyScore * 0.4 + genreScore * 0.4 + sourceScore * 0.2);
+          const finalScore = baseScore * engagementMultiplier * timeBoost;
+          
+          // Ensure final score is a valid number
+          const safeScore = isNaN(finalScore) || !isFinite(finalScore) ? 0 : Math.max(0, finalScore);
+          
+          return {
+            article,
+            score: safeScore,
+            debug: {
+              recencyScore: isNaN(recencyScore) ? 0 : recencyScore,
+              genreScore: isNaN(genreScore) ? 0 : genreScore,
+              sourceScore: isNaN(sourceScore) ? 0 : sourceScore,
+              genrePreference,
+              sourceReliability,
+              finalScore: safeScore
+            }
+          };
+        });
+
+        // Sort by preference-weighted score (highest first)
+        scoredArticles.sort((a, b) => (b.score || 0) - (a.score || 0));
+        
+        // Minimal debug logging to prevent spam
+        if (__DEV__ && scoredArticles.length > 0) {
+          const topScore = scoredArticles[0]?.score || 0;
+          if (topScore > 0) {
+            console.log(`🎯 Personalization applied: ${scoredArticles.length} articles, top score: ${topScore.toFixed(1)}`);
+          }
+        }
+
+        // Extract articles from scored results
+        const sortedArticles = scoredArticles.map(item => item.article);
+        
+        // Set personalized sections
+        setArticleSections({
+          heroArticles: sortedArticles.slice(0, 3),      // Hero: Top 3 personalized articles
+          forYouArticles: sortedArticles.slice(3, 13),   // For You: Next 8-10 articles
+          briefArticles: sortedArticles.slice(13)        // Brief: Remaining articles
+        });
+        
+      } catch (error) {
+        console.error('Error applying personalization:', error);
+        
+        // Fallback to date-based sorting if personalization fails
+        const sortedArticles = [...filteredArticles].sort((a, b) => {
+          const aTime = new Date(a.published_at || 0).getTime();
+          const bTime = new Date(b.published_at || 0).getTime();
+          return bTime - aTime;
+        });
+
+        setArticleSections({
+          heroArticles: sortedArticles.slice(0, 3),
+          forYouArticles: sortedArticles.slice(3, 13),
+          briefArticles: sortedArticles.slice(13)
+        });
+      }
+    };
+
+    applyPersonalization();
+  }, [articles.length, selectedGenre]); // FIXED: Use articles.length instead of filteredArticles to prevent loops
+
+  // Load learning progress
+  useEffect(() => {
+    const loadLearningProgress = async () => {
+      try {
+        const progress = await PersonalizationService.getLearningProgress();
+        setLearningProgress(progress);
+      } catch (error) {
+        console.error('Error loading learning progress:', error);
+      }
+    };
+
+    loadLearningProgress();
+  }, []);
+
+  const { heroArticles, forYouArticles, briefArticles } = articleSections;
 
   return (
     <SafeAreaView 
@@ -513,12 +601,73 @@ export default function MainScreen() {
           onGenreChange={setSelectedGenre}
         />
 
+        {/* Personalization Settings Button */}
+        <View style={styles.personalizationSection}>
+          <TouchableOpacity
+            style={[styles.personalizationButton, { backgroundColor: theme.card, borderColor: theme.border }]}
+            onPress={() => router.push('/genre-preferences')}
+          >
+            <Ionicons name="settings-outline" size={18} color={theme.primary} />
+            <Text style={[styles.personalizationButtonText, { color: theme.primary }]}>
+              興味を調整
+            </Text>
+            <Text style={[styles.personalizationSubtext, { color: theme.textSecondary }]}>
+              あなたの好みに合わせてカスタマイズ
+            </Text>
+            <Ionicons name="chevron-forward" size={16} color={theme.textSecondary} />
+          </TouchableOpacity>
+
+          {/* Learning Progress Indicator */}
+          {learningProgress && (
+            <View style={[styles.learningProgress, { backgroundColor: theme.surface }]}>
+              <View style={styles.learningProgressHeader}>
+                <Ionicons 
+                  name={
+                    learningProgress.learningStage === 'trained' ? 'checkmark-circle' :
+                    learningProgress.learningStage === 'learning' ? 'analytics' : 'bulb-outline'
+                  } 
+                  size={16} 
+                  color={
+                    learningProgress.learningStage === 'trained' ? '#10B981' :
+                    learningProgress.learningStage === 'learning' ? theme.primary : theme.textSecondary
+                  } 
+                />
+                <Text style={[styles.learningProgressText, { color: theme.text }]}>
+                  {learningProgress.message}
+                </Text>
+                <Text style={[styles.learningProgressPercent, { color: theme.textSecondary }]}>
+                  {learningProgress.progressPercent}%
+                </Text>
+              </View>
+              <View style={[styles.learningProgressBar, { backgroundColor: theme.border }]}>
+                <View 
+                  style={[
+                    styles.learningProgressFill, 
+                    { 
+                      width: `${learningProgress.progressPercent}%`,
+                      backgroundColor: 
+                        learningProgress.learningStage === 'trained' ? '#10B981' :
+                        learningProgress.learningStage === 'learning' ? theme.primary : theme.textSecondary
+                    }
+                  ]} 
+                />
+              </View>
+            </View>
+          )}
+        </View>
+
         {/* Home Action Bar - Context-aware AutoPick */}
         <HomeActionBar
           currentGenre={selectedGenre}
           onAutoPick={createAudioFromArticles}
           isCreating={creatingAudio}
           articlesCount={filteredArticles.length}
+          autoPickProgress={creatingAudio && showProgress ? {
+            isActive: true,
+            progress: progressValue,
+            stage: progressStage,
+            articlesCount: articlesCount
+          } : undefined}
         />
 
         {/* Loading State */}
@@ -657,6 +806,16 @@ export default function MainScreen() {
         }}
       />
 
+      {/* Audio Creation Progress - Hidden when progress is shown in ActionBar */}
+      {showProgress && !creatingAudio && (
+        <AudioCreationProgress
+          visible={true}
+          progress={progressValue}
+          stage={progressStage}
+          articlesCount={articlesCount}
+        />
+      )}
+
       {/* Mini Player */}
       {/* MiniPlayer removed - handled globally in _layout.tsx */}
     </SafeAreaView>
@@ -680,6 +839,58 @@ const styles = StyleSheet.create({
   loadingText: {
     fontSize: 16,
     fontWeight: '500',
+  },
+  personalizationSection: {
+    marginHorizontal: 16,
+    marginVertical: 12,
+  },
+  personalizationButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    gap: 12,
+  },
+  personalizationButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    flex: 1,
+  },
+  personalizationSubtext: {
+    fontSize: 12,
+    marginRight: 8,
+  },
+  learningProgress: {
+    marginTop: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 8,
+  },
+  learningProgressHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 6,
+  },
+  learningProgressText: {
+    fontSize: 13,
+    fontWeight: '500',
+    flex: 1,
+  },
+  learningProgressPercent: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  learningProgressBar: {
+    height: 4,
+    borderRadius: 2,
+    overflow: 'hidden',
+  },
+  learningProgressFill: {
+    height: '100%',
+    borderRadius: 2,
   },
   section: {
     marginTop: 24,

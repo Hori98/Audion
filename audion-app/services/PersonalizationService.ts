@@ -626,6 +626,63 @@ class PersonalizationService {
     }
   }
 
+  // Get learning progress for user
+  static async getLearningProgress(): Promise<{
+    totalInteractions: number;
+    learningStage: 'initial' | 'learning' | 'trained';
+    accuracy: number;
+    progressPercent: number;
+    message: string;
+  }> {
+    try {
+      const interactions = await this.loadInteractions();
+      const preferences = await this.loadPreferences();
+      
+      const totalInteractions = interactions.length;
+      
+      // Determine learning stage
+      let learningStage: 'initial' | 'learning' | 'trained';
+      let progressPercent: number;
+      let accuracy: number;
+      let message: string;
+      
+      if (totalInteractions < 5) {
+        learningStage = 'initial';
+        progressPercent = (totalInteractions / 5) * 30; // 0-30%
+        accuracy = 0;
+        message = `${5 - totalInteractions}記事読むと学習が始まります`;
+      } else if (totalInteractions < 20) {
+        learningStage = 'learning';
+        progressPercent = 30 + ((totalInteractions - 5) / 15) * 50; // 30-80%
+        accuracy = Math.min(0.7, totalInteractions * 0.035); // Gradually increase
+        message = 'あなたの好みを学習中...';
+      } else {
+        learningStage = 'trained';
+        progressPercent = 80 + Math.min(20, (totalInteractions - 20) * 0.5); // 80-100%
+        accuracy = Math.min(0.95, 0.7 + (totalInteractions - 20) * 0.01);
+        message = 'あなた好みの記事をお届け中';
+      }
+      
+      return {
+        totalInteractions,
+        learningStage,
+        accuracy: Math.round(accuracy * 100) / 100,
+        progressPercent: Math.round(progressPercent),
+        message
+      };
+      
+    } catch (error) {
+      console.error('Error getting learning progress:', error);
+      return {
+        totalInteractions: 0,
+        learningStage: 'initial',
+        accuracy: 0,
+        progressPercent: 0,
+        message: '学習準備中...'
+      };
+    }
+  }
+
   // Get analytics data for debugging
   static async getAnalyticsData(): Promise<any> {
     try {

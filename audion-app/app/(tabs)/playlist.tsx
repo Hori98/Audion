@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, RefreshControl } from 'react-native';
 import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
-import { useAudio } from '../../context/AudioContext';
+import { useUnifiedAudio } from '../../context/UnifiedAudioContext';
 import { useTheme } from '../../context/ThemeContext';
 import { useFocusEffect } from '@react-navigation/native';
 import { format } from 'date-fns';
@@ -32,7 +32,7 @@ interface RecentAudioItem {
 
 export default function PlaylistScreen() {
   const { token } = useAuth();
-  const { playAudio, currentAudio, isPlaying, pauseAudio, resumeAudio } = useAudio();
+  const { state, playTrack, togglePlayPause } = useUnifiedAudio();
   const { theme } = useTheme();
   
   const [recentAudio, setRecentAudio] = useState<RecentAudioItem[]>([]);
@@ -105,13 +105,15 @@ export default function PlaylistScreen() {
 
   const handlePlayAudio = async (audio: RecentAudioItem) => {
     try {
-      await playAudio({
+      await playTrack({
         id: audio.id,
         title: audio.title,
-        audio_url: audio.audio_url, // Fixed: use audio_url instead of url
+        url: audio.audio_url, // AudioTrack uses 'url' not 'audio_url'
         duration: audio.duration,
-        created_at: audio.created_at
+        created_at: audio.created_at,
+        context: 'playlist' // Add context for UI differentiation
       });
+      console.log('🎵 Playlist: Started playing:', audio.title);
     } catch (error) {
       console.error('Error playing audio:', error);
       Alert.alert('エラー', '音声の再生に失敗しました');
@@ -203,7 +205,7 @@ export default function PlaylistScreen() {
                 key={audio.id}
                 style={[
                   styles.audioItem,
-                  currentAudio?.id === audio.id && styles.currentlyPlaying
+                  state.currentTrack?.id === audio.id && styles.currentlyPlaying
                 ]}
                 onPress={() => handlePlayAudio(audio)}
                 activeOpacity={0.7}
@@ -220,7 +222,7 @@ export default function PlaylistScreen() {
                   <View style={styles.audioMeta}>
                     <View style={styles.metaRow}>
                       <Ionicons 
-                        name={currentAudio?.id === audio.id && isPlaying ? "pause" : "play"} 
+                        name={state.currentTrack?.id === audio.id && state.playbackState === 'PLAYING' ? "pause" : "play"} 
                         size={12} 
                         color={theme.primary} 
                       />

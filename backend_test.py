@@ -11,7 +11,7 @@ import sys
 # For testing purposes, use the local URL
 LOCAL_TESTING = True
 if LOCAL_TESTING:
-    BACKEND_URL = "http://localhost:8001"
+    BACKEND_URL = "http://localhost:8003"
     print(f"Using local backend URL for testing: {BACKEND_URL}")
 else:
     # Load environment variables from frontend/.env

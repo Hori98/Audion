@@ -199,8 +199,26 @@ class ScheduleDeliveryService {
   }
 
   private async buildScheduleRequest(settings: ScheduleSettings, token: string) {
+    // Get subscription info to determine plan limits
+    let planMaxArticles = 3; // Default for free plan
+    try {
+      const subscriptionResponse = await axios.get(
+        `${API}/user/subscription`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      planMaxArticles = subscriptionResponse.data?.subscription?.max_audio_articles || 3;
+    } catch (error) {
+      console.warn('Failed to fetch subscription info, using free plan limit:', error);
+    }
+
+    // Use schedule settings' maxArticles but enforce plan limit as maximum
+    const userDesiredArticles = settings.maxArticles || 5;
+    const finalMaxArticles = Math.min(userDesiredArticles, planMaxArticles);
+
+    console.log(`📅 SCHEDULE DELIVERY: Schedule setting: ${userDesiredArticles}, Plan limit: ${planMaxArticles}, Using: ${finalMaxArticles}`);
+
     const requestBody: any = {
-      max_articles: settings.maxArticles,
+      max_articles: finalMaxArticles,
       audio_length_preference: settings.audioLength,
       scheduled_delivery: true,
     };

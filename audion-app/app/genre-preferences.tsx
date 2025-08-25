@@ -15,6 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
+import PersonalizationService from '../services/PersonalizationService';
 import axios from 'axios';
 
 const API = process.env.EXPO_PUBLIC_BACKEND_URL ? `${process.env.EXPO_PUBLIC_BACKEND_URL}/api` : 'http://localhost:8003/api';
@@ -209,11 +210,13 @@ export default function GenrePreferencesScreen() {
 
   const fetchData = async () => {
     try {
-      
-      // Get user profile
-      const profileResponse = await axios.get(`${API}/user/profile`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      // Load both backend and frontend preferences
+      const [backendProfileResponse, frontendPreferences] = await Promise.all([
+        axios.get(`${API}/user/profile`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+        PersonalizationService.loadPreferences()
+      ]);
       
       // Get user insights
       let insights = null;
@@ -223,31 +226,74 @@ export default function GenrePreferencesScreen() {
         });
         insights = insightsResponse.data;
       } catch (error) {
+        console.warn('Could not fetch user insights:', error);
       }
       
       setUserInsights(insights);
       
-      // Convert profile data to genre format
-      const profile = profileResponse.data;
-      const genrePreferences = profile.genre_preferences || {};
+      // Merge backend and frontend preferences (backend takes priority)
+      const backendProfile = backendProfileResponse.data;
+      const backendGenrePreferences = backendProfile.genre_preferences || {};
+      const frontendGenrePreferences = frontendPreferences.favoriteCategories || {};
+      
+      // Create unified genre preferences
+      const mergedPreferences: { [key: string]: number } = {};
+      Object.keys(genreConfig).forEach(genreName => {
+        // Use backend preference if available, fallback to frontend, then default
+        mergedPreferences[genreName] = 
+          backendGenrePreferences[genreName] || 
+          frontendGenrePreferences[genreName] || 
+          1.0;
+      });
       
       const genreData: GenreData[] = Object.keys(genreConfig).map(genreName => ({
         ...genreConfig[genreName],
-        weight: genrePreferences[genreName] || 1.0,
+        weight: mergedPreferences[genreName],
         enabled: true // All genres enabled by default
       }));
       
       setGenres(genreData);
       
+      // Sync frontend preferences with backend if there are differences
+      const frontendNeedsUpdate = Object.keys(genreConfig).some(genre => 
+        frontendGenrePreferences[genre] !== mergedPreferences[genre]
+      );
+      
+      if (frontendNeedsUpdate) {
+        console.log('🔄 Syncing frontend preferences with backend');
+        await PersonalizationService.savePreferences({
+          ...frontendPreferences,
+          favoriteCategories: mergedPreferences
+        });
+      }
+      
     } catch (error: any) {
       console.error('❌ Error fetching genre preferences:', error);
-      // Initialize with default genres
-      const defaultGenres: GenreData[] = Object.keys(genreConfig).map(genreName => ({
-        ...genreConfig[genreName],
-        weight: 1.0,
-        enabled: true
-      }));
-      setGenres(defaultGenres);
+      
+      // Try to load from PersonalizationService as fallback
+      try {
+        const frontendPreferences = await PersonalizationService.loadPreferences();
+        const frontendGenrePreferences = frontendPreferences.favoriteCategories || {};
+        
+        const genreData: GenreData[] = Object.keys(genreConfig).map(genreName => ({
+          ...genreConfig[genreName],
+          weight: frontendGenrePreferences[genreName] || 1.0,
+          enabled: true
+        }));
+        
+        setGenres(genreData);
+        console.log('📱 Loaded preferences from PersonalizationService fallback');
+        
+      } catch (fallbackError) {
+        console.error('❌ Fallback failed, using defaults:', fallbackError);
+        // Initialize with default genres
+        const defaultGenres: GenreData[] = Object.keys(genreConfig).map(genreName => ({
+          ...genreConfig[genreName],
+          weight: 1.0,
+          enabled: true
+        }));
+        setGenres(defaultGenres);
+      }
     } finally {
       setLoading(false);
     }
@@ -269,17 +315,31 @@ export default function GenrePreferencesScreen() {
         [genre.name]: genre.name === genreName ? clampedWeight : Math.max(0.1, Math.min(2.0, genre.weight))
       }), {});
       
-      
-      await axios.put(`${API}/user/profile`, {
-        genre_preferences: newGenrePreferences,
-      }, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      // Update both backend and frontend preferences in parallel
+      await Promise.all([
+        // Backend update
+        axios.put(`${API}/user/profile`, {
+          genre_preferences: newGenrePreferences,
+        }, {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+        
+        // Frontend PersonalizationService update
+        (async () => {
+          const currentPreferences = await PersonalizationService.loadPreferences();
+          await PersonalizationService.savePreferences({
+            ...currentPreferences,
+            favoriteCategories: newGenrePreferences
+          });
+        })()
+      ]);
       
       // Update local state
       setGenres(prev => prev.map(genre => 
         genre.name === genreName ? { ...genre, weight: clampedWeight } : genre
       ));
+      
+      console.log(`✅ Updated ${genreName} preference to ${clampedWeight} (both backend & frontend)`);
       
     } catch (error: any) {
       console.error('Error updating genre weight:', error);
@@ -295,11 +355,24 @@ export default function GenrePreferencesScreen() {
     
     setSaving(true);
     try {
-      await axios.put(`${API}/user/profile`, {
-        genre_preferences: preset.weights,
-      }, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      // Update both backend and frontend preferences in parallel
+      await Promise.all([
+        // Backend update
+        axios.put(`${API}/user/profile`, {
+          genre_preferences: preset.weights,
+        }, {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+        
+        // Frontend PersonalizationService update
+        (async () => {
+          const currentPreferences = await PersonalizationService.loadPreferences();
+          await PersonalizationService.savePreferences({
+            ...currentPreferences,
+            favoriteCategories: preset.weights
+          });
+        })()
+      ]);
       
       // Update local state
       setGenres(prev => prev.map(genre => ({
@@ -308,7 +381,9 @@ export default function GenrePreferencesScreen() {
       })));
       
       setPresetModalVisible(false);
-      Alert.alert('Applied!', `${preset.name} preferences have been applied.`);
+      Alert.alert('Applied!', `${preset.name} preferences have been applied to both backend and frontend.`);
+      
+      console.log(`✅ Applied preset "${preset.name}" (both backend & frontend)`);
       
     } catch (error: any) {
       console.error('Error applying preset:', error);

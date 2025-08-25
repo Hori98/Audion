@@ -1,25 +1,13 @@
 
 import React, { useEffect } from 'react';
 import { AuthProvider, useAuth } from '../context/AuthContext';
-import { AudioProvider } from '../context/AudioContext';
+import { UnifiedAudioProvider } from '../context/UnifiedAudioContext';
 import { ThemeProvider } from '../context/ThemeContext';
 import { LanguageProvider } from '../context/LanguageContext';
 import { Slot, useRouter, useSegments } from 'expo-router';
 import { ActivityIndicator, View, Alert } from 'react-native';
-import MiniPlayerV2 from '../components/MiniPlayerV2';
-import FullScreenPlayer from '../components/FullScreenPlayer';
-import ChapterSourceButton from '../components/ChapterSourceButton';
-import { useAudio } from '../context/AudioContext';
+import AudioPlayerManager from '../components/audio/core/AudioPlayerManager';
 import NotificationService from '../services/NotificationService';
-
-const ChapterSourceButtonWrapper = () => {
-  const { isPlaying, currentAudio, showFullScreenPlayer } = useAudio();
-  return (
-    <ChapterSourceButton 
-      visible={isPlaying && currentAudio !== null && !showFullScreenPlayer} 
-    />
-  );
-};
 import { useSiriShortcuts } from '../hooks/useSiriShortcuts';
 import { useAppIconShortcuts } from '../hooks/useAppIconShortcuts';
 import '../i18n'; // Initialize i18n
@@ -33,35 +21,61 @@ const InitialLayout = () => {
   useSiriShortcuts();
   useAppIconShortcuts();
 
-  // Initialize NotificationService on app startup
+  // Initialize services on app startup
   useEffect(() => {
-    const initNotifications = async () => {
+    const initServices = async () => {
       try {
+        // Initialize Debug Service first (loads settings)
+        const { default: DebugService } = await import('../services/DebugService');
+        await DebugService.loadDebugSettings();
+        console.log('✅ App: DebugService initialized');
+        
+        // Initialize NotificationService
         await NotificationService.getInstance().initialize();
+        console.log('✅ App: NotificationService initialized');
       } catch (error) {
-        console.error('❌ App: Failed to initialize NotificationService:', error);
+        console.error('❌ App: Failed to initialize services:', error);
       }
     };
     
-    initNotifications();
+    initServices();
   }, []);
 
   useEffect(() => {
     if (loading) return;
 
-    const inTabsGroup = segments[0] === '(tabs)';
-    const inOnboard = segments[0] === 'onboard';
+    const checkAuthAndRoute = async () => {
+      const inTabsGroup = segments[0] === '(tabs)';
+      const inOnboard = segments[0] === 'onboard';
+      
+      // Check if debug mode allows auth bypass
+      try {
+        const { default: DebugService } = await import('../services/DebugService');
+        const shouldBypassAuth = DebugService.isDebugModeEnabled() && DebugService.getCurrentSettings().skipOnboardingRequirements;
+        
+        if (shouldBypassAuth && !inTabsGroup) {
+          console.log('🔓 Debug Mode: Bypassing authentication, going to main app');
+          router.replace('/(tabs)/');
+          return;
+        }
+      } catch (error) {
+        console.warn('Failed to check debug mode for auth bypass:', error);
+      }
 
-    if (user && isNewUser && !inOnboard) {
-      // New user should go to onboarding
-      router.replace('/onboard');
-    } else if (user && !isNewUser && !inTabsGroup && segments[0] !== 'settings' && segments[0] !== 'sources' && segments[0] !== 'account-settings' && segments[0] !== 'audio-quality-settings' && segments[0] !== 'notification-settings' && segments[0] !== 'terms-of-service' && segments[0] !== 'privacy-policy' && segments[0] !== 'audio-player' && segments[0] !== 'auto-pick-settings' && segments[0] !== 'genre-preferences' && segments[0] !== 'download-settings' && segments[0] !== 'storage-usage' && segments[0] !== 'data-collection-settings' && segments[0] !== 'feed-autopick-settings' && segments[0] !== 'playback-controls' && segments[0] !== 'text-font-settings' && segments[0] !== 'export-backup' && segments[0] !== 'content-filters' && segments[0] !== 'schedule-content-settings' && segments[0] !== 'prompt-settings') {
-      // Existing user should go to main app (Home tab is default)
-      router.replace('/(tabs)/');
-    } else if (!user && (inTabsGroup || inOnboard)) {
-      // Not logged in should go to login
-      router.replace('/');
-    }
+      // Normal auth flow
+      if (user && isNewUser && !inOnboard) {
+        // New user should go to onboarding
+        router.replace('/onboard');
+      } else if (user && !isNewUser && !inTabsGroup && segments[0] !== 'settings' && segments[0] !== 'sources' && segments[0] !== 'account-settings' && segments[0] !== 'audio-quality-settings' && segments[0] !== 'notification-settings' && segments[0] !== 'terms-of-service' && segments[0] !== 'privacy-policy' && segments[0] !== 'audio-player' && segments[0] !== 'auto-pick-settings' && segments[0] !== 'genre-preferences' && segments[0] !== 'download-settings' && segments[0] !== 'storage-usage' && segments[0] !== 'data-collection-settings' && segments[0] !== 'feed-autopick-settings' && segments[0] !== 'playback-controls' && segments[0] !== 'text-font-settings' && segments[0] !== 'export-backup' && segments[0] !== 'content-filters' && segments[0] !== 'schedule-content-settings' && segments[0] !== 'prompt-settings') {
+        // Existing user should go to main app (Home tab is default)
+        router.replace('/(tabs)/');
+      } else if (!user && (inTabsGroup || inOnboard)) {
+        // Not logged in should go to login
+        router.replace('/');
+      }
+    };
+
+    checkAuthAndRoute();
   }, [user, loading, isNewUser, segments, router]);
 
   if (loading) {
@@ -75,9 +89,7 @@ const InitialLayout = () => {
   return (
     <View style={{ flex: 1 }}>
       <Slot />
-      <ChapterSourceButtonWrapper />
-      <MiniPlayerV2 />
-      <FullScreenPlayer />
+      <AudioPlayerManager />
     </View>
   );
 };
@@ -87,9 +99,9 @@ export default function RootLayout() {
     <LanguageProvider>
       <ThemeProvider>
         <AuthProvider>
-          <AudioProvider>
+          <UnifiedAudioProvider>
             <InitialLayout />
-          </AudioProvider>
+          </UnifiedAudioProvider>
         </AuthProvider>
       </ThemeProvider>
     </LanguageProvider>

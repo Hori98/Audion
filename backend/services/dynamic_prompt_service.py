@@ -8,7 +8,7 @@ Core Issue Solution:
 """
 
 from typing import Dict, List, Optional, Tuple
-from config.prompt_config import prompt_service
+from services.prompt_service import prompt_service
 import logging
 
 class DynamicPromptService:
@@ -273,6 +273,8 @@ class DynamicPromptService:
         
         logging.info(f"🚀 ENHANCED PROMPT: Using {optimal_preset} preset for {article_count} articles")
         logging.info(f"🚀 ENHANCED PROMPT: Expected output {preset_info['range']} ({preset_info['target_per_article']}*{article_count})")
+        # 🔥 PROMPT STYLE DEBUG
+        logging.info(f"🔥 STYLE DEBUG: base_prompt_style='{base_prompt_style}', custom_prompt='{custom_prompt}'")
         
         return enhanced_prompt, metadata
     

@@ -18,22 +18,17 @@ import { useTranslation } from 'react-i18next';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import LoadingIndicator from '../components/LoadingIndicator';
+import SubscriptionService from '../services/SubscriptionService';
 
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:8003';
 const API = `${BACKEND_URL}/api`;
 
 interface AutoPickSettings {
   max_articles: number;
-  diversity_enabled: boolean;
-  max_per_genre: number;
   preferred_genres: string[];
   excluded_genres: string[];
   source_priority: string;
   time_based_filtering: boolean;
-  freshness_weight: number;
-  popularity_weight: number;
-  diversity_weight: number;
-  personalization_weight: number;
 }
 
 export default function AutoPickSettingsScreen() {
@@ -44,18 +39,13 @@ export default function AutoPickSettingsScreen() {
   
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [subscriptionInfo, setSubscriptionInfo] = useState<any>(null);
   const [settings, setSettings] = useState<AutoPickSettings>({
     max_articles: 5,
-    diversity_enabled: true,
-    max_per_genre: 2,
     preferred_genres: [],
     excluded_genres: [],
     source_priority: 'balanced',
-    time_based_filtering: true,
-    freshness_weight: 0.3,
-    popularity_weight: 0.2,
-    diversity_weight: 0.3,
-    personalization_weight: 0.2
+    time_based_filtering: true
   });
 
   const genres = [
@@ -64,29 +54,42 @@ export default function AutoPickSettingsScreen() {
   ];
 
   const sourcePriorityOptions = [
-    { value: 'balanced', label: 'バランス型', description: '全ソースから均等に選択' },
-    { value: 'popular', label: '人気重視', description: '人気記事を優先' },
-    { value: 'recent', label: '最新重視', description: '新しい記事を優先' }
+    { value: 'balanced', label: 'バランス型', description: 'すべてのソースから均等に記事を選択' },
+    { value: 'popular', label: '人気重視', description: '人気の高い記事を優先的に選択' },
+    { value: 'recent', label: '最新重視', description: '新しい記事を優先的に選択' }
   ];
 
   useEffect(() => {
-    loadSettings();
+    loadSettingsAndSubscription();
   }, []);
 
-  const loadSettings = async () => {
+  const loadSettingsAndSubscription = async () => {
     try {
-      const response = await axios.get(`${API}/user/settings`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      // Ensure Debug Service is loaded first
+      const { default: DebugService } = await import('../services/DebugService');
+      await DebugService.loadDebugSettings();
+      console.log('🔧 AutoPick Settings: DebugService loaded, forced tier:', DebugService.getForcedSubscriptionTier());
       
-      if (response.data?.auto_pick_settings) {
+      // Load both settings and subscription info in parallel
+      const [settingsResponse, subscriptionResponse] = await Promise.all([
+        axios.get(`${API}/user/settings`, {
+          headers: { Authorization: `Bearer ${token}` }
+        }),
+        SubscriptionService.getInstance().getSubscriptionInfo(token, true) // Force refresh to ensure debug tier applies
+      ]);
+      
+      if (settingsResponse.data?.auto_pick_settings) {
         setSettings(prevSettings => ({
           ...prevSettings,
-          ...response.data.auto_pick_settings
+          ...settingsResponse.data.auto_pick_settings
         }));
       }
+      
+      console.log('📊 AutoPick Settings: Final subscription info:', subscriptionResponse);
+      setSubscriptionInfo(subscriptionResponse);
+      
     } catch (error) {
-      console.warn('Error loading auto-pick settings:', error);
+      console.warn('Error loading auto-pick settings or subscription:', error);
       // Use default settings if loading fails
     } finally {
       setLoading(false);
@@ -122,17 +125,11 @@ export default function AutoPickSettingsScreen() {
           style: 'destructive',
           onPress: () => {
             setSettings({
-              max_articles: 5,
-              diversity_enabled: true,
-              max_per_genre: 2,
+              max_articles: Math.min(5, subscriptionInfo?.subscription?.max_audio_articles || 3),
               preferred_genres: [],
               excluded_genres: [],
               source_priority: 'balanced',
-              time_based_filtering: true,
-              freshness_weight: 0.3,
-              popularity_weight: 0.2,
-              diversity_weight: 0.3,
-              personalization_weight: 0.2
+              time_based_filtering: true
             });
           }
         }
@@ -140,31 +137,17 @@ export default function AutoPickSettingsScreen() {
     );
   };
 
-  const toggleGenrePreference = (genre: string, isPreferred: boolean) => {
-    if (isPreferred) {
-      setSettings(prev => ({
-        ...prev,
-        preferred_genres: prev.preferred_genres.includes(genre) 
-          ? prev.preferred_genres.filter(g => g !== genre)
-          : [...prev.preferred_genres, genre],
-        excluded_genres: prev.excluded_genres.filter(g => g !== genre)
-      }));
-    } else {
-      setSettings(prev => ({
-        ...prev,
-        excluded_genres: prev.excluded_genres.includes(genre)
-          ? prev.excluded_genres.filter(g => g !== genre)
-          : [...prev.excluded_genres, genre],
-        preferred_genres: prev.preferred_genres.filter(g => g !== genre)
-      }));
-    }
-  };
-
   if (loading) {
     return <LoadingIndicator variant="fullscreen" text="設定を読み込み中..." />;
   }
 
   const styles = createStyles(theme);
+  
+  // Get plan info for display
+  const currentPlan = subscriptionInfo?.subscription?.plan || 'free';
+  const maxArticlesLimit = subscriptionInfo?.subscription?.max_audio_articles || 3;
+  const planDisplayName = currentPlan === 'free' ? 'フリー' : 
+                         currentPlan === 'basic' ? 'ベーシック' : 'プレミアム';
 
   return (
     <SafeAreaView style={styles.container}>
@@ -188,6 +171,21 @@ export default function AutoPickSettingsScreen() {
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        {/* Plan Information */}
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: theme.text }]}>
+            💎 プラン情報
+          </Text>
+          <View style={[styles.planCard, { backgroundColor: theme.surface }]}>
+            <Text style={[styles.planTitle, { color: theme.text }]}>
+              現在のプラン: {planDisplayName}
+            </Text>
+            <Text style={[styles.planDescription, { color: theme.textSecondary }]}>
+              1回の音声生成で最大{maxArticlesLimit}記事まで選択可能
+            </Text>
+          </View>
+        </View>
+
         {/* Basic Settings */}
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: theme.text }]}>
@@ -196,10 +194,10 @@ export default function AutoPickSettingsScreen() {
           
           <View style={[styles.settingCard, { backgroundColor: theme.surface }]}>
             <Text style={[styles.settingTitle, { color: theme.text }]}>
-              最大記事数: {settings.max_articles}
+              最大記事数: {settings.max_articles} / {maxArticlesLimit}
             </Text>
             <Text style={[styles.settingDescription, { color: theme.textSecondary }]}>
-              Auto-Pickで選択する記事の最大数 (1-20)
+              Auto-Pickで選択する記事の最大数 (プラン制限: {maxArticlesLimit})
             </Text>
             <View style={styles.sliderContainer}>
               <TouchableOpacity
@@ -213,55 +211,10 @@ export default function AutoPickSettingsScreen() {
               </View>
               <TouchableOpacity
                 style={[styles.sliderButton, { backgroundColor: theme.surface }]}
-                onPress={() => setSettings(prev => ({...prev, max_articles: Math.min(20, prev.max_articles + 1)}))}
+                onPress={() => setSettings(prev => ({...prev, max_articles: Math.min(maxArticlesLimit, prev.max_articles + 1)}))}
               >
                 <Ionicons name="add" size={20} color={theme.primary} />
               </TouchableOpacity>
-            </View>
-          </View>
-
-          <View style={[styles.settingCard, { backgroundColor: theme.surface }]}>
-            <Text style={[styles.settingTitle, { color: theme.text }]}>
-              ジャンル別最大数: {settings.max_per_genre}
-            </Text>
-            <Text style={[styles.settingDescription, { color: theme.textSecondary }]}>
-              同じジャンルから選択する記事の最大数 (1-10)
-            </Text>
-            <View style={styles.sliderContainer}>
-              <TouchableOpacity
-                style={[styles.sliderButton, { backgroundColor: theme.surface }]}
-                onPress={() => setSettings(prev => ({...prev, max_per_genre: Math.max(1, prev.max_per_genre - 1)}))}
-              >
-                <Ionicons name="remove" size={20} color={theme.primary} />
-              </TouchableOpacity>
-              <View style={styles.sliderValueContainer}>
-                <Text style={[styles.sliderValue, { color: theme.primary }]}>{settings.max_per_genre}</Text>
-              </View>
-              <TouchableOpacity
-                style={[styles.sliderButton, { backgroundColor: theme.surface }]}
-                onPress={() => setSettings(prev => ({...prev, max_per_genre: Math.min(10, prev.max_per_genre + 1)}))}
-              >
-                <Ionicons name="add" size={20} color={theme.primary} />
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          <View style={[styles.settingCard, { backgroundColor: theme.surface }]}>
-            <View style={styles.settingHeader}>
-              <View>
-                <Text style={[styles.settingTitle, { color: theme.text }]}>
-                  多様性を重視
-                </Text>
-                <Text style={[styles.settingDescription, { color: theme.textSecondary }]}>
-                  異なるジャンル・ソースから記事を選択
-                </Text>
-              </View>
-              <Switch
-                value={settings.diversity_enabled}
-                onValueChange={(value) => setSettings(prev => ({...prev, diversity_enabled: value}))}
-                trackColor={{ false: theme.border, true: theme.primary }}
-                thumbColor={settings.diversity_enabled ? '#fff' : theme.background}
-              />
             </View>
           </View>
 
@@ -285,10 +238,13 @@ export default function AutoPickSettingsScreen() {
           </View>
         </View>
 
-        {/* Source Priority */}
+        {/* Source Priority - Home Tab Only */}
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: theme.text }]}>
-            📰 ソース優先度
+            🏠 ホーム画面でのソース選択
+          </Text>
+          <Text style={[styles.sectionDescription, { color: theme.textSecondary }]}>
+            ホーム画面のAuto-Pick機能で記事を選択する際の優先度設定
           </Text>
           
           {sourcePriorityOptions.map((option) => (
@@ -319,173 +275,45 @@ export default function AutoPickSettingsScreen() {
           ))}
         </View>
 
-        {/* Algorithm Weights */}
-        <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: theme.text }]}>
-            ⚖️ アルゴリズム重み調整
-          </Text>
-          <Text style={[styles.sectionDescription, { color: theme.textSecondary }]}>
-            記事選定に影響する各要素の重要度を調整できます
-          </Text>
-
-          <View style={[styles.settingCard, { backgroundColor: theme.surface }]}>
-            <Text style={[styles.settingTitle, { color: theme.text }]}>
-              新しさ重視: {Math.round(settings.freshness_weight * 100)}%
-            </Text>
-            <View style={styles.percentSliderContainer}>
-              <TouchableOpacity
-                style={[styles.sliderButton, { backgroundColor: theme.surface }]}
-                onPress={() => setSettings(prev => ({...prev, freshness_weight: Math.max(0, prev.freshness_weight - 0.1)}))}
-              >
-                <Ionicons name="remove" size={16} color={theme.primary} />
-              </TouchableOpacity>
-              <View style={[styles.percentBar, { backgroundColor: theme.border }]}>
-                <View 
-                  style={[
-                    styles.percentFill, 
-                    { backgroundColor: theme.primary, width: `${settings.freshness_weight * 100}%` }
-                  ]} 
-                />
-              </View>
-              <TouchableOpacity
-                style={[styles.sliderButton, { backgroundColor: theme.surface }]}
-                onPress={() => setSettings(prev => ({...prev, freshness_weight: Math.min(1, prev.freshness_weight + 0.1)}))}
-              >
-                <Ionicons name="add" size={16} color={theme.primary} />
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          <View style={[styles.settingCard, { backgroundColor: theme.surface }]}>
-            <Text style={[styles.settingTitle, { color: theme.text }]}>
-              人気度重視: {Math.round(settings.popularity_weight * 100)}%
-            </Text>
-            <View style={styles.percentSliderContainer}>
-              <TouchableOpacity
-                style={[styles.sliderButton, { backgroundColor: theme.surface }]}
-                onPress={() => setSettings(prev => ({...prev, popularity_weight: Math.max(0, prev.popularity_weight - 0.1)}))}
-              >
-                <Ionicons name="remove" size={16} color={theme.primary} />
-              </TouchableOpacity>
-              <View style={[styles.percentBar, { backgroundColor: theme.border }]}>
-                <View 
-                  style={[
-                    styles.percentFill, 
-                    { backgroundColor: theme.primary, width: `${settings.popularity_weight * 100}%` }
-                  ]} 
-                />
-              </View>
-              <TouchableOpacity
-                style={[styles.sliderButton, { backgroundColor: theme.surface }]}
-                onPress={() => setSettings(prev => ({...prev, popularity_weight: Math.min(1, prev.popularity_weight + 0.1)}))}
-              >
-                <Ionicons name="add" size={16} color={theme.primary} />
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          <View style={[styles.settingCard, { backgroundColor: theme.surface }]}>
-            <Text style={[styles.settingTitle, { color: theme.text }]}>
-              多様性重視: {Math.round(settings.diversity_weight * 100)}%
-            </Text>
-            <View style={styles.percentSliderContainer}>
-              <TouchableOpacity
-                style={[styles.sliderButton, { backgroundColor: theme.surface }]}
-                onPress={() => setSettings(prev => ({...prev, diversity_weight: Math.max(0, prev.diversity_weight - 0.1)}))}
-              >
-                <Ionicons name="remove" size={16} color={theme.primary} />
-              </TouchableOpacity>
-              <View style={[styles.percentBar, { backgroundColor: theme.border }]}>
-                <View 
-                  style={[
-                    styles.percentFill, 
-                    { backgroundColor: theme.primary, width: `${settings.diversity_weight * 100}%` }
-                  ]} 
-                />
-              </View>
-              <TouchableOpacity
-                style={[styles.sliderButton, { backgroundColor: theme.surface }]}
-                onPress={() => setSettings(prev => ({...prev, diversity_weight: Math.min(1, prev.diversity_weight + 0.1)}))}
-              >
-                <Ionicons name="add" size={16} color={theme.primary} />
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          <View style={[styles.settingCard, { backgroundColor: theme.surface }]}>
-            <Text style={[styles.settingTitle, { color: theme.text }]}>
-              個人化重視: {Math.round(settings.personalization_weight * 100)}%
-            </Text>
-            <View style={styles.percentSliderContainer}>
-              <TouchableOpacity
-                style={[styles.sliderButton, { backgroundColor: theme.surface }]}
-                onPress={() => setSettings(prev => ({...prev, personalization_weight: Math.max(0, prev.personalization_weight - 0.1)}))}
-              >
-                <Ionicons name="remove" size={16} color={theme.primary} />
-              </TouchableOpacity>
-              <View style={[styles.percentBar, { backgroundColor: theme.border }]}>
-                <View 
-                  style={[
-                    styles.percentFill, 
-                    { backgroundColor: theme.primary, width: `${settings.personalization_weight * 100}%` }
-                  ]} 
-                />
-              </View>
-              <TouchableOpacity
-                style={[styles.sliderButton, { backgroundColor: theme.surface }]}
-                onPress={() => setSettings(prev => ({...prev, personalization_weight: Math.min(1, prev.personalization_weight + 0.1)}))}
-              >
-                <Ionicons name="add" size={16} color={theme.primary} />
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-
         {/* Genre Preferences */}
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: theme.text }]}>
             📝 ジャンル設定
           </Text>
           <Text style={[styles.sectionDescription, { color: theme.textSecondary }]}>
-            優先したいジャンルを緑、除外したいジャンルを赤で選択してください
+            優先するジャンルをオンにしてください
           </Text>
 
-          <View style={styles.genreGrid}>
+          <View style={styles.genreList}>
             {genres.map((genre) => {
               const isPreferred = settings.preferred_genres.includes(genre);
-              const isExcluded = settings.excluded_genres.includes(genre);
               
               return (
-                <View key={genre} style={styles.genreItem}>
-                  <Text style={[styles.genreTitle, { color: theme.text }]}>{genre}</Text>
-                  <View style={styles.genreButtons}>
-                    <TouchableOpacity
-                      style={[
-                        styles.genreButton,
-                        { backgroundColor: isPreferred ? theme.success : theme.surface }
-                      ]}
-                      onPress={() => toggleGenrePreference(genre, true)}
-                    >
-                      <Ionicons 
-                        name="heart" 
-                        size={16} 
-                        color={isPreferred ? '#fff' : theme.success} 
-                      />
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[
-                        styles.genreButton,
-                        { backgroundColor: isExcluded ? theme.error : theme.surface }
-                      ]}
-                      onPress={() => toggleGenrePreference(genre, false)}
-                    >
-                      <Ionicons 
-                        name="close" 
-                        size={16} 
-                        color={isExcluded ? '#fff' : theme.error} 
-                      />
-                    </TouchableOpacity>
-                  </View>
+                <View key={genre} style={[styles.genreToggleItem, { backgroundColor: theme.surface }]}>
+                  <Text style={[styles.genreToggleTitle, { color: theme.text }]}>
+                    {genre}
+                  </Text>
+                  <Switch
+                    value={isPreferred}
+                    onValueChange={(value) => {
+                      if (value) {
+                        // Add to preferred, remove from excluded
+                        setSettings(prev => ({
+                          ...prev,
+                          preferred_genres: [...prev.preferred_genres, genre],
+                          excluded_genres: prev.excluded_genres.filter(g => g !== genre)
+                        }));
+                      } else {
+                        // Remove from preferred
+                        setSettings(prev => ({
+                          ...prev,
+                          preferred_genres: prev.preferred_genres.filter(g => g !== genre)
+                        }));
+                      }
+                    }}
+                    trackColor={{ false: theme.border, true: theme.primary }}
+                    thumbColor={isPreferred ? '#fff' : theme.background}
+                  />
                 </View>
               );
             })}
@@ -566,6 +394,25 @@ const createStyles = (theme: any) => StyleSheet.create({
     shadowRadius: 4,
     elevation: 2,
   },
+  planCard: {
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  planTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  planDescription: {
+    fontSize: 14,
+    lineHeight: 18,
+  },
   settingHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -609,22 +456,6 @@ const createStyles = (theme: any) => StyleSheet.create({
     fontSize: 18,
     fontWeight: '600',
   },
-  percentSliderContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 12,
-    gap: 12,
-  },
-  percentBar: {
-    flex: 1,
-    height: 8,
-    borderRadius: 4,
-    overflow: 'hidden',
-  },
-  percentFill: {
-    height: '100%',
-    borderRadius: 4,
-  },
   priorityOption: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -644,34 +475,25 @@ const createStyles = (theme: any) => StyleSheet.create({
   priorityDescription: {
     fontSize: 14,
   },
-  genreGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-  },
-  genreItem: {
-    width: '48%',
-    backgroundColor: 'transparent',
-    borderRadius: 8,
-    padding: 12,
-    alignItems: 'center',
-  },
-  genreTitle: {
-    fontSize: 14,
-    fontWeight: '500',
-    marginBottom: 8,
-    textAlign: 'center',
-  },
-  genreButtons: {
-    flexDirection: 'row',
+  genreList: {
     gap: 8,
   },
-  genreButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    justifyContent: 'center',
+  genreToggleItem: {
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  genreToggleTitle: {
+    fontSize: 16,
+    fontWeight: '500',
   },
   resetButton: {
     flexDirection: 'row',

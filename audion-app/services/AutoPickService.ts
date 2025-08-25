@@ -163,11 +163,11 @@ class AutoPickService {
       
       if (autoPickResponse.data && autoPickResponse.data.length > 0) {
         // Use prompt settings already retrieved from getUserAutoPickSettings
-        // 🔥 FIX: Only use 'custom' if there's actually a custom prompt
+        // 🔥 FIX: Only send custom_prompt if there's actually content, otherwise null
         const hasCustomPrompt = userSettings.custom_prompt && userSettings.custom_prompt.trim() !== '';
         const promptData = {
           prompt_style: hasCustomPrompt ? 'custom' : userSettings.prompt_style,
-          custom_prompt: userSettings.custom_prompt
+          custom_prompt: hasCustomPrompt ? userSettings.custom_prompt : null
         };
         console.log(`${contextEmoji} ${contextName} AUTOPICK: Using unified prompt settings:`, promptData);
         

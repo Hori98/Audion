@@ -178,6 +178,32 @@ const CustomHeader = () => {
             </TouchableOpacity>
           )}
           
+          {/* Filter Button - Show only on Feed tab */}
+          {currentTab === 'feed' && (
+            <TouchableOpacity
+              onPress={handleFilterPress}
+              style={{
+                width: 32,
+                height: 32,
+                borderRadius: 16,
+                backgroundColor: theme.surface,
+                justifyContent: 'center',
+                alignItems: 'center',
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 1 },
+                shadowOpacity: 0.1,
+                shadowRadius: 2,
+                elevation: 2,
+              }}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel="Filter"
+              accessibilityHint="Open reading filter options"
+            >
+              <Ionicons name="filter" size={16} color={theme.textSecondary} />
+            </TouchableOpacity>
+          )}
+          
           {/* Placeholder for tabs without icons */}
           {!(currentTab === 'index' || currentTab === 'feed' || currentTab === 'discover') && (
             <View style={{ width: 32 }} />

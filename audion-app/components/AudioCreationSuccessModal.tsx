@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
-import { useAudio } from '../context/AudioContext';
+import { useUnifiedAudio } from '../context/UnifiedAudioContext';
 import * as Haptics from 'expo-haptics';
 import { Audio } from 'expo-av';
 
@@ -31,7 +31,7 @@ export default function AudioCreationSuccessModal({
   onPlayNow,
 }: AudioCreationSuccessModalProps) {
   const { theme } = useTheme();
-  const { playAudio, setShowFullScreenPlayer } = useAudio();
+  const { playTrack, showPlayer } = useUnifiedAudio();
   const scaleValue = new Animated.Value(0);
 
   useEffect(() => {
@@ -86,10 +86,10 @@ export default function AudioCreationSuccessModal({
   const handlePlayNow = async () => {
     try {
       if (audioItem) {
-        await playAudio(audioItem);
+        await playTrack(audioItem);
         // Open full screen player after starting playback
         setTimeout(() => {
-          setShowFullScreenPlayer(true);
+          showPlayer('saved-full');
         }, 500);
       }
       onClose();

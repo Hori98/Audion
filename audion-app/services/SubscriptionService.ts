@@ -1,193 +1,276 @@
-// Subscription Service for managing freemium plan features
+/**
+ * SubscriptionService - User subscription and plan information management
+ */
+
+import axios from 'axios';
+import DebugService from './DebugService';
+
 export enum SubscriptionTier {
   FREE = 'free',
   BASIC = 'basic', 
   PREMIUM = 'premium'
 }
 
-// Import DebugService (lazy import to avoid circular dependency)
-let DebugService: any = null;
-const getDebugService = async () => {
-  if (!DebugService) {
-    DebugService = (await import('./DebugService')).default;
-  }
-  return DebugService;
-};
+interface UserSubscription {
+  id: string;
+  user_id: string;
+  plan: string;
+  max_daily_audio_count: number;
+  max_audio_articles: number;
+  created_at: string;
+  expires_at?: string;
+}
 
-export interface SubscriptionFeatures {
-  maxArticlesPerEpisode: number;
-  availableArticleCounts: number[];
-  maxScheduledContent: number;
-  maxRSSSources: number;
-  customPrompts: boolean;
-  premiumAIStyles: boolean;
+interface DailyUsage {
+  id: string;
+  user_id: string;
+  date: string;
+  audio_count: number;
+  total_articles: number;
+}
+
+interface PlanConfig {
+  plan: string;
+  max_daily_audio_count: number;
+  max_audio_articles: number;
+  description: string;
+}
+
+interface SubscriptionInfo {
+  subscription: UserSubscription;
+  daily_usage: DailyUsage;
+  plan_config: PlanConfig;
+  remaining_daily_audio: number;
 }
 
 class SubscriptionService {
-  private static currentTier: SubscriptionTier = SubscriptionTier.FREE;
+  private static instance: SubscriptionService;
+  private readonly API: string;
+  private cachedSubscription: SubscriptionInfo | null = null;
+  private cacheExpiry: number = 0;
+  private readonly CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
-  // Plan features configuration
-  private static readonly PLAN_FEATURES: Record<SubscriptionTier, SubscriptionFeatures> = {
-    [SubscriptionTier.FREE]: {
-      maxArticlesPerEpisode: 3,
-      availableArticleCounts: [1, 3],
-      maxScheduledContent: 1,
-      maxRSSSources: 5,
-      customPrompts: false,
-      premiumAIStyles: false
-    },
-    [SubscriptionTier.BASIC]: {
-      maxArticlesPerEpisode: 7,
-      availableArticleCounts: [1, 3, 5, 7],
-      maxScheduledContent: 3,
-      maxRSSSources: 15,
-      customPrompts: true,
-      premiumAIStyles: false
-    },
-    [SubscriptionTier.PREMIUM]: {
-      maxArticlesPerEpisode: 15,
-      availableArticleCounts: [1, 3, 5, 7, 10, 15],
-      maxScheduledContent: 5,
-      maxRSSSources: -1, // Unlimited
-      customPrompts: true,
-      premiumAIStyles: true
-    }
-  };
-
-  static getCurrentTier(): SubscriptionTier {
-    return this.currentTier;
+  constructor() {
+    this.API = process.env.EXPO_PUBLIC_BACKEND_URL 
+      ? `${process.env.EXPO_PUBLIC_BACKEND_URL}/api` 
+      : 'http://localhost:8003/api';
   }
 
-  // Get effective tier (considering debug overrides)
-  static async getEffectiveTier(): Promise<SubscriptionTier> {
-    try {
-      const debugService = await getDebugService();
-      const forcedTier = debugService.getForcedSubscriptionTier();
-      
-      if (forcedTier && debugService.isDebugModeEnabled()) {
-        return forcedTier;
-      }
-      
-      if (debugService.isMockPremiumUser()) {
-        return SubscriptionTier.PREMIUM;
-      }
-    } catch (error) {
-      console.error('Error getting debug service:', error);
+  static getInstance(): SubscriptionService {
+    if (!SubscriptionService.instance) {
+      SubscriptionService.instance = new SubscriptionService();
     }
+    return SubscriptionService.instance;
+  }
+
+  /**
+   * Get user's subscription information
+   */
+  async getSubscriptionInfo(token: string, forceRefresh: boolean = false): Promise<SubscriptionInfo> {
+    const now = Date.now();
     
-    return this.currentTier;
-  }
+    // Return cached data if still valid and not forcing refresh
+    if (!forceRefresh && this.cachedSubscription && now < this.cacheExpiry) {
+      // デバッグモードでforcedSubscriptionTierが設定されている場合は強制適用
+      if (DebugService.isDebugModeEnabled()) {
+        const forcedTier = DebugService.getForcedSubscriptionTier();
+        if (forcedTier && forcedTier !== this.cachedSubscription.subscription.plan) {
+          console.log('🎯 SubscriptionService: Applying forced tier to cached data:', forcedTier);
+          return this.applyForcedTier(this.cachedSubscription, forcedTier);
+        }
+      }
+      return this.cachedSubscription;
+    }
 
-  static setCurrentTier(tier: SubscriptionTier): void {
-    this.currentTier = tier;
-  }
-
-  static getCurrentFeatures(): SubscriptionFeatures {
-    return this.PLAN_FEATURES[this.currentTier];
-  }
-
-  // Get effective features (considering debug overrides)
-  static async getEffectiveFeatures(): Promise<SubscriptionFeatures> {
     try {
-      const debugService = await getDebugService();
+      const response = await axios.get(`${this.API}/user/subscription/info`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      let subscriptionData = response.data;
       
-      if (debugService.shouldBypassSubscriptionLimits()) {
+      // デバッグモードでforcedSubscriptionTierが設定されている場合は強制適用
+      if (DebugService.isDebugModeEnabled()) {
+        const forcedTier = DebugService.getForcedSubscriptionTier();
+        if (forcedTier) {
+          console.log('🎯 SubscriptionService: Applying forced tier to API data:', forcedTier);
+          subscriptionData = this.applyForcedTier(subscriptionData, forcedTier);
+        }
+      }
+
+      this.cachedSubscription = subscriptionData;
+      this.cacheExpiry = now + this.CACHE_DURATION;
+
+      return subscriptionData;
+    } catch (error) {
+      console.error('Error fetching subscription info:', error);
+      
+      // デバッグモードでforcedSubscriptionTierが設定されている場合
+      const forcedTier = DebugService.isDebugModeEnabled() ? DebugService.getForcedSubscriptionTier() : null;
+      const planName = forcedTier || 'free';
+      const planLimits = this.getPlanLimits(planName as SubscriptionTier);
+      
+      // Return default plan if API fails (with forced tier if applicable)
+      const defaultSubscription: SubscriptionInfo = {
+        subscription: {
+          id: 'default',
+          user_id: 'unknown',
+          plan: planName,
+          max_daily_audio_count: planLimits.maxDailyAudio,
+          max_audio_articles: planLimits.maxArticlesPerAudio,
+          created_at: new Date().toISOString(),
+        },
+        daily_usage: {
+          id: 'default',
+          user_id: 'unknown',
+          date: new Date().toISOString().split('T')[0],
+          audio_count: 0,
+          total_articles: 0,
+        },
+        plan_config: {
+          plan: planName,
+          max_daily_audio_count: planLimits.maxDailyAudio,
+          max_audio_articles: planLimits.maxArticlesPerAudio,
+          description: `${planName.charAt(0).toUpperCase() + planName.slice(1)} plan`,
+        },
+        remaining_daily_audio: planLimits.maxDailyAudio,
+      };
+
+      console.log('🎯 SubscriptionService: Using default subscription with plan:', planName);
+      return defaultSubscription;
+    }
+  }
+
+  /**
+   * Apply forced subscription tier to subscription data
+   */
+  private applyForcedTier(data: SubscriptionInfo, forcedTier: SubscriptionTier): SubscriptionInfo {
+    const planLimits = this.getPlanLimits(forcedTier);
+    
+    return {
+      ...data,
+      subscription: {
+        ...data.subscription,
+        plan: forcedTier,
+        max_daily_audio_count: planLimits.maxDailyAudio,
+        max_audio_articles: planLimits.maxArticlesPerAudio,
+      },
+      plan_config: {
+        ...data.plan_config,
+        plan: forcedTier,
+        max_daily_audio_count: planLimits.maxDailyAudio,
+        max_audio_articles: planLimits.maxArticlesPerAudio,
+        description: `${forcedTier.charAt(0).toUpperCase() + forcedTier.slice(1)} plan (Debug Mode)`,
+      },
+      remaining_daily_audio: planLimits.maxDailyAudio,
+    };
+  }
+
+  /**
+   * Get plan limits for a specific tier
+   */
+  private getPlanLimits(tier: SubscriptionTier) {
+    switch (tier) {
+      case SubscriptionTier.PREMIUM:
+        return { maxArticlesPerAudio: 20, maxDailyAudio: 30 };
+      case SubscriptionTier.BASIC:
+        return { maxArticlesPerAudio: 10, maxDailyAudio: 10 };
+      default:
+        return { maxArticlesPerAudio: 3, maxDailyAudio: 3 };
+    }
+  }
+
+  /**
+   * Get user's max articles limit based on their plan
+   */
+  async getMaxArticlesLimit(token: string): Promise<number> {
+    // getSubscriptionInfoは内部でエラーを処理し、
+    // デバッグモードを考慮したデフォルト値を返すため、ここでのtry-catchは不要
+    const subscriptionInfo = await this.getSubscriptionInfo(token);
+    console.log('🎯 SubscriptionService: Max articles limit for plan', subscriptionInfo.subscription.plan, ':', subscriptionInfo.subscription.max_audio_articles);
+    return subscriptionInfo.subscription.max_audio_articles;
+  }
+
+  /**
+   * Check if user can create audio with specified article count
+   */
+  async canCreateAudio(token: string, articleCount: number): Promise<{ canCreate: boolean; reason?: string }> {
+    try {
+      const subscriptionInfo = await this.getSubscriptionInfo(token);
+      
+      // Check daily limit
+      if (subscriptionInfo.remaining_daily_audio <= 0) {
         return {
-          maxArticlesPerEpisode: 99,
-          availableArticleCounts: [1, 3, 5, 7, 10, 15, 20, 30, 50],
-          maxScheduledContent: 99,
-          maxRSSSources: -1,
-          customPrompts: true,
-          premiumAIStyles: true
+          canCreate: false,
+          reason: `Daily limit reached. You can create ${subscriptionInfo.subscription.max_daily_audio_count} audios per day.`
         };
       }
-      
-      const effectiveTier = await this.getEffectiveTier();
-      return this.PLAN_FEATURES[effectiveTier];
+
+      // Check article count limit
+      if (articleCount > subscriptionInfo.subscription.max_audio_articles) {
+        return {
+          canCreate: false,
+          reason: `Too many articles selected. Your plan allows ${subscriptionInfo.subscription.max_audio_articles} articles per audio.`
+        };
+      }
+
+      return { canCreate: true };
     } catch (error) {
-      console.error('Error getting effective features:', error);
-      return this.getCurrentFeatures();
+      console.error('Error checking audio creation capability:', error);
+      return { canCreate: true }; // Allow on error
     }
   }
 
-  static getAvailableArticleCounts(): number[] {
-    return this.getCurrentFeatures().availableArticleCounts;
-  }
-
-  static getMaxArticlesPerEpisode(): number {
-    return this.getCurrentFeatures().maxArticlesPerEpisode;
-  }
-
-  static canSelectArticleCount(count: number): boolean {
-    const features = this.getCurrentFeatures();
-    return features.availableArticleCounts.includes(count) && count <= features.maxArticlesPerEpisode;
-  }
-
-  static getMaxScheduledContent(): number {
-    return this.getCurrentFeatures().maxScheduledContent;
-  }
-
-  static canCreateScheduledContent(currentCount: number): boolean {
-    const max = this.getMaxScheduledContent();
-    return currentCount < max;
-  }
-
-  static canUseCustomPrompts(): boolean {
-    return this.getCurrentFeatures().customPrompts;
-  }
-
-  static getPlanName(tier: SubscriptionTier): string {
-    switch (tier) {
-      case SubscriptionTier.FREE:
-        return 'Free Plan';
-      case SubscriptionTier.BASIC:
-        return 'Basic Plan (¥980/month)';
-      case SubscriptionTier.PREMIUM:
-        return 'Premium Plan (¥1,980/month)';
-      default:
-        return 'Unknown Plan';
-    }
-  }
-
-  static getPlanPrice(tier: SubscriptionTier): string {
-    switch (tier) {
-      case SubscriptionTier.FREE:
-        return '¥0';
-      case SubscriptionTier.BASIC:
-        return '¥980/month';
-      case SubscriptionTier.PREMIUM:
-        return '¥1,980/month';
-      default:
-        return 'Unknown';
-    }
-  }
-
-  // Get upgrade message for restricted features
-  static getUpgradeMessage(feature: string): string {
-    const currentPlan = this.getPlanName(this.currentTier);
-    
-    if (this.currentTier === SubscriptionTier.FREE) {
-      return `${feature} is available with Basic Plan (¥980/month) or higher. Upgrade to unlock this feature.`;
-    } else if (this.currentTier === SubscriptionTier.BASIC) {
-      return `${feature} is available with Premium Plan (¥1,980/month). Upgrade to unlock this feature.`;
+  /**
+   * Get current subscription tier
+   */
+  static getCurrentTier(): SubscriptionTier {
+    // デバッグモードでforcedSubscriptionTierが設定されている場合は優先
+    if (DebugService.isDebugModeEnabled()) {
+      const forcedTier = DebugService.getForcedSubscriptionTier();
+      if (forcedTier) {
+        console.log('🎯 SubscriptionService: Using forced subscription tier:', forcedTier);
+        return forcedTier;
+      }
     }
     
-    return `This feature is not available in your current plan (${currentPlan}).`;
+    // デフォルトでFREEを返す（実際の実装では認証状態とAPIから取得）
+    console.log('📊 SubscriptionService: Using default tier: FREE');
+    return SubscriptionTier.FREE;
   }
 
-  // For development/testing purposes
-  static async loadUserSubscription(): Promise<SubscriptionTier> {
-    try {
-      // In real implementation, this would fetch from backend
-      // For now, return FREE as default
-      const tier = SubscriptionTier.FREE;
-      this.setCurrentTier(tier);
-      return tier;
-    } catch (error) {
-      console.error('Failed to load user subscription:', error);
-      this.setCurrentTier(SubscriptionTier.FREE);
+  /**
+   * Get current subscription tier (instance method)
+   */
+  async getCurrentTierAsync(token?: string): Promise<SubscriptionTier> {
+    if (!token) {
       return SubscriptionTier.FREE;
     }
+    
+    try {
+      const subscriptionInfo = await this.getSubscriptionInfo(token);
+      const plan = subscriptionInfo.subscription.plan.toLowerCase();
+      
+      switch (plan) {
+        case 'premium':
+          return SubscriptionTier.PREMIUM;
+        case 'basic':
+          return SubscriptionTier.BASIC;
+        default:
+          return SubscriptionTier.FREE;
+      }
+    } catch (error) {
+      console.error('Error getting current tier:', error);
+      return SubscriptionTier.FREE;
+    }
+  }
+
+  /**
+   * Clear cached subscription data
+   */
+  clearCache(): void {
+    this.cachedSubscription = null;
+    this.cacheExpiry = 0;
   }
 }
 

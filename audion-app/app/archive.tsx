@@ -1,26 +1,24 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  ActivityIndicator,
   Alert,
   RefreshControl,
-  TextInput,
-  SafeAreaView
+  TextInput
 } from 'react-native';
 import axios from 'axios';
-import { useAuth } from '../../context/AuthContext';
-import { useTheme } from '../../context/ThemeContext';
+import { useAuth } from '../context/AuthContext';
+import { useTheme } from '../context/ThemeContext';
 import { useTranslation } from 'react-i18next';
 import { format, isValid, parseISO } from 'date-fns';
 import { useFocusEffect } from '@react-navigation/native';
 // Removed expo-web-browser - using native reader mode instead
 import { Ionicons } from '@expo/vector-icons';
-import { ErrorHandlingService } from '../../services/ErrorHandlingService';
-import LoadingIndicator from '../../components/LoadingIndicator';
+import { ErrorHandlingService } from '../services/ErrorHandlingService';
+import LoadingIndicator from '../components/LoadingIndicator';
 
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:8003';
 const API = `${BACKEND_URL}/api`;

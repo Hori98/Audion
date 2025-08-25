@@ -15,6 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
+import SubscriptionService from '../services/SubscriptionService';
 
 interface ScheduleSettings {
   enabled: boolean;
@@ -143,10 +144,24 @@ export default function ScheduleContentSettings() {
   
   const [settings, setSettings] = useState<ScheduleSettings>(defaultSettings);
   const [loading, setLoading] = useState(false);
+  const [maxAllowedArticles, setMaxAllowedArticles] = useState(3); // プラン別の動的上限
 
   useEffect(() => {
     loadSettings();
-  }, []);
+    loadMaxArticlesLimit();
+  }, [token]);
+
+  const loadMaxArticlesLimit = async () => {
+    if (!token) return;
+    try {
+      const limit = await SubscriptionService.getInstance().getMaxArticlesLimit(token);
+      console.log('🎯 Schedule Settings: Max articles limit loaded:', limit);
+      setMaxAllowedArticles(limit);
+    } catch (error) {
+      console.error('Failed to load max articles limit:', error);
+      setMaxAllowedArticles(3); // フォールバック
+    }
+  };
 
   const loadSettings = async () => {
     try {
@@ -526,14 +541,23 @@ export default function ScheduleContentSettings() {
     </View>
   );
 
-  const renderMaxArticlesSection = () => (
-    <View style={[styles.section, { backgroundColor: theme.card, borderColor: theme.border }]}>
-      <Text style={[styles.sectionTitle, { color: theme.text }]}>Maximum Articles</Text>
-      <Text style={[styles.sectionDescription, { color: theme.textSecondary }]}>
-        Limit the number of articles in each scheduled delivery
-      </Text>
-      <View style={styles.maxArticlesContainer}>
-        {maxArticleOptions.map((count) => (
+  const renderMaxArticlesSection = () => {
+    // プラン別の動的な選択肢を生成
+    const dynamicMaxArticleOptions = [];
+    for (let i = 1; i <= maxAllowedArticles; i++) {
+      if ([1, 3, 5, 10, 15, 20].includes(i) || i === maxAllowedArticles) {
+        dynamicMaxArticleOptions.push(i);
+      }
+    }
+    
+    return (
+      <View style={[styles.section, { backgroundColor: theme.card, borderColor: theme.border }]}>
+        <Text style={[styles.sectionTitle, { color: theme.text }]}>Maximum Articles</Text>
+        <Text style={[styles.sectionDescription, { color: theme.textSecondary }]}>
+          Limit the number of articles in each scheduled delivery (Your plan allows up to {maxAllowedArticles} articles)
+        </Text>
+        <View style={styles.maxArticlesContainer}>
+          {dynamicMaxArticleOptions.map((count) => (
           <TouchableOpacity
             key={count}
             style={[
@@ -557,7 +581,8 @@ export default function ScheduleContentSettings() {
         ))}
       </View>
     </View>
-  );
+    );
+  };
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>

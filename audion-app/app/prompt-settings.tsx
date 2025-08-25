@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -8,6 +8,7 @@ import {
   TextInput,
   Alert,
   Switch,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -20,17 +21,14 @@ interface PromptSettings {
   manual: {
     style: 'standard' | 'strict' | 'gentle' | 'insightful' | 'custom';
     customPrompt: string;
-    enabled: boolean;
   };
   autoPick: {
     style: 'standard' | 'strict' | 'gentle' | 'insightful' | 'custom';
     customPrompt: string;
-    enabled: boolean;
   };
   schedule: {
     style: 'standard' | 'strict' | 'gentle' | 'insightful' | 'custom';
     customPrompt: string;
-    enabled: boolean;
   };
 }
 
@@ -38,17 +36,14 @@ const defaultPromptSettings: PromptSettings = {
   manual: {
     style: 'standard',
     customPrompt: '',
-    enabled: true,
   },
   autoPick: {
     style: 'standard',
     customPrompt: '',
-    enabled: true,
   },
   schedule: {
     style: 'standard',
     customPrompt: '',
-    enabled: true,
   },
 };
 
@@ -93,21 +88,21 @@ const promptStyleOptions = [
 const creationModes = [
   {
     key: 'manual',
-    title: 'Manual Selection',
+    title: 'Manual',
     description: 'When you manually select articles in Feed',
     icon: 'hand-left-outline',
     color: '#007AFF',
   },
   {
     key: 'autoPick',
-    title: 'Auto-Pick',
+    title: 'Auto',
     description: 'Algorithm-based automatic article selection',
     icon: 'flash-outline',
     color: '#34C759',
   },
   {
     key: 'schedule',
-    title: 'Schedule Delivery',
+    title: 'Schedule',
     description: 'Time-based automatic content generation',
     icon: 'time-outline',
     color: '#FF9500',
@@ -122,9 +117,18 @@ export default function PromptSettingsScreen() {
   const [settings, setSettings] = useState<PromptSettings>(defaultPromptSettings);
   const [loading, setLoading] = useState(false);
   const [activeMode, setActiveMode] = useState<keyof PromptSettings>('manual');
+  const [autoSaveStatus, setAutoSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     loadSettings();
+    
+    // Cleanup debounce timer on unmount
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+    };
   }, []);
 
   const loadSettings = async () => {
@@ -157,18 +161,59 @@ export default function PromptSettingsScreen() {
     }
   };
 
-  const updateModeSettings = (mode: keyof PromptSettings, field: string, value: any) => {
+  const updateModeSettings = async (mode: keyof PromptSettings, field: string, value: any, shouldDebounce: boolean = false) => {
+    // ✨ PRESERVE CUSTOM PROMPT: Never reset customPrompt when changing style
+    const currentCustomPrompt = settings[mode].customPrompt;
+    
     const newSettings = {
       ...settings,
       [mode]: {
         ...settings[mode],
         [field]: value,
+        // Always preserve existing custom prompt unless explicitly updating it
+        ...(field !== 'customPrompt' && { customPrompt: currentCustomPrompt }),
       },
     };
     setSettings(newSettings);
+    
+    // Clear any existing debounce timer
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+    
+    if (shouldDebounce) {
+      // For text input, debounce the save operation
+      setAutoSaveStatus('saving');
+      debounceTimerRef.current = setTimeout(async () => {
+        await performSave(newSettings, mode, field, value);
+      }, 1000); // 1 second delay
+    } else {
+      // For immediate saves (style changes, toggles, etc.)
+      setAutoSaveStatus('saving');
+      await performSave(newSettings, mode, field, value);
+    }
   };
 
-  const copySettingsToAllModes = (sourceMode: keyof PromptSettings) => {
+  const performSave = async (newSettings: PromptSettings, mode: keyof PromptSettings, field: string, value: any) => {
+    try {
+      await AsyncStorage.setItem('unified_prompt_settings', JSON.stringify(newSettings));
+      
+      // Also save to individual keys for backward compatibility
+      await AsyncStorage.setItem('unified_prompt_style', newSettings.manual.style);
+      await AsyncStorage.setItem('unified_custom_prompt', newSettings.manual.customPrompt);
+      
+      console.log(`✅ Auto-saved prompt settings for ${mode}:`, { field, value });
+      setAutoSaveStatus('saved');
+      
+      // Reset status after showing "saved" for 2 seconds
+      setTimeout(() => setAutoSaveStatus('idle'), 2000);
+    } catch (error) {
+      console.error('Auto-save failed:', error);
+      setAutoSaveStatus('idle');
+    }
+  };
+
+  const copySettingsToAllModes = async (sourceMode: keyof PromptSettings) => {
     Alert.alert(
       'Copy Settings',
       `Apply ${sourceMode} settings to all creation modes?`,
@@ -176,7 +221,7 @@ export default function PromptSettingsScreen() {
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Apply to All',
-          onPress: () => {
+          onPress: async () => {
             const sourceSettings = settings[sourceMode];
             const newSettings = {
               manual: { ...sourceSettings },
@@ -184,6 +229,31 @@ export default function PromptSettingsScreen() {
               schedule: { ...sourceSettings },
             };
             setSettings(newSettings);
+            
+            // Auto-save immediately with proper sync and UI feedback
+            setAutoSaveStatus('saving');
+            try {
+              await AsyncStorage.setItem('unified_prompt_settings', JSON.stringify(newSettings));
+              
+              // Update backward compatibility keys with manual mode settings
+              await AsyncStorage.setItem('unified_prompt_style', newSettings.manual.style);
+              await AsyncStorage.setItem('unified_custom_prompt', newSettings.manual.customPrompt);
+              
+              console.log(`✅ Copied and auto-saved ${sourceMode} settings to all modes`);
+              setAutoSaveStatus('saved');
+              
+              // Force UI update by triggering state changes for all modes
+              setActiveMode('manual'); // Reset to manual to trigger re-render
+              setTimeout(() => {
+                setActiveMode(sourceMode); // Return to original mode
+                setTimeout(() => setAutoSaveStatus('idle'), 2000); // Reset status after delay
+              }, 100);
+              
+            } catch (error) {
+              console.error('Copy to all auto-save failed:', error);
+              setAutoSaveStatus('idle');
+              Alert.alert('Error', 'Failed to save copied settings');
+            }
           }
         }
       ]
@@ -218,50 +288,53 @@ export default function PromptSettingsScreen() {
       <Text style={[styles.headerTitle, { color: theme.text }]}>
         Prompt Settings
       </Text>
-      <TouchableOpacity
-        onPress={() => saveSettings(settings)}
-        style={[styles.saveButton, { backgroundColor: theme.primary }]}
-        disabled={loading}
-        accessibilityRole="button"
-        accessibilityLabel="Save prompt settings"
-      >
-        <Text style={styles.saveButtonText}>Save</Text>
-      </TouchableOpacity>
+      {/* Auto-save status indicator instead of save button */}
+      <View style={styles.saveStatusContainer}>
+        {autoSaveStatus === 'saving' && (
+          <View style={styles.savingIndicator}>
+            <ActivityIndicator size="small" color={theme.primary} />
+            <Text style={[styles.savingText, { color: theme.textSecondary }]}>Saving...</Text>
+          </View>
+        )}
+        {autoSaveStatus === 'saved' && (
+          <View style={styles.savedIndicator}>
+            <Ionicons name="checkmark-circle" size={18} color="#10B981" />
+            <Text style={[styles.savedText, { color: '#10B981' }]}>Saved</Text>
+          </View>
+        )}
+        {autoSaveStatus === 'idle' && <View style={styles.placeholderSpace} />}
+      </View>
     </View>
   );
 
   const renderModeSelector = () => (
     <View style={[styles.section, { backgroundColor: theme.card, borderColor: theme.border }]}>
       <Text style={[styles.sectionTitle, { color: theme.text }]}>Creation Modes</Text>
-      <Text style={[styles.sectionDescription, { color: theme.textSecondary }]}>
-        Configure prompts for each audio creation method
-      </Text>
       
-      <View style={styles.modeGrid}>
+      <View style={styles.modeRow}>
         {creationModes.map((mode) => (
           <TouchableOpacity
             key={mode.key}
             style={[
-              styles.modeCard,
+              styles.modeButton,
               {
-                backgroundColor: activeMode === mode.key ? theme.accent : theme.surface,
+                backgroundColor: activeMode === mode.key ? mode.color : theme.surface,
                 borderColor: activeMode === mode.key ? mode.color : theme.border,
               }
             ]}
             onPress={() => setActiveMode(mode.key as keyof PromptSettings)}
           >
-            <View style={[styles.modeIcon, { backgroundColor: `${mode.color}20` }]}>
-              <Ionicons name={mode.icon as any} size={24} color={mode.color} />
-            </View>
-            <Text style={[styles.modeTitle, { color: theme.text }]}>{mode.title}</Text>
-            <Text style={[styles.modeDescription, { color: theme.textSecondary }]}>
-              {mode.description}
+            <Ionicons 
+              name={mode.icon as any} 
+              size={24} 
+              color={activeMode === mode.key ? '#fff' : mode.color} 
+            />
+            <Text style={[
+              styles.modeButtonText, 
+              { color: activeMode === mode.key ? '#fff' : theme.text }
+            ]}>
+              {mode.title}
             </Text>
-            {activeMode === mode.key && (
-              <View style={[styles.activeBadge, { backgroundColor: mode.color }]}>
-                <Ionicons name="checkmark" size={16} color="#fff" />
-              </View>
-            )}
           </TouchableOpacity>
         ))}
       </View>
@@ -295,23 +368,8 @@ export default function PromptSettingsScreen() {
           </View>
         </View>
 
-        {/* Enable/Disable Toggle */}
-        <View style={styles.enableToggle}>
-          <Text style={[styles.enableToggleText, { color: theme.text }]}>
-            Enable custom prompts for {modeInfo?.title.toLowerCase()}
-          </Text>
-          <Switch
-            value={currentMode.enabled}
-            onValueChange={(value) => updateModeSettings(activeMode, 'enabled', value)}
-            trackColor={{ false: theme.textMuted, true: theme.primary }}
-            thumbColor={currentMode.enabled ? '#fff' : '#f4f3f4'}
-          />
-        </View>
-
-        {currentMode.enabled && (
-          <>
-            {/* Prompt Style Options */}
-            <View style={styles.promptStyleGrid}>
+        {/* Prompt Style Options */}
+        <View style={styles.promptStyleGrid}>
               {promptStyleOptions.map((option) => (
                 <TouchableOpacity
                   key={option.value}
@@ -363,7 +421,10 @@ export default function PromptSettingsScreen() {
                     }
                   ]}
                   value={currentMode.customPrompt}
-                  onChangeText={(text) => updateModeSettings(activeMode, 'customPrompt', text)}
+                  onChangeText={(text) => {
+                    // Real-time update with debounced auto-save (1 second delay)
+                    updateModeSettings(activeMode, 'customPrompt', text, true);
+                  }}
                   placeholder={`Enter custom prompt for ${modeInfo?.title.toLowerCase()}...`}
                   placeholderTextColor={theme.textMuted}
                   multiline
@@ -372,9 +433,7 @@ export default function PromptSettingsScreen() {
                 />
               </View>
             )}
-          </>
-        )}
-      </View>
+        </View>
     );
   };
 
@@ -383,20 +442,6 @@ export default function PromptSettingsScreen() {
       {renderHeader()}
       
       <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
-        {/* Info Card */}
-        <View style={[styles.infoCard, { backgroundColor: theme.primary + '20' }]}>
-          <Ionicons name="information-circle-outline" size={24} color={theme.primary} />
-          <View style={styles.infoContent}>
-            <Text style={[styles.infoTitle, { color: theme.primary }]}>
-              Unified Prompt System
-            </Text>
-            <Text style={[styles.infoText, { color: theme.text }]}>
-              Configure how AI generates audio content for different creation methods. 
-              Each mode can have its own prompt style for optimal results.
-            </Text>
-          </View>
-        </View>
-
         {renderModeSelector()}
         {renderPromptStyleSection()}
 
@@ -445,26 +490,6 @@ const styles = StyleSheet.create({
   contentContainer: {
     padding: 16,
   },
-  infoCard: {
-    flexDirection: 'row',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 24,
-    alignItems: 'flex-start',
-    gap: 12,
-  },
-  infoContent: {
-    flex: 1,
-  },
-  infoTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-  infoText: {
-    fontSize: 14,
-    lineHeight: 20,
-  },
   section: {
     borderRadius: 12,
     padding: 16,
@@ -511,56 +536,26 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '500',
   },
-  modeGrid: {
-    gap: 12,
+  modeRow: {
+    flexDirection: 'row',
+    gap: 8,
     marginTop: 12,
   },
-  modeCard: {
-    padding: 16,
-    borderRadius: 12,
-    borderWidth: 2,
-    position: 'relative',
-  },
-  modeIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  modeTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-  modeDescription: {
-    fontSize: 14,
-    lineHeight: 18,
-  },
-  activeBadge: {
-    position: 'absolute',
-    top: 12,
-    right: 12,
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  enableToggle: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 16,
-    paddingBottom: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(0,0,0,0.1)',
-  },
-  enableToggleText: {
-    fontSize: 16,
-    fontWeight: '500',
+  modeButton: {
     flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  modeButtonText: {
+    fontSize: 11,
+    fontWeight: '600',
+    textAlign: 'center',
   },
   promptStyleGrid: {
     gap: 12,
@@ -611,5 +606,32 @@ const styles = StyleSheet.create({
   },
   bottomSpacer: {
     height: 32,
+  },
+  saveStatusContainer: {
+    width: 80,
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+  },
+  savingIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  savingText: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  savedIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  savedText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  placeholderSpace: {
+    width: 1,
+    height: 20,
   },
 });

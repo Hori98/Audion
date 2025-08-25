@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert, RefreshControl, Modal, Platform, Animated, Easing, TextInput, SafeAreaView, Linking, PanResponder, Dimensions } from 'react-native';
 import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
-import { useAudio } from '../../context/AudioContext';
+import { useUnifiedAudio } from '../../context/UnifiedAudioContext';
 import { useTheme } from '../../context/ThemeContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { useTranslation } from 'react-i18next';
@@ -37,6 +37,8 @@ import FeedFilterMenu from '../../components/FeedFilterMenu';
 import GlobalEventService from '../../services/GlobalEventService';
 import FeedActionBar from '../../components/FeedActionBar';
 import ManualPickPanel from '../../components/ManualPickPanel';
+import AutoPickService from '../../services/AutoPickService';
+import SubscriptionService from '../../services/SubscriptionService';
 
 // Memory optimization utilities
 const MemoryUtils = {
@@ -93,7 +95,7 @@ interface RSSSource {
 
 export default function FeedScreen() {
   const { token } = useAuth();
-  const { showMiniPlayer, playAudio, playAudioStreaming } = useAudio();
+  const { state, playInstantAudio, playTrack } = useUnifiedAudio();
   const { theme } = useTheme();
   const { currentVoiceLanguage } = useLanguage();
   const { t } = useTranslation();
@@ -1019,90 +1021,24 @@ export default function FeedScreen() {
     }
   };
 
-  // Instant auto-pick audio creation (2-5 seconds)
+  // 🆕 Feed AutoPick Audio Creation - Using unified AutoPick service  
   const handleInstantAutoPickAudio = async () => {
     setCreatingAudio(true);
-    
     try {
-      console.log('InstantAutoPick: Starting instant audio creation');
+      // Get user's max articles limit from subscription
+      const maxArticles = await SubscriptionService.getInstance().getMaxArticlesLimit(token!);
       
-      // Use same auto-pick logic to select articles
-      const autoPickRequest = {
-        max_articles: 5,
-        ...(selectedGenre !== 'All' && { preferred_genres: [selectedGenre] }),
-        ...(selectedSource !== 'All Sources' && { preferred_sources: [selectedSource] })
-      };
-      
-      const autoPickResponse = await axios.post(
-        `${API}/auto-pick`,
-        autoPickRequest,
-        { 
-          headers: { Authorization: `Bearer ${token}` },
-          timeout: 15000
-        }
-      );
-      
-      if (autoPickResponse.data && autoPickResponse.data.length > 0) {
-        // Create instant audio using new endpoint
-        const autoPickArticles = autoPickResponse.data;
-        const requestData = {
-          article_ids: autoPickArticles.map((a: any) => a.id),
-          article_titles: autoPickArticles.map((a: any) => a.title),
-          article_urls: autoPickArticles.map((a: any) => a.link || ''),
-          prompt_style: 'instant',
-          custom_prompt: null,
-          voice_language: 'ja-JP',
-          voice_name: 'alloy'
-        };
-
-        // Add debug headers if bypass is enabled
-        const audioHeaders: any = { Authorization: `Bearer ${token}` };
-        if (require('../../services/DebugService').default.shouldBypassSubscriptionLimits()) {
-          audioHeaders['X-Debug-Bypass-Limits'] = 'true';
-          audioHeaders['X-Debug-Mode'] = 'true';
-        }
-
-        const instantResponse = await axios.post(
-          `${API}/audio/instant-multi`,
-          requestData,
-          { 
-            headers: audioHeaders,
-            timeout: 15000 // Extended timeout for TTS processing
-          }
-        );
-        
-        if (instantResponse.data?.audio_url) {
-          // Immediately start background streaming playback
-          const audioItem = {
-            id: instantResponse.data.id,
-            title: instantResponse.data.title,
-            audio_url: instantResponse.data.audio_url,
-            duration: instantResponse.data.duration || 0,
-            created_at: new Date().toISOString(),
-            script: instantResponse.data.script || ''
-          };
-          
-          // Start streaming playback immediately
-          await playAudioStreaming(audioItem);
-          
-          console.log(`⚡ Instant streaming started: ${audioItem.title}`);
-        } else {
-          throw new Error('No audio URL received from server');
-        }
-      } else {
-        Alert.alert('No Selection', 'AI could not find suitable articles. Try again later.');
-      }
-    } catch (error: any) {
-      console.error('InstantAutoPick Error:', error);
-      let errorMessage = 'Failed to create instant audio';
-      if (error.response?.status === 422) {
-        errorMessage = 'Invalid article data. Please try refreshing articles.';
-      } else if (error.response?.status === 429) {
-        errorMessage = 'Server is busy. Please wait a moment and try again.';
-      } else if (error.response?.data?.detail) {
-        errorMessage = error.response.data.detail;
-      }
-      Alert.alert('Error', errorMessage);
+      // Use unified AutoPick service with new AudioPlayer
+      await AutoPickService.getInstance().executeAutoPick({
+        token: token!,
+        selectedGenre,
+        context: 'feed',
+        playInstantAudio: playInstantAudio,
+        voiceLanguage: currentVoiceLanguage,
+        maxArticles
+      });
+    } catch (error) {
+      // Error handling is done in the service
     } finally {
       setCreatingAudio(false);
       if (global.gc) {
@@ -1111,10 +1047,13 @@ export default function FeedScreen() {
     }
   };
 
+
   // Instant auto-pick audio creation
   const handleCreateAutoPickAudio = async () => {
-    if (filteredArticles.length === 0) {
-      Alert.alert('No Articles', 'Please add some RSS sources and refresh to get articles.');
+    // Validate preconditions using service
+    const validation = AutoPickService.getInstance().canExecuteAutoPick(filteredArticles.length);
+    if (!validation.canExecute) {
+      Alert.alert('No Articles', validation.reason);
       return;
     }
 
@@ -1149,7 +1088,7 @@ export default function FeedScreen() {
         article_urls: selectedArticles.map(a => a.link || ''),
         prompt_style: 'instant',
         custom_prompt: null,
-        voice_language: 'ja-JP',
+        voice_language: currentVoiceLanguage,
         voice_name: 'alloy'
       };
 
@@ -1181,7 +1120,7 @@ export default function FeedScreen() {
         };
         
         // Start streaming playback immediately
-        await playAudioStreaming(audioItem);
+        await playTrack(audioItem);
         
         // Clear selection and exit
         clearAllSelections();
@@ -1265,7 +1204,7 @@ export default function FeedScreen() {
         article_urls: selectedArticles.map(a => a.link || ''),
         prompt_style: promptStyle || 'recommended',
         custom_prompt: customPrompt || null,
-        voice_language: 'ja-JP',
+        voice_language: currentVoiceLanguage,
         voice_name: 'alloy'
       };
 
