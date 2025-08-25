@@ -23,7 +23,7 @@ const languageDetector = {
       
       // Fall back to device locale
       const deviceLocale = Localization.locale;
-      const languageCode = deviceLocale.split('-')[0];
+      const languageCode = deviceLocale?.split('-')[0] || 'en';
       
       // Use Japanese if device is set to Japanese, otherwise English
       const detectedLang = languageCode === 'ja' ? 'ja' : 'en';

@@ -31,6 +31,9 @@ export default function DebugMenu({ visible, onClose }: DebugMenuProps) {
     enableBetaFeatures: false,
     mockPremiumUser: false,
     enableTestAlerts: false,
+    // 🎯 AutoPick制限解放機能
+    bypassInitialUserLimits: false,
+    skipOnboardingRequirements: false,
     // 🆕 MECE補完項目
     forcedAPIErrors: false,
     mockNetworkConditions: false,
@@ -98,6 +101,13 @@ export default function DebugMenu({ visible, onClose }: DebugMenuProps) {
       case 'enableTestAlerts':
         await DebugService.toggleTestAlerts();
         break;
+      // 🎯 AutoPick制限解放機能
+      case 'bypassInitialUserLimits':
+        await DebugService.toggleBypassInitialUserLimits();
+        break;
+      case 'skipOnboardingRequirements':
+        await DebugService.toggleSkipOnboardingRequirements();
+        break;
       // 🆕 MECE補完項目
       case 'forcedAPIErrors':
         await DebugService.toggleForcedAPIErrors();
@@ -161,6 +171,10 @@ export default function DebugMenu({ visible, onClose }: DebugMenuProps) {
               enableBetaFeatures: false,
               mockPremiumUser: false,
               enableTestAlerts: false,
+              // 🎯 AutoPick制限解放機能
+              bypassInitialUserLimits: false,
+              skipOnboardingRequirements: false,
+              // 🆕 MECE補完項目
               forcedAPIErrors: false,
               mockNetworkConditions: false,
               enablePerformanceMetrics: false,
@@ -317,6 +331,9 @@ export default function DebugMenu({ visible, onClose }: DebugMenuProps) {
                   { key: 'enableBetaFeatures', label: 'Enable Beta Features', category: 'core' },
                   { key: 'mockPremiumUser', label: 'Mock Premium User', category: 'core' },
                   { key: 'enableTestAlerts', label: 'Enable Test Alerts', category: 'core' },
+                  // 🎯 AutoPick制限解放機能
+                  { key: 'bypassInitialUserLimits', label: 'Bypass Initial User Limits', category: 'autopick' },
+                  { key: 'skipOnboardingRequirements', label: 'Skip Onboarding Requirements', category: 'autopick' },
                   // 🆕 MECE補完機能
                   { key: 'forcedAPIErrors', label: 'Force API Errors', category: 'testing' },
                   { key: 'mockNetworkConditions', label: 'Mock Network Issues', category: 'testing' },
@@ -325,16 +342,21 @@ export default function DebugMenu({ visible, onClose }: DebugMenuProps) {
                 ].map(({ key, label, category }) => (
                   <View key={key} style={[
                     styles.settingRow,
+                    category === 'autopick' && { borderLeftWidth: 3, borderLeftColor: '#f39c12', paddingLeft: 13 },
                     category === 'testing' && { borderLeftWidth: 3, borderLeftColor: '#ff6b6b', paddingLeft: 13 },
                     category === 'monitoring' && { borderLeftWidth: 3, borderLeftColor: '#4ecdc4', paddingLeft: 13 }
                   ]}>
                     <View style={styles.settingLabelContainer}>
                       <Text style={[styles.settingLabel, { color: theme.text }]}>
+                        {category === 'autopick' && '🎯 '}
                         {category === 'testing' && '🧪 '}
                         {category === 'monitoring' && '📊 '}
                         {category === 'core' && '👑 '}
                         {label}
                       </Text>
+                      {(key === 'bypassInitialUserLimits' || key === 'skipOnboardingRequirements') && (
+                        <Text style={[styles.categoryBadge, { color: '#f39c12' }]}>AUTOPICK</Text>
+                      )}
                       {(key === 'forcedAPIErrors' || key === 'mockNetworkConditions') && (
                         <Text style={[styles.categoryBadge, { color: '#ff6b6b' }]}>TEST</Text>
                       )}

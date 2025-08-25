@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, RefreshControl, SafeAreaView, Modal } from 'react-native';
-import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
-import { useAudio } from '../../context/AudioContext';
+import { useUnifiedAudio } from '../../context/UnifiedAudioContext';
 import { useTheme } from '../../context/ThemeContext';
 import { useFocusEffect } from '@react-navigation/native';
 import { format } from 'date-fns';
@@ -31,7 +30,7 @@ interface CommunityAudioItem {
 
 export default function DiscoverScreen() {
   const { token } = useAuth();
-  const { playAudio, currentAudio, isPlaying } = useAudio();
+  const { state, playTrack } = useUnifiedAudio();
   const { theme } = useTheme();
   
   const [communityAudio, setCommunityAudio] = useState<CommunityAudioItem[]>([]);
@@ -137,7 +136,7 @@ export default function DiscoverScreen() {
 
   const handlePlayAudio = async (audio: CommunityAudioItem) => {
     try {
-      await playAudio({
+      await playTrack({
         id: audio.id,
         title: audio.title,
         audio_url: audio.audio_url,
@@ -254,7 +253,7 @@ export default function DiscoverScreen() {
                 key={audio.id}
                 style={[
                   styles.audioItem,
-                  currentAudio?.id === audio.id && styles.currentlyPlaying
+                  state.currentTrack?.id === audio.id && styles.currentlyPlaying
                 ]}
                 onPress={() => handlePlayAudio(audio)}
                 activeOpacity={0.7}
@@ -287,7 +286,7 @@ export default function DiscoverScreen() {
                   <View style={styles.audioMeta}>
                     <View style={styles.metaRow}>
                       <Ionicons 
-                        name={currentAudio?.id === audio.id && isPlaying ? "pause" : "play"} 
+                        name={state.currentTrack?.id === audio.id && state.playbackState === 'PLAYING' ? "pause" : "play"} 
                         size={12} 
                         color={theme.primary} 
                       />

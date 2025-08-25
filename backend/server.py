@@ -176,9 +176,21 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Import and register subscription router
+# Import and register routers
 from routers.subscription import router as subscription_router
 app.include_router(subscription_router)
+
+# 🚀 NEW: Import and register unified audio router (commented out for now - will be enabled after testing)
+# try:
+#     from routers.audio_unified import router as audio_unified_router
+#     app.include_router(audio_unified_router)
+#     logging.info("✅ Unified Audio Router registered successfully")
+# except ImportError as e:
+#     logging.warning(f"⚠️ Could not import unified audio router: {e}")
+# except Exception as e:
+#     logging.error(f"❌ Failed to register unified audio router: {e}")
+
+# TODO: Enable unified audio router after resolving import dependencies
 
 @app.get("/api/simple-health", tags=["Health Check"])
 def simple_health_check():
@@ -5400,6 +5412,9 @@ async def generate_simple_audio(
     try:
         logging.info(f"🆕 SIMPLE AUDIO: Start - User: {current_user.id}, Lang: {request.voice_language}")
         logging.info(f"🆕 SIMPLE AUDIO: DEBUG - article_ids: {len(request.article_ids) if request.article_ids else 'None'}, article_titles: {len(request.article_titles) if request.article_titles else 'None'}")
+        # 🔥 DETAILED PROMPT DEBUGGING
+        logging.info(f"🔥 PROMPT DEBUG: Received prompt_style='{request.prompt_style}', custom_prompt='{request.custom_prompt}'")
+        logging.info(f"🔥 PROMPT DEBUG: Using prompt_style={request.prompt_style}, has_custom={bool(request.custom_prompt and request.custom_prompt.strip())}")
         
         # Step 1: Use provided articles if available, otherwise auto-pick
         if request.article_ids and request.article_titles:

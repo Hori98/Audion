@@ -150,6 +150,12 @@ export default function HeroCarousel({
             
             {/* Content Overlay */}
             <View style={styles.contentOverlay}>
+              {/* Personalization Badge */}
+              <View style={styles.personalizationBadge}>
+                <Ionicons name="analytics-outline" size={12} color="#ffffff" />
+                <Text style={styles.personalizationText}>あなた向けにカスタマイズ</Text>
+              </View>
+
               {/* Source and Time */}
               <View style={styles.metaInfo}>
                 <View style={styles.sourceContainer}>
@@ -267,6 +273,25 @@ const createStyles = (theme: any) => StyleSheet.create({
     bottom: 0,
     padding: 20,
     justifyContent: 'space-between',
+  },
+  personalizationBadge: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(79, 70, 229, 0.9)', // Primary color with transparency
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
+    gap: 4,
+    marginBottom: 8,
+  },
+  personalizationText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#ffffff',
+    textShadowColor: 'rgba(0,0,0,0.5)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 1,
   },
   metaInfo: {
     flexDirection: 'row',

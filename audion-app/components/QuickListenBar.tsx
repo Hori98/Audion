@@ -9,7 +9,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
-import { useAudio } from '../context/AudioContext';
+import { useAudioPlayer } from '../context/AudioPlayerContext';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -40,7 +40,7 @@ export default function QuickListenBar({
   style,
 }: QuickListenBarProps) {
   const { theme } = useTheme();
-  const { playAudio } = useAudio();
+  const { playNewTrack } = useAudioPlayer();
   const [isGenerating, setIsGenerating] = useState<number | null>(null);
 
   const handleQuickListen = async (option: QuickListenOption) => {
@@ -102,7 +102,14 @@ export default function QuickListenBar({
           script: audioResponse.data.script,
         };
 
-        await playAudio(audioItem);
+        await playNewTrack({
+          id: audioItem.id,
+          title: audioItem.title,
+          url: audioItem.audio_url,
+          duration: audioItem.duration,
+          created_at: audioItem.created_at,
+          context: 'quick-listen'
+        });
 
         // Show success message
         Alert.alert(

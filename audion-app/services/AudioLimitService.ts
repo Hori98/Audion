@@ -125,12 +125,18 @@ class AudioLimitService {
       return 999;
     }
 
+    // APIエラー発生時は、SubscriptionServiceのフォールバック機能を利用
+    // これによりデバッグモードでの強制プラン設定が正しく反映される
     try {
       const subscriptionInfo = await this.getSubscriptionInfo(token);
       return subscriptionInfo.plan_config.max_audio_articles;
     } catch (error) {
-      console.error('Failed to get max articles limit:', error);
-      return 3; // Default fallback
+      console.warn('AudioLimitService API failed, using SubscriptionService fallback:', error);
+      // SubscriptionServiceを使用してフォールバック（デバッグ設定を考慮）
+      const { default: SubscriptionService } = await import('./SubscriptionService');
+      const fallbackLimit = await SubscriptionService.getInstance().getMaxArticlesLimit(token);
+      console.log('🎯 AudioLimitService: Using fallback limit:', fallbackLimit);
+      return fallbackLimit;
     }
   }
 

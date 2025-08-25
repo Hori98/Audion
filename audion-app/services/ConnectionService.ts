@@ -27,7 +27,7 @@ class ConnectionService {
   private axiosInstance: AxiosInstance;
   private connectionStatus: ConnectionStatus;
   private healthCheckInterval: NodeJS.Timeout | null = null;
-  private readonly HEALTH_CHECK_INTERVAL = 60000; // 60 seconds (reduced frequency)
+  private readonly HEALTH_CHECK_INTERVAL = 300000; // 5 minutes (further reduced frequency)
   private readonly CONNECTION_TIMEOUT = 30000; // 30 seconds (increased for slow networks)
   private readonly BACKEND_URLS = [
     process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:8002', // Primary from .env
@@ -126,7 +126,7 @@ class ConnectionService {
         const startTime = Date.now();
         
         const response = await axios.get(`${url}/health`, {
-          timeout: 5000,
+          timeout: 3000, // Reduced timeout for faster failure detection
           headers: { 'Accept': 'application/json' }
         });
         
@@ -166,8 +166,8 @@ class ConnectionService {
     
     if (this.connectionStatus.isConnected && 
         this.connectionStatus.serverHealth === 'healthy' &&
-        Date.now() - this.connectionStatus.lastChecked < 30000) {
-      return; // Recent healthy connection
+        Date.now() - this.connectionStatus.lastChecked < 120000) {
+      return; // Recent healthy connection (extended to 2 minutes)
     }
 
     try {
@@ -261,9 +261,11 @@ class ConnectionService {
     // Periodic health checks
     this.healthCheckInterval = setInterval(async () => {
       try {
+        console.log('🔍 ConnectionService: Starting health check');
         const startTime = Date.now();
         await this.axiosInstance.get('/health');
         const latency = Date.now() - startTime;
+        console.log(`✅ ConnectionService: Health check completed in ${latency}ms`);
         
         this.connectionStatus = {
           ...this.connectionStatus,
@@ -274,13 +276,16 @@ class ConnectionService {
         };
         
       } catch (error: any) {
+        console.warn('❌ ConnectionService: Health check failed:', error.message);
         this.handleConnectionError(error);
         
         // Try to find alternative backend if current one fails
         if (!this.connectionStatus.isConnected) {
           try {
+            console.log('🔄 ConnectionService: Attempting to find alternative backend');
             await this.findWorkingBackendUrl();
           } catch (e) {
+            console.warn('⚠️ ConnectionService: Alternative backend search failed');
             // Will try again in next health check
           }
         }

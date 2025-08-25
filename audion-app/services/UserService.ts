@@ -340,4 +340,20 @@ class UserService {
 
   // ================== Analytics and Tracking ==================
 
-  async recordInteraction(interaction: {\n    action: string;\n    contentId: string;\n    contentType: string;\n    category?: string;\n    source?: string;\n    timestamp: number;\n    engagementLevel?: 'low' | 'medium' | 'high';\n  }): Promise<void> {\n    try {\n      const settings = await this.getSettings();\n      if (!settings.analytics_enabled) return;\n\n      await apiService.post('/analytics/interaction', interaction);\n    } catch (error) {\n      console.error('Error recording interaction:', error);\n      // Don't throw - analytics should not break app functionality\n    }\n  }\n\n  // ================== Cache Management ==================\n\n  clearCache(): void {\n    this.settings = null;\n    this.subscription = null;\n    this.preferences = null;\n  }\n\n  async clearAllUserData(): Promise<void> {\n    try {\n      await AsyncStorage.multiRemove([\n        'user_settings',\n        'user_preferences',\n        'user_subscription'\n      ]);\n      this.clearCache();\n    } catch (error) {\n      console.error('Error clearing user data:', error);\n    }\n  }\n}\n\nexport default UserService.getInstance();"}, {"old_string": "  async recordInteraction(interaction: {\n    action: string;\n    contentId: string;\n    contentType: string;\n    category?: string;\n    source?: string;\n    timestamp: number;\n    engagementLevel?: 'low' | 'medium' | 'high';\n  }): Promise<void> {", "new_string": "async recordInteraction(interaction: {\naction: string;\ncontentId: string;\ncontentType: string;\ncategory?: string;\nsource?: string;\ntimestamp: number;\nengagementLevel?: 'low' | 'medium' | 'high';\n}): Promise<void> {"}]
+  async recordInteraction(interaction: {
+    action: string;
+    contentId: string;
+    contentType: string;
+    category?: string;
+    source?: string;
+    timestamp: number;
+    engagementLevel?: 'low' | 'medium' | 'high';
+  }): Promise<void> {\n    try {\n      const settings = await this.getSettings();\n      if (!settings.analytics_enabled) return;\n\n      await apiService.post('/analytics/interaction', interaction);\n    } catch (error) {\n      console.error('Error recording interaction:', error);\n      // Don't throw - analytics should not break app functionality\n    }\n  }\n\n  // ================== Cache Management ==================\n\n  clearCache(): void {\n    this.settings = null;\n    this.subscription = null;\n    this.preferences = null;\n  }\n\n  async clearAllUserData(): Promise<void> {\n    try {\n      await AsyncStorage.multiRemove([\n        'user_settings',\n        'user_preferences',\n        'user_subscription'\n      ]);\n      this.clearCache();\n    } catch (error) {\n      console.error('Error clearing user data:', error);\n    }\n  }\n}\n\nexport default UserService.getInstance();"}, {"old_string": "  async recordInteraction(interaction: {
+    action: string;
+    contentId: string;
+    contentType: string;
+    category?: string;
+    source?: string;
+    timestamp: number;
+    engagementLevel?: 'low' | 'medium' | 'high';
+  }): Promise<void> {", "new_string": "async recordInteraction(interaction: {\naction: string;\ncontentId: string;\ncontentType: string;\ncategory?: string;\nsource?: string;\ntimestamp: number;\nengagementLevel?: 'low' | 'medium' | 'high';\n}): Promise<void> {"}]

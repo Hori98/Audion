@@ -9,11 +9,20 @@ export interface DebugSettings {
   enableBetaFeatures: boolean;
   mockPremiumUser: boolean;
   enableTestAlerts: boolean;
-  // 🆕 MECE補完項目
+  // 🎯 AutoPick制限解放機能
+  bypassInitialUserLimits: boolean;
+  skipOnboardingRequirements: boolean;
+  // 🆕 MECE補完項目（高度な設定）
   forcedAPIErrors: boolean;
   mockNetworkConditions: boolean; 
   enablePerformanceMetrics: boolean;
   mockDataGeneration: boolean;
+  // 🚀 Gemini推奨の新機能
+  apiEndpointOverride: 'default' | 'local' | 'staging' | 'production';
+  simulatedAPIError: 'none' | '401' | '429' | '500' | 'timeout';
+  clearAppCache: boolean;
+  resetPersonalizationData: boolean;
+  forceUIReset: boolean;
 }
 
 class DebugService {
@@ -28,11 +37,20 @@ class DebugService {
     enableBetaFeatures: false,
     mockPremiumUser: false,
     enableTestAlerts: false,
+    // 🎯 AutoPick制限解放機能のデフォルト値
+    bypassInitialUserLimits: false,
+    skipOnboardingRequirements: false,
     // 🆕 MECE補完項目のデフォルト値
     forcedAPIErrors: false,
     mockNetworkConditions: false, 
     enablePerformanceMetrics: false,
     mockDataGeneration: false,
+    // 🚀 Gemini推奨機能のデフォルト値
+    apiEndpointOverride: 'default',
+    simulatedAPIError: 'none',
+    clearAppCache: false,
+    resetPersonalizationData: false,
+    forceUIReset: false,
   };
 
   // Check if app is in development mode
@@ -61,12 +79,24 @@ class DebugService {
   // Save debug settings to storage
   static async saveDebugSettings(settings: Partial<DebugSettings>): Promise<void> {
     try {
+      console.log('💾 DebugService: Saving settings:', settings);
+      console.log('📊 DebugService: Current settings before merge:', this.currentSettings);
       
       this.currentSettings = { ...this.currentSettings, ...settings };
-      await AsyncStorage.setItem(this.STORAGE_KEY, JSON.stringify(this.currentSettings));
+      const serialized = JSON.stringify(this.currentSettings);
+      
+      console.log('📊 DebugService: Final settings to save:', this.currentSettings);
+      console.log('💾 DebugService: Serialized data:', serialized);
+      
+      await AsyncStorage.setItem(this.STORAGE_KEY, serialized);
+      
+      // 保存後に確認のため再読み込み
+      const saved = await AsyncStorage.getItem(this.STORAGE_KEY);
+      console.log('✅ DebugService: Verification - saved data:', saved);
       
     } catch (error) {
       console.error('❌ Failed to save debug settings:', error);
+      throw error;
     }
   }
 
@@ -85,13 +115,22 @@ class DebugService {
       enableDebugMode: false,
       forcedSubscriptionTier: undefined,
       bypassSubscriptionLimits: false,
-      mockPremiumUser: false
+      mockPremiumUser: false,
+      // 🎯 AutoPick制限解放機能もリセット
+      bypassInitialUserLimits: false,
+      skipOnboardingRequirements: false
     });
   }
 
   // Force specific subscription tier for testing
   static async setForcedSubscriptionTier(tier?: SubscriptionTier): Promise<void> {
+    console.log('🎯 DebugService: Setting forced subscription tier to:', tier);
+    console.log('📊 DebugService: Before save - current settings:', this.currentSettings);
+    
     await this.saveDebugSettings({ forcedSubscriptionTier: tier });
+    
+    console.log('📊 DebugService: After save - updated settings:', this.currentSettings);
+    console.log('✅ DebugService: Forced subscription tier set successfully');
   }
 
   static getForcedSubscriptionTier(): SubscriptionTier | undefined {
@@ -166,11 +205,20 @@ class DebugService {
       enableBetaFeatures: false,
       mockPremiumUser: false,
       enableTestAlerts: false,
+      // 🎯 AutoPick制限解放機能のデフォルト値
+      bypassInitialUserLimits: false,
+      skipOnboardingRequirements: false,
       // 🆕 MECE補完項目のデフォルト値
       forcedAPIErrors: false,
       mockNetworkConditions: false,
       enablePerformanceMetrics: false,
       mockDataGeneration: false,
+      // 🚀 Gemini推奨機能のデフォルト値
+      apiEndpointOverride: 'default',
+      simulatedAPIError: 'none',
+      clearAppCache: false,
+      resetPersonalizationData: false,
+      forceUIReset: false,
     };
     
     this.currentSettings = defaultSettings;
@@ -233,6 +281,75 @@ class DebugService {
     await this.saveDebugSettings({ mockDataGeneration: newValue });
   }
 
+  // 🎯 AutoPick制限解放機能
+  static shouldBypassInitialUserLimits(): boolean {
+    return this.isDebugModeEnabled() && this.currentSettings.bypassInitialUserLimits;
+  }
+
+  static async toggleBypassInitialUserLimits(): Promise<void> {
+    const newValue = !this.currentSettings.bypassInitialUserLimits;
+    await this.saveDebugSettings({ bypassInitialUserLimits: newValue });
+  }
+
+  static shouldSkipOnboardingRequirements(): boolean {
+    return this.isDebugModeEnabled() && this.currentSettings.skipOnboardingRequirements;
+  }
+
+  static async toggleSkipOnboardingRequirements(): Promise<void> {
+    const newValue = !this.currentSettings.skipOnboardingRequirements;
+    await this.saveDebugSettings({ skipOnboardingRequirements: newValue });
+  }
+
+  // 🚀 Gemini推奨: APIエンドポイント切り替え
+  static async setAPIEndpoint(endpoint: 'default' | 'local' | 'staging' | 'production'): Promise<void> {
+    await this.saveDebugSettings({ apiEndpointOverride: endpoint });
+  }
+
+  static getAPIEndpoint(): string {
+    const override = this.currentSettings.apiEndpointOverride;
+    switch (override) {
+      case 'local': return 'http://localhost:8003';
+      case 'staging': return 'https://staging.audion.app';
+      case 'production': return 'https://api.audion.app';
+      default: return process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:8003';
+    }
+  }
+
+  // 🚀 Gemini推奨: APIエラーシミュレーション
+  static async setSimulatedAPIError(errorType: 'none' | '401' | '429' | '500' | 'timeout'): Promise<void> {
+    await this.saveDebugSettings({ simulatedAPIError: errorType });
+  }
+
+  static getSimulatedAPIError(): string {
+    return this.currentSettings.simulatedAPIError;
+  }
+
+  // 🚀 Gemini推奨: アプリキャッシュクリア
+  static async clearAppCache(): Promise<void> {
+    try {
+      await AsyncStorage.clear();
+      console.log('🧹 App cache cleared');
+    } catch (error) {
+      console.error('❌ Failed to clear app cache:', error);
+    }
+  }
+
+  // 🚀 Gemini推奨: パーソナライズデータリセット
+  static async resetPersonalizationData(): Promise<void> {
+    try {
+      const keys = await AsyncStorage.getAllKeys();
+      const personalizationKeys = keys.filter(key => 
+        key.includes('personalization') || 
+        key.includes('preferences') || 
+        key.includes('user_profile')
+      );
+      await AsyncStorage.multiRemove(personalizationKeys);
+      console.log('🔄 Personalization data reset');
+    } catch (error) {
+      console.error('❌ Failed to reset personalization data:', error);
+    }
+  }
+
   // 🆕 統合ヘルパー: 全MECE項目の確認
   static getMECEStatus(): { [key: string]: boolean } {
     return {
@@ -242,6 +359,9 @@ class DebugService {
       enableBetaFeatures: this.areBetaFeaturesEnabled(),
       mockPremiumUser: this.isMockPremiumUser(),
       enableTestAlerts: this.areTestAlertsEnabled(),
+      // 🎯 AutoPick制限解放機能
+      bypassInitialUserLimits: this.shouldBypassInitialUserLimits(),
+      skipOnboardingRequirements: this.shouldSkipOnboardingRequirements(),
       // MECE補完機能
       forcedAPIErrors: this.shouldForceAPIErrors(),
       mockNetworkConditions: this.shouldMockNetworkConditions(),

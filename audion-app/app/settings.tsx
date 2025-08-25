@@ -17,7 +17,7 @@ import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { useLanguage } from '../context/LanguageContext';
 import { useTranslation } from 'react-i18next';
-import DebugMenu from '../components/DebugMenu';
+import AutoPickDebugMenu from '../components/AutoPickDebugMenu';
 import DebugService from '../services/DebugService';
 import CacheService from '../services/CacheService';
 import ArticleManagerService from '../services/ArticleManagerService';
@@ -194,7 +194,7 @@ export default function QuickSettingsScreen() {
       subtitle: 'Manage archived articles and bookmarks',
       icon: 'bookmark-outline',
       type: 'navigation',
-      onPress: () => router.push('/(tabs)/archive')
+      onPress: () => router.push('/archive')
     },
     {
       id: 'theme',
@@ -812,7 +812,7 @@ export default function QuickSettingsScreen() {
       </Modal>
 
       {/* Debug Menu Modal */}
-      <DebugMenu
+      <AutoPickDebugMenu
         visible={debugMenuVisible}
         onClose={() => setDebugMenuVisible(false)}
       />

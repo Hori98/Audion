@@ -23,6 +23,13 @@ interface FeedActionBarProps {
   onAutoPick: () => void;
   onToggleSelection: () => void;
   onReadStatusFilter: () => void;
+  // AutoPick progress
+  autoPickProgress?: {
+    isActive: boolean;
+    progress: number;
+    stage: 'articles' | 'script' | 'audio' | 'complete';
+    articlesCount?: number;
+  };
 }
 
 export default function FeedActionBar({ 
@@ -34,6 +41,7 @@ export default function FeedActionBar({
   onAutoPick,
   onToggleSelection,
   onReadStatusFilter,
+  autoPickProgress,
 }: FeedActionBarProps) {
   const { theme } = useTheme();
 
@@ -45,6 +53,17 @@ export default function FeedActionBar({
   const isManualPickAvailable = currentReadFilter === 'Read' || currentReadFilter === "This Week's Reads";
 
   const getContextText = () => {
+    // Show AutoPick progress if active
+    if (autoPickProgress?.isActive) {
+      const stageText = {
+        articles: 'Selecting articles',
+        script: 'Generating script',
+        audio: 'Creating audio',
+        complete: 'Complete'
+      }[autoPickProgress.stage];
+      return `${Math.round(autoPickProgress.progress)}% • ${stageText}${autoPickProgress.articlesCount ? ` • ${autoPickProgress.articlesCount} articles` : ''}`;
+    }
+
     if (selectionMode) {
       const filterType = currentReadFilter === "This Week's Reads" ? "this week's reads" : "read articles";
       return `${selectedCount} selected from ${articlesCount} ${filterType}`;
@@ -77,23 +96,25 @@ export default function FeedActionBar({
         <Text style={[styles.contextText, { color: theme.textMuted }]}>
           {getContextText()}
         </Text>
+        
+        {/* Progress Bar for AutoPick */}
+        {autoPickProgress?.isActive && (
+          <View style={[styles.progressBarContainer, { backgroundColor: theme.divider }]}>
+            <View 
+              style={[
+                styles.progressBar, 
+                { 
+                  backgroundColor: theme.primary,
+                  width: `${Math.round(autoPickProgress.progress)}%`
+                }
+              ]} 
+            />
+          </View>
+        )}
       </View>
 
       {/* Action Buttons */}
       <View style={styles.actionsContainer}>
-        
-        {/* Read Status Filter Button */}
-        <TouchableOpacity
-          style={[styles.actionButton, styles.smallButton, getFilterButtonStyle()]}
-          onPress={onReadStatusFilter}
-          activeOpacity={0.8}
-        >
-          <Ionicons 
-            name="eye-outline" 
-            size={14} 
-            color={getFilterIconColor()} 
-          />
-        </TouchableOpacity>
 
         {/* Manual Selection Toggle - Show for Read articles and This Week's Reads */}
         {isManualPickAvailable && (
@@ -195,6 +216,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+  },
+  progressBarContainer: {
+    height: 2,
+    borderRadius: 1,
+    marginTop: 6,
+    overflow: 'hidden',
+  },
+  progressBar: {
+    height: '100%',
+    borderRadius: 1,
   },
   buttonText: {
     color: '#fff',

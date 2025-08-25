@@ -19,13 +19,21 @@ interface HomeActionBarProps {
   onAutoPick: () => void;
   isCreating: boolean;
   articlesCount: number;
+  // AutoPick progress
+  autoPickProgress?: {
+    isActive: boolean;
+    progress: number;
+    stage: 'articles' | 'script' | 'audio' | 'complete';
+    articlesCount?: number;
+  };
 }
 
 export default function HomeActionBar({ 
   currentGenre, 
   onAutoPick, 
   isCreating, 
-  articlesCount 
+  articlesCount,
+  autoPickProgress
 }: HomeActionBarProps) {
   const { theme } = useTheme();
 
@@ -37,14 +45,44 @@ export default function HomeActionBar({
     return currentGenre === 'All' ? 'all articles' : `${currentGenre} articles`;
   };
 
+  const getContextText = () => {
+    // Show AutoPick progress if active
+    if (autoPickProgress?.isActive) {
+      const stageText = {
+        articles: 'Selecting articles',
+        script: 'Generating script',
+        audio: 'Creating audio',
+        complete: 'Complete'
+      }[autoPickProgress.stage];
+      return `${Math.round(autoPickProgress.progress)}% • ${stageText}${autoPickProgress.articlesCount ? ` • ${autoPickProgress.articlesCount} articles` : ''}`;
+    }
+    
+    return `${articlesCount} ${getGenreLabel()} available`;
+  };
+
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       
       {/* Context Info */}
       <View style={styles.contextInfo}>
         <Text style={[styles.contextText, { color: theme.textMuted }]}>
-          {articlesCount} {getGenreLabel()} available
+          {getContextText()}
         </Text>
+        
+        {/* Progress Bar for AutoPick */}
+        {autoPickProgress?.isActive && (
+          <View style={[styles.progressBarContainer, { backgroundColor: theme.divider }]}>
+            <View 
+              style={[
+                styles.progressBar, 
+                { 
+                  backgroundColor: theme.primary,
+                  width: `${Math.round(autoPickProgress.progress)}%`
+                }
+              ]} 
+            />
+          </View>
+        )}
       </View>
 
       {/* Action Button */}
@@ -108,5 +146,15 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 14,
     fontWeight: '600',
+  },
+  progressBarContainer: {
+    height: 2,
+    borderRadius: 1,
+    marginTop: 6,
+    overflow: 'hidden',
+  },
+  progressBar: {
+    height: '100%',
+    borderRadius: 1,
   },
 });
