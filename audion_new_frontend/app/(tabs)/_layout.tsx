@@ -42,8 +42,13 @@ export default function TabLayout() {
   }
 
   // Redirect to login if not authenticated
+  React.useEffect(() => {
+    if (!isLoading && !isAuthenticated) {
+      router.replace('/auth/login');
+    }
+  }, [isLoading, isAuthenticated]);
+
   if (!isAuthenticated) {
-    router.replace('/auth/login');
     return null;
   }
 
