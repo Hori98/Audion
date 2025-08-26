@@ -17,8 +17,8 @@ import {
 
 // Storage Keys
 const STORAGE_KEYS = {
-  TOKEN: 'audion_auth_token',
-  USER: 'audion_user_data',
+  TOKEN: '@audion_auth_token',
+  USER: '@audion_user_data',
 } as const;
 
 // Configure axios instance

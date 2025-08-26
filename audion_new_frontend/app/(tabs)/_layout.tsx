@@ -68,30 +68,33 @@ export default function TabLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Feed',
+          title: 'ホーム',
           tabBarIcon: ({ color }) => <TabBarIcon name="home" color={color} />,
-          headerTitle: `Welcome, ${user?.display_name || 'User'}`,
-          headerRight: () => (
-            <Link href="/modal" asChild>
-              <Pressable>
-                {({ pressed }) => (
-                  <FontAwesome
-                    name="user"
-                    size={25}
-                    color={Colors[colorScheme ?? 'light'].text}
-                    style={{ marginRight: 15, opacity: pressed ? 0.5 : 1 }}
-                  />
-                )}
-              </Pressable>
-            </Link>
-          ),
+          headerShown: false,
+        }}
+      />
+      <Tabs.Screen
+        name="articles"
+        options={{
+          title: 'フィード',
+          tabBarIcon: ({ color }) => <TabBarIcon name="newspaper-o" color={color} />,
+          headerShown: false,
+        }}
+      />
+      <Tabs.Screen
+        name="discover"
+        options={{
+          title: 'ディスカバー',
+          tabBarIcon: ({ color }) => <TabBarIcon name="search" color={color} />,
+          headerShown: false,
         }}
       />
       <Tabs.Screen
         name="two"
         options={{
-          title: 'Library',
+          title: 'ライブラリ',
           tabBarIcon: ({ color }) => <TabBarIcon name="music" color={color} />,
+          headerShown: false,
         }}
       />
     </Tabs>
