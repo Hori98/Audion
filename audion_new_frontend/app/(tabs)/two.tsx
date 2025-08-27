@@ -5,10 +5,13 @@ import {
   TouchableOpacity, 
   ActivityIndicator, 
   RefreshControl,
-  Alert
+  Alert,
+  View,
+  Text
 } from 'react-native';
-import { Text, View } from '@/components/Themed';
 import { useAuth } from '../../context/AuthContext';
+import HorizontalTabs from '../../components/HorizontalTabs';
+import UnifiedHeader from '../../components/UnifiedHeader';
 
 interface AudioContent {
   id: string;
@@ -38,6 +41,11 @@ interface Playlist {
 export default function LibraryScreen() {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<'playlists' | 'mylist'>('playlists');
+  
+  const libraryTabs = [
+    { id: 'playlists', name: 'プレイリスト' },
+    { id: 'mylist', name: 'マイリスト' }
+  ];
   const [audioContent, setAudioContent] = useState<AudioContent[]>([]);
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
   const [loading, setLoading] = useState(true);
@@ -155,38 +163,15 @@ export default function LibraryScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>ライブラリ</Text>
-        {activeTab === 'playlists' && (
-          <TouchableOpacity 
-            style={styles.createButton}
-            onPress={() => setShowCreatePlaylistModal(true)}
-          >
-            <Text style={styles.createButtonText}>+ プレイリスト</Text>
-          </TouchableOpacity>
-        )}
-      </View>
+      <UnifiedHeader />
 
       {/* Tab Header */}
-      <View style={styles.tabHeader}>
-        <TouchableOpacity
-          style={[styles.tabButton, activeTab === 'playlists' && styles.activeTab]}
-          onPress={() => setActiveTab('playlists')}
-        >
-          <Text style={[styles.tabText, activeTab === 'playlists' && styles.activeTabText]}>
-            📚 プレイリスト
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.tabButton, activeTab === 'mylist' && styles.activeTab]}
-          onPress={() => setActiveTab('mylist')}
-        >
-          <Text style={[styles.tabText, activeTab === 'mylist' && styles.activeTabText]}>
-            🎧 マイリスト
-          </Text>
-        </TouchableOpacity>
-      </View>
+      <HorizontalTabs
+        tabs={libraryTabs}
+        selectedTab={activeTab}
+        onTabSelect={(tabId) => setActiveTab(tabId as 'playlists' | 'mylist')}
+        style={styles.tabHeader}
+      />
 
       <ScrollView
         contentContainerStyle={styles.scrollContent}
@@ -319,8 +304,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 24,
-    paddingVertical: 16,
+    paddingHorizontal: 20,
+    paddingTop: 60, // Account for status bar and dynamic island
+    paddingBottom: 16,
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255,255,255,0.1)',
   },
@@ -354,7 +340,7 @@ const styles = StyleSheet.create({
   tabHeader: {
     flexDirection: 'row',
     paddingHorizontal: 24,
-    paddingVertical: 16,
+    paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255,255,255,0.1)',
   },

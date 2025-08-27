@@ -14,11 +14,14 @@ import {
   Modal,
   RefreshControl,
   FlatList,
+  View,
+  Text,
 } from 'react-native';
-import { Text, View } from '@/components/Themed';
 import { Link } from 'expo-router';
 import { RSSFeedState, RSSFeedActions } from '../hooks/useRSSFeed';
 import { Article } from '../services/ArticleService';
+import HorizontalTabs from './HorizontalTabs';
+import UnifiedHeader from './UnifiedHeader';
 
 interface FeedUIProps extends RSSFeedState, RSSFeedActions {
   user: any; // From auth context
@@ -28,6 +31,7 @@ interface FeedUIProps extends RSSFeedState, RSSFeedActions {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: '#000000',
   },
   loadingContainer: {
     flex: 1,
@@ -35,26 +39,31 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   header: {
-    padding: 16,
+    paddingHorizontal: 20,
+    paddingTop: 60, // Account for status bar and dynamic island
+    paddingBottom: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    borderBottomColor: 'rgba(255,255,255,0.1)',
   },
   welcomeText: {
     fontSize: 24,
     fontWeight: 'bold',
     marginBottom: 8,
+    color: '#ffffff',
   },
   subText: {
     fontSize: 16,
     opacity: 0.7,
+    color: '#ffffff',
   },
   filterSection: {
-    padding: 16,
+    paddingVertical: 12,
   },
   filterTitle: {
     fontSize: 18,
     fontWeight: '600',
     marginBottom: 12,
+    color: '#ffffff',
   },
   filterRow: {
     flexDirection: 'row',
@@ -63,33 +72,41 @@ const styles = StyleSheet.create({
   filterChip: {
     paddingHorizontal: 16,
     paddingVertical: 8,
-    marginRight: 8,
-    backgroundColor: '#f0f0f0',
+    marginRight: 12,
+    backgroundColor: '#111111',
     borderRadius: 20,
     minWidth: 80,
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
   },
   activeFilterChip: {
     backgroundColor: '#007AFF',
   },
   filterChipText: {
     fontSize: 14,
+    color: '#cccccc',
+    fontWeight: '500',
   },
   activeFilterChipText: {
-    color: 'white',
+    color: '#ffffff',
   },
   articlesList: {
     flex: 1,
   },
   articleItem: {
+    backgroundColor: '#111111',
     padding: 16,
+    marginBottom: 8,
     borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    borderBottomColor: 'rgba(255,255,255,0.05)',
+    borderRadius: 8,
   },
   articleTitle: {
     fontSize: 16,
     fontWeight: '600',
     marginBottom: 8,
+    color: '#ffffff',
   },
   articleMeta: {
     flexDirection: 'row',
@@ -99,11 +116,12 @@ const styles = StyleSheet.create({
   },
   articleSource: {
     fontSize: 12,
-    opacity: 0.6,
+    color: '#007bff',
+    fontWeight: '600',
   },
   articleDate: {
     fontSize: 12,
-    opacity: 0.6,
+    color: '#888888',
   },
   audioButton: {
     backgroundColor: '#007AFF',
@@ -227,20 +245,20 @@ const styles = StyleSheet.create({
 });
 
 const RSS_SOURCES = [
-  { id: 'all', name: 'すべてのソース', icon: '📰' },
-  { id: 'nhk', name: 'NHK NEWS WEB', icon: '📺' },
-  { id: 'asahi', name: '朝日新聞デジタル', icon: '📰' },
-  { id: 'nikkei', name: '日本経済新聞', icon: '💼' },
-  { id: 'itmedia', name: 'ITmedia NEWS', icon: '💻' }
+  { id: 'all', name: 'すべて' },
+  { id: 'nhk', name: 'NHK NEWS' },
+  { id: 'asahi', name: '朝日新聞' },
+  { id: 'nikkei', name: '日経新聞' },
+  { id: 'itmedia', name: 'ITmedia' }
 ];
 
 const GENRES = [
-  { id: 'all', name: 'すべて', icon: '📰' },
-  { id: 'news', name: 'ニュース', icon: '📰' },
-  { id: 'technology', name: 'テクノロジー', icon: '💻' },
-  { id: 'business', name: 'ビジネス', icon: '💼' },
-  { id: 'sports', name: 'スポーツ', icon: '⚽' },
-  { id: 'entertainment', name: 'エンタメ', icon: '🎬' }
+  { id: 'all', name: 'すべて' },
+  { id: 'news', name: 'ニュース' },
+  { id: 'technology', name: 'テクノロジー' },
+  { id: 'business', name: 'ビジネス' },
+  { id: 'sports', name: 'スポーツ' },
+  { id: 'entertainment', name: 'エンタメ' }
 ];
 
 export const FeedUI: React.FC<FeedUIProps> = ({
@@ -331,73 +349,28 @@ export const FeedUI: React.FC<FeedUIProps> = ({
 
   return (
     <View style={styles.container}>
+      <UnifiedHeader />
+      
       <ScrollView
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
       >
-        {/* Header */}
-        <View style={styles.header}>
-          <Text style={styles.welcomeText}>
-            こんにちは、{user?.display_name || 'ユーザー'}さん
-          </Text>
-          <Text style={styles.subText}>
-            今日のニュースをお聞きください
-          </Text>
-        </View>
+        {/* Source Filter */}
+        <HorizontalTabs
+          tabs={RSS_SOURCES}
+          selectedTab={selectedSource}
+          onTabSelect={setSelectedSource}
+          style={styles.filterSection}
+        />
 
-        {/* Filters */}
-        <View style={styles.filterSection}>
-          <Text style={styles.filterTitle}>ソース</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            <View style={styles.filterRow}>
-              {RSS_SOURCES.map((source) => (
-                <TouchableOpacity
-                  key={source.id}
-                  style={[
-                    styles.filterChip,
-                    selectedSource === source.id && styles.activeFilterChip,
-                  ]}
-                  onPress={() => setSelectedSource(source.id)}
-                >
-                  <Text
-                    style={[
-                      styles.filterChipText,
-                      selectedSource === source.id && styles.activeFilterChipText,
-                    ]}
-                  >
-                    {source.icon} {source.name}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </ScrollView>
-
-          <Text style={[styles.filterTitle, { marginTop: 16 }]}>ジャンル</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            <View style={styles.filterRow}>
-              {GENRES.map((genre) => (
-                <TouchableOpacity
-                  key={genre.id}
-                  style={[
-                    styles.filterChip,
-                    selectedGenre === genre.id && styles.activeFilterChip,
-                  ]}
-                  onPress={() => setSelectedGenre(genre.id)}
-                >
-                  <Text
-                    style={[
-                      styles.filterChipText,
-                      selectedGenre === genre.id && styles.activeFilterChipText,
-                    ]}
-                  >
-                    {genre.icon} {genre.name}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </ScrollView>
-        </View>
+        {/* Genre Filter */}
+        <HorizontalTabs
+          tabs={GENRES}
+          selectedTab={selectedGenre}
+          onTabSelect={setSelectedGenre}
+          style={styles.filterSection}
+        />
 
         {/* Add Source Button */}
         <TouchableOpacity
