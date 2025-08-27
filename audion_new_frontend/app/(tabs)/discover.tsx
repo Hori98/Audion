@@ -4,10 +4,13 @@ import {
   ScrollView, 
   TouchableOpacity, 
   RefreshControl,
-  ActivityIndicator
+  ActivityIndicator,
+  View,
+  Text
 } from 'react-native';
-import { Text, View } from '@/components/Themed';
 import { useAuth } from '../../context/AuthContext';
+import HorizontalTabs from '../../components/HorizontalTabs';
+import UnifiedHeader from '../../components/UnifiedHeader';
 
 interface CommunityAudio {
   id: string;
@@ -30,11 +33,11 @@ export default function DiscoverScreen() {
   const [selectedCategory, setSelectedCategory] = useState('all');
 
   const categories = [
-    { id: 'all', name: 'すべて', icon: '🌟' },
-    { id: 'official', name: '公式', icon: '⭐' },
-    { id: 'news', name: 'ニュース', icon: '📰' },
-    { id: 'technology', name: 'テクノロジー', icon: '💻' },
-    { id: 'business', name: 'ビジネス', icon: '💼' }
+    { id: 'all', name: 'すべて' },
+    { id: 'official', name: '公式' },
+    { id: 'news', name: 'ニュース' },
+    { id: 'technology', name: 'テクノロジー' },
+    { id: 'business', name: 'ビジネス' }
   ];
 
   // Mock data for beta version with admin content
@@ -154,50 +157,19 @@ export default function DiscoverScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>ディスカバー</Text>
-        <View style={styles.betaBadge}>
-          <Text style={styles.betaBadgeText}>BETA</Text>
-        </View>
-      </View>
+      <UnifiedHeader />
 
       <ScrollView 
         contentContainerStyle={styles.scrollContent}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       >
-        {/* Beta Notice */}
-        <View style={styles.betaNotice}>
-          <Text style={styles.betaNoticeTitle}>🚧 ベータ版のお知らせ</Text>
-          <Text style={styles.betaNoticeText}>
-            現在、運営チームが作成したオーディオコンテンツのみを配信しています。
-            今後、コミュニティ機能を拡張予定です。
-          </Text>
-        </View>
-
         {/* Category Filter */}
-        <View style={styles.categorySection}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryScrollContent}>
-            {categories.map((category) => (
-              <TouchableOpacity
-                key={category.id}
-                style={[
-                  styles.categoryChip,
-                  selectedCategory === category.id && styles.categoryChipSelected
-                ]}
-                onPress={() => setSelectedCategory(category.id)}
-              >
-                <Text style={styles.categoryIcon}>{category.icon}</Text>
-                <Text style={[
-                  styles.categoryText,
-                  selectedCategory === category.id && styles.categoryTextSelected
-                ]}>
-                  {category.name}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        </View>
+        <HorizontalTabs
+          tabs={categories}
+          selectedTab={selectedCategory}
+          onTabSelect={setSelectedCategory}
+          style={styles.categorySection}
+        />
 
         {/* Community Audio List */}
         <View style={styles.audioSection}>
@@ -285,8 +257,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 24,
-    paddingVertical: 16,
+    paddingHorizontal: 20,
+    paddingTop: 60, // Account for status bar and dynamic island
+    paddingBottom: 16,
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255,255,255,0.1)',
   },
@@ -295,39 +268,9 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#ffffff',
   },
-  betaBadge: {
-    backgroundColor: '#ffc107',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  betaBadgeText: {
-    color: '#000000',
-    fontSize: 12,
-    fontWeight: 'bold',
-  },
   scrollContent: {
     flexGrow: 1,
     paddingBottom: 24,
-  },
-  betaNotice: {
-    margin: 24,
-    padding: 16,
-    backgroundColor: '#1a1a1a',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#ffc107',
-  },
-  betaNoticeTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#ffc107',
-    marginBottom: 8,
-  },
-  betaNoticeText: {
-    fontSize: 14,
-    color: '#cccccc',
-    lineHeight: 20,
   },
   categorySection: {
     paddingVertical: 12,

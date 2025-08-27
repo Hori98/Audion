@@ -1,0 +1,105 @@
+/**
+ * Unified Header Component
+ * Consistent header across all tabs with user icon, app logo, and search
+ */
+
+import React from 'react';
+import {
+  View,
+  TouchableOpacity,
+  Text,
+  StyleSheet,
+} from 'react-native';
+
+interface UnifiedHeaderProps {
+  onUserPress?: () => void;
+  onSearchPress?: () => void;
+}
+
+export default function UnifiedHeader({ 
+  onUserPress, 
+  onSearchPress 
+}: UnifiedHeaderProps) {
+  return (
+    <View style={styles.container}>
+      {/* Left: User Icon */}
+      <TouchableOpacity 
+        style={styles.userButton}
+        onPress={onUserPress}
+      >
+        <View style={styles.userIcon}>
+          <Text style={styles.userIconText}>👤</Text>
+        </View>
+      </TouchableOpacity>
+
+      {/* Center: App Logo */}
+      <View style={styles.centerSection}>
+        <Text style={styles.appLogo}>Audion</Text>
+      </View>
+
+      {/* Right: Search Icon */}
+      <TouchableOpacity 
+        style={styles.searchButton}
+        onPress={onSearchPress}
+      >
+        <Text style={styles.searchIcon}>🔍</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingTop: 60, // Dynamic Island + Status Bar
+    paddingBottom: 16,
+    backgroundColor: '#000000',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.1)',
+  },
+  userButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#111111',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  userIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#333333',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  userIconText: {
+    fontSize: 16,
+    color: '#ffffff',
+  },
+  centerSection: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  appLogo: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#ffffff',
+    letterSpacing: 1,
+  },
+  searchButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#111111',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  searchIcon: {
+    fontSize: 18,
+    color: '#ffffff',
+  },
+});
