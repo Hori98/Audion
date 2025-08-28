@@ -4,6 +4,10 @@ import { useAuth } from '../../context/AuthContext';
 import { router } from 'expo-router';
 import HorizontalTabs from '../../components/HorizontalTabs';
 import UnifiedHeader from '../../components/UnifiedHeader';
+import SearchModal from '../../components/SearchModal';
+import HeroCarousel from '../../components/HeroCarousel';
+import { useRSSFeed } from '../../hooks/useRSSFeed';
+import AudioService from '../../services/AudioService';
 
 const GENRES = [
   { id: 'all', name: 'すべて' },
@@ -30,12 +34,116 @@ const GENRES = [
 
 export default function HomeScreen() {
   const { user } = useAuth();
-  const [selectedGenre, setSelectedGenre] = useState('all');
   const [refreshing, setRefreshing] = useState(false);
+  const [showSearchModal, setShowSearchModal] = useState(false);
+  const { 
+    articles, 
+    loading, 
+    selectedGenre,
+    setSelectedGenre,
+    onRefresh: rssRefresh 
+  } = useRSSFeed();
+
+  // Transform RSS articles to hero format, fallback to mock data
+  const getHeroItems = () => {
+    if (articles && articles.length > 0) {
+      return articles.slice(0, 5).map((article, index) => ({
+        id: article.id,
+        title: article.title,
+        description: article.summary || article.title,
+        mediaName: article.source_name || 'ニュースソース',
+        publishedAt: article.published_at,
+        imageUrl: `https://picsum.photos/400/240?random=${article.id}`, // Placeholder until RSS images
+        url: article.url
+      }));
+    }
+    
+    // Fallback to mock data when no articles available
+    return [
+      {
+        id: 'mock-1',
+        title: 'AI技術の最新動向：ChatGPTを超える新世代モデルが登場',
+        description: '人工知能の分野で革命的な進歩が続く中、新たなLLMモデルが業界に大きな変化をもたらす可能性を秘めている。',
+        mediaName: 'TechCrunch Japan',
+        publishedAt: '2025-01-23T09:00:00Z',
+        imageUrl: 'https://picsum.photos/400/240?random=1',
+        url: 'https://example.com/ai-tech-news'
+      },
+      {
+        id: 'mock-2', 
+        title: '経済市場の回復傾向が鮮明に、専門家が分析する今後の展望',
+        description: '今四半期の経済指標は予想を上回る結果となり、アナリストたちは慎重ながらも楽観的な見通しを示している。',
+        mediaName: '日本経済新聞',
+        publishedAt: '2025-01-23T08:30:00Z',
+        imageUrl: 'https://picsum.photos/400/240?random=2',
+        url: 'https://example.com/economy-news'
+      }
+    ];
+  };
+
+  const heroItems = getHeroItems();
+
+  // 実際の記事から注目記事とおすすめ記事を取得
+  const getFeaturedArticles = () => {
+    if (articles && articles.length > 5) {
+      return articles.slice(5, 7); // Hero Carouselの後の2記事を使用
+    }
+    return [{
+      id: 'sample-featured-1',
+      title: 'サンプル記事',
+      summary: 'これはサンプル記事です。実際の記事データが取得できない場合に表示されます。',
+      url: null,
+      source_name: 'ダミー',
+      published_at: new Date().toISOString(),
+      category: 'news'
+    }, {
+      id: 'sample-featured-2', 
+      title: 'サンプル記事',
+      summary: 'これはサンプル記事です。実際の記事データが取得できない場合に表示されます。',
+      url: null,
+      source_name: 'ダミー',
+      published_at: new Date().toISOString(),
+      category: 'sports'
+    }];
+  };
+
+  const getRecommendedArticles = () => {
+    if (articles && articles.length > 7) {
+      return articles.slice(7, 10); // さらに次の3記事を使用
+    }
+    return [{
+      id: 'sample-recommended-1',
+      title: 'サンプル記事',
+      summary: 'これはサンプル記事です。実際の記事データが取得できない場合に表示されます。',
+      url: null,
+      source_name: 'ダミー',
+      published_at: new Date().toISOString(),
+      category: 'technology'
+    }, {
+      id: 'sample-recommended-2',
+      title: 'サンプル記事', 
+      summary: 'これはサンプル記事です。実際の記事データが取得できない場合に表示されます。',
+      url: null,
+      source_name: 'ダミー',
+      published_at: new Date().toISOString(),
+      category: 'business'
+    }, {
+      id: 'sample-recommended-3',
+      title: 'サンプル記事',
+      summary: 'これはサンプル記事です。実際の記事データが取得できない場合に表示されます。',
+      url: null,
+      source_name: 'ダミー',
+      published_at: new Date().toISOString(),
+      category: 'sports'
+    }];
+  };
+
+  const featuredArticles = getFeaturedArticles();
+  const recommendedArticles = getRecommendedArticles();
 
   const onRefresh = () => {
     setRefreshing(true);
-    // TODO: Fetch latest content
+    rssRefresh();
     setTimeout(() => setRefreshing(false), 1000);
   };
 
@@ -58,16 +166,86 @@ export default function HomeScreen() {
     }
   };
 
+  const handleSearchResult = (result: any) => {
+    // Handle different types of search results
+    switch (result.type) {
+      case 'article':
+        handleArticlePress({ title: result.title, url: result.url });
+        break;
+      case 'genre':
+        setSelectedGenre(result.id || 'all');
+        break;
+      case 'source':
+        // Navigate to feed tab with selected source
+        Alert.alert('ソース選択', `${result.title}のコンテンツを表示します`);
+        break;
+      default:
+        break;
+    }
+  };
+
+  const handleHeroItemPress = (item: any) => {
+    if (item.url) {
+      router.push({
+        pathname: '/article-webview',
+        params: { 
+          url: item.url, 
+          title: item.title 
+        }
+      });
+    } else {
+      Alert.alert(
+        'ニュース記事',
+        `${item.title}\n\n※ サンプル記事です`,
+        [{ text: 'OK' }]
+      );
+    }
+  };
+
+  const handleAudioGenerate = async (articleId: string, title: string) => {
+    console.log('🎵 [AUDIO DEBUG] Generate button pressed for:', title);
+    
+    Alert.alert(
+      '音声生成',
+      `"${title}"の音声を生成しますか？`,
+      [
+        { text: 'キャンセル', style: 'cancel' },
+        {
+          text: '生成開始',
+          onPress: async () => {
+            try {
+              console.log('🎵 [AUDIO DEBUG] Starting audio generation...');
+              
+              // Call AudioService (シングルトンなのでnewは不要)
+              const response = await AudioService.generateAudio({
+                article_id: articleId,
+                title: title,
+                language: 'ja',
+                voice_type: 'standard'
+              });
+              
+              console.log('🎵 [AUDIO DEBUG] Audio generation response:', response);
+              Alert.alert('成功', '音声生成を開始しました！');
+              
+            } catch (error) {
+              console.error('🎵 [AUDIO ERROR] Audio generation failed:', error);
+              Alert.alert('エラー', `音声生成に失敗しました: ${error.message || 'Unknown error'}`);
+            }
+          }
+        }
+      ]
+    );
+  };
+
   return (
     <View style={styles.container}>
       <UnifiedHeader 
-        onUserPress={() => Alert.alert('Settings', '設定メニュー（実装予定）')}
-        onSearchPress={() => Alert.alert('Search', '検索機能（実装予定）')}
+        onSearchPress={() => setShowSearchModal(true)}
       />
 
       <ScrollView 
         contentContainerStyle={styles.scrollContent}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+        refreshControl={<RefreshControl refreshing={refreshing || loading} onRefresh={onRefresh} />}
       >
         {/* Genre Selection */}
         <HorizontalTabs
@@ -77,167 +255,90 @@ export default function HomeScreen() {
           style={styles.genreSection}
         />
 
-        {/* Hero Section - 5 Featured Articles */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Hero</Text>
-          
-          {/* Main Hero Article */}
-          <TouchableOpacity 
-            style={styles.heroCard}
-            onPress={() => handleArticlePress({
-              title: 'Breaking: テクノロジー業界の最新動向'
-            })}
-          >
-            <View style={styles.heroContent}>
-              <Text style={styles.heroTitle}>Breaking: テクノロジー業界の最新動向</Text>
-              <Text style={styles.heroDescription}>
-                AI技術の進歩により、今年は大きな変革の年になると予想されています...
-              </Text>
-              <View style={styles.heroMeta}>
-                <Text style={styles.heroSource}>NHK NEWS WEB</Text>
-                <Text style={styles.heroTime}>5分前</Text>
-              </View>
-            </View>
-          </TouchableOpacity>
+        {/* Hero Carousel Section */}
+        <HeroCarousel
+          items={heroItems}
+          onItemPress={handleHeroItemPress}
+        />
 
-          {/* Additional Hero Articles */}
-          {[
-            { title: '量子コンピューティングの商業化が現実に', source: '日経新聞', time: '15分前' },
-            { title: '気候変動対策で新たな国際合意', source: 'CNN Japan', time: '30分前' },
-            { title: '宇宙探査ミッション、火星でのサンプル採取に成功', source: 'NASA Japan', time: '1時間前' },
-            { title: '医療AI、がん診断の精度が95%に向上', source: 'Medical News', time: '2時間前' }
-          ].map((article, index) => (
+        {/* Featured News Section */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>注目のニュース</Text>
+          
+          {featuredArticles.map((article, index) => (
             <TouchableOpacity 
-              key={index}
-              style={styles.heroSubCard}
+              key={article.id}
+              style={styles.articleCard}
               onPress={() => handleArticlePress({
-                title: article.title
+                title: article.title,
+                url: article.url
               })}
             >
-              <View style={styles.heroSubContent}>
-                <Text style={styles.heroSubTitle}>{article.title}</Text>
-                <View style={styles.heroSubMeta}>
-                  <Text style={styles.heroSubSource}>{article.source}</Text>
-                  <Text style={styles.heroSubTime}>{article.time}</Text>
+              <View style={styles.articleContent}>
+                <Text style={styles.articleTitle}>{article.title}</Text>
+                <Text style={styles.articleSummary}>
+                  {article.summary || 'サンプル記事の概要です。'}
+                </Text>
+                <View style={styles.articleMeta}>
+                  <Text style={styles.articleSource}>{article.source_name}</Text>
+                  <Text style={styles.articleTime}>
+                    {article.published_at ? new Date(article.published_at).toLocaleString('ja-JP', { 
+                      month: 'numeric', 
+                      day: 'numeric', 
+                      hour: 'numeric',
+                      minute: '2-digit'
+                    }) : '最近'}
+                  </Text>
+                  <TouchableOpacity 
+                    style={styles.generateButton}
+                    onPress={() => handleAudioGenerate(article.id, article.title)}
+                  >
+                    <Text style={styles.generateButtonText}>♪</Text>
+                  </TouchableOpacity>
                 </View>
               </View>
             </TouchableOpacity>
           ))}
         </View>
 
-        {/* Featured News Section */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>注目のニュース</Text>
-          
-          <TouchableOpacity 
-            style={styles.articleCard}
-            onPress={() => handleArticlePress({
-              title: '経済市場の回復基調が続く'
-            })}
-          >
-            <View style={styles.articleContent}>
-              <Text style={styles.articleTitle}>経済市場の回復基調が続く</Text>
-              <Text style={styles.articleSummary}>
-                今四半期の経済指標は予想を上回る結果となり、市場の回復傾向が鮮明に...
-              </Text>
-              <View style={styles.articleMeta}>
-                <Text style={styles.articleSource}>Bloomberg Japan</Text>
-                <Text style={styles.articleTime}>3時間前</Text>
-                <TouchableOpacity style={styles.generateButton}>
-                  <Text style={styles.generateButtonText}>♪</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </TouchableOpacity>
-
-          <TouchableOpacity 
-            style={styles.articleCard}
-            onPress={() => handleArticlePress({
-              title: 'スポーツ界での新記録達成'
-            })}
-          >
-            <View style={styles.articleContent}>
-              <Text style={styles.articleTitle}>スポーツ界での新記録達成</Text>
-              <Text style={styles.articleSummary}>
-                昨日の大会で複数の世界記録が更新され、スポーツ界に新たな歴史が刻まれました...
-              </Text>
-              <View style={styles.articleMeta}>
-                <Text style={styles.articleSource}>Sports Today</Text>
-                <Text style={styles.articleTime}>4時間前</Text>
-                <TouchableOpacity style={styles.generateButton}>
-                  <Text style={styles.generateButtonText}>♪</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </TouchableOpacity>
-        </View>
-
         {/* Recommended Section */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>おすすめ</Text>
           
-          <TouchableOpacity 
-            style={styles.articleCard}
-            onPress={() => handleArticlePress({
-              title: '新しいスマートフォン技術の革新'
-            })}
-          >
-            <View style={styles.articleContent}>
-              <Text style={styles.articleTitle}>新しいスマートフォン技術の革新</Text>
-              <Text style={styles.articleSummary}>
-                最新の5G技術とAIプロセッサーが組み合わさった革新的なデバイス...
-              </Text>
-              <View style={styles.articleMeta}>
-                <Text style={styles.articleSource}>ITmedia NEWS</Text>
-                <Text style={styles.articleTime}>15分前</Text>
-                <TouchableOpacity style={styles.generateButton}>
-                  <Text style={styles.generateButtonText}>♪</Text>
-                </TouchableOpacity>
+          {recommendedArticles.map((article, index) => (
+            <TouchableOpacity 
+              key={article.id}
+              style={styles.articleCard}
+              onPress={() => handleArticlePress({
+                title: article.title,
+                url: article.url
+              })}
+            >
+              <View style={styles.articleContent}>
+                <Text style={styles.articleTitle}>{article.title}</Text>
+                <Text style={styles.articleSummary}>
+                  {article.summary || 'サンプル記事の概要です。'}
+                </Text>
+                <View style={styles.articleMeta}>
+                  <Text style={styles.articleSource}>{article.source_name}</Text>
+                  <Text style={styles.articleTime}>
+                    {article.published_at ? new Date(article.published_at).toLocaleString('ja-JP', { 
+                      month: 'numeric', 
+                      day: 'numeric', 
+                      hour: 'numeric',
+                      minute: '2-digit'
+                    }) : '最近'}
+                  </Text>
+                  <TouchableOpacity 
+                    style={styles.generateButton}
+                    onPress={() => handleAudioGenerate(article.id, article.title)}
+                  >
+                    <Text style={styles.generateButtonText}>♪</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
-            </View>
-          </TouchableOpacity>
-
-          <TouchableOpacity 
-            style={styles.articleCard}
-            onPress={() => handleArticlePress({
-              title: '経済市場の最新分析レポート'
-            })}
-          >
-            <View style={styles.articleContent}>
-              <Text style={styles.articleTitle}>経済市場の最新分析レポート</Text>
-              <Text style={styles.articleSummary}>
-                今四半期の経済指標と来年の予測について専門家が分析...
-              </Text>
-              <View style={styles.articleMeta}>
-                <Text style={styles.articleSource}>日本経済新聞</Text>
-                <Text style={styles.articleTime}>1時間前</Text>
-                <TouchableOpacity style={styles.generateButton}>
-                  <Text style={styles.generateButtonText}>♪</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </TouchableOpacity>
-
-          <TouchableOpacity 
-            style={styles.articleCard}
-            onPress={() => handleArticlePress({
-              title: 'スポーツ界の注目ニュース'
-            })}
-          >
-            <View style={styles.articleContent}>
-              <Text style={styles.articleTitle}>スポーツ界の注目ニュース</Text>
-              <Text style={styles.articleSummary}>
-                来シーズンに向けた新しい戦略と選手の動向について...
-              </Text>
-              <View style={styles.articleMeta}>
-                <Text style={styles.articleSource}>スポーツナビ</Text>
-                <Text style={styles.articleTime}>2時間前</Text>
-                <TouchableOpacity style={styles.generateButton}>
-                  <Text style={styles.generateButtonText}>♪</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </TouchableOpacity>
+            </TouchableOpacity>
+          ))}
         </View>
 
       </ScrollView>
@@ -249,6 +350,13 @@ export default function HomeScreen() {
       >
         <Text style={styles.floatingAutoPickText}>🎯</Text>
       </TouchableOpacity>
+
+      {/* Search Modal */}
+      <SearchModal
+        visible={showSearchModal}
+        onClose={() => setShowSearchModal(false)}
+        onResultPress={handleSearchResult}
+      />
     </View>
   );
 }
@@ -309,75 +417,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#ffffff',
     marginBottom: 12,
-  },
-  heroCard: {
-    backgroundColor: '#111111',
-    borderRadius: 12,
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.05)',
-  },
-  heroContent: {
-    flex: 1,
-  },
-  heroTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#ffffff',
-    marginBottom: 8,
-    lineHeight: 26,
-  },
-  heroDescription: {
-    fontSize: 14,
-    color: '#cccccc',
-    lineHeight: 20,
-    marginBottom: 12,
-  },
-  heroMeta: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  heroSource: {
-    fontSize: 12,
-    color: '#007bff',
-    fontWeight: '600',
-  },
-  heroTime: {
-    fontSize: 12,
-    color: '#888888',
-  },
-  heroSubCard: {
-    backgroundColor: '#111111',
-    borderRadius: 8,
-    padding: 12,
-    marginTop: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.05)',
-  },
-  heroSubContent: {
-    flex: 1,
-  },
-  heroSubTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#ffffff',
-    marginBottom: 6,
-    lineHeight: 18,
-  },
-  heroSubMeta: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  heroSubSource: {
-    fontSize: 11,
-    color: '#007bff',
-    fontWeight: '600',
-  },
-  heroSubTime: {
-    fontSize: 11,
-    color: '#888888',
   },
   articleCard: {
     backgroundColor: '#111111',

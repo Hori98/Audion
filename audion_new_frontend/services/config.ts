@@ -7,13 +7,13 @@
 // For development: local backend server
 // For production: production backend URL
 
-const DEV_API_URL = 'http://localhost:8002';
+const DEV_API_URL = 'http://192.168.11.30:8003';
 const PROD_API_URL = 'https://api.audion.app'; // TODO: Replace with actual production URL
 
 // Determine if we're running in development mode
 const __DEV__ = process.env.NODE_ENV !== 'production';
 
-export const API_BASE_URL = __DEV__ ? DEV_API_URL : PROD_API_URL;
+export const API_BASE_URL = (__DEV__ ? DEV_API_URL : PROD_API_URL) + '/api';
 
 // API Configuration
 export const API_CONFIG = {

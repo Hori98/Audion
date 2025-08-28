@@ -110,6 +110,7 @@ export const useRSSFeed = (): RSSFeedState & RSSFeedActions => {
       // Debug: Check if token exists
       console.log('🔑 [DEBUG] Checking auth token...');
       console.log('🔑 [DEBUG] Token from useAuth:', token ? 'EXISTS' : 'MISSING');
+      console.log('📰 [DEBUG] Selected genre:', selectedGenre);
       
       if (!token) {
         console.error('🚨 [DEBUG] No auth token available - using mock data');
@@ -146,10 +147,21 @@ export const useRSSFeed = (): RSSFeedState & RSSFeedActions => {
         return;
       }
       
-      console.log('📰 [DEBUG] Fetching articles...');
-      const data = await ArticleService.getArticles({ per_page: 20 });
-      console.log('📰 [DEBUG] Articles fetched successfully:', data.articles.length, 'items');
-      setArticles(data.articles);
+      // Prepare API parameters with genre filtering
+      const apiParams: any = { per_page: 20 };
+      if (selectedGenre && selectedGenre !== 'all') {
+        apiParams.genre = selectedGenre;
+        console.log('📰 [DEBUG] Filtering by genre:', selectedGenre);
+      }
+      
+      console.log('📰 [DEBUG] Fetching articles with params:', apiParams);
+      const data = await ArticleService.getArticles(apiParams);
+      console.log('📰 [DEBUG] Articles fetched successfully:', data);
+      
+      // Handle both array responses and object responses
+      const articles = Array.isArray(data) ? data : (data?.articles || []);
+      console.log('📰 [DEBUG] Processing', articles.length, 'articles');
+      setArticles(articles);
     } catch (error) {
       console.error('❌ [DEBUG] Error fetching articles:', error);
       console.log('🔄 [DEBUG] Falling back to mock data due to error');
@@ -175,7 +187,7 @@ export const useRSSFeed = (): RSSFeedState & RSSFeedActions => {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [token]);
+  }, [token, selectedGenre]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);

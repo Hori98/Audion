@@ -1,10 +1,1 @@
-INFO:     Will watch for changes in these directories: ['/Users/hori/Desktop/audion_project_final/Audion_Emergent.AI_Demo/backend']
-INFO:     Uvicorn running on http://0.0.0.0:8002 (Press CTRL+C to quit)
-INFO:     Started reloader process [61299] using StatReload
-INFO:     Started server process [61307]
-INFO:     Waiting for application startup.
-2025-08-08 09:36:12,163 - ERROR - Failed to connect to MongoDB: 
-2025-08-08 09:36:12,163 - INFO - Server will run in limited mode without database
-2025-08-08 09:36:12,163 - INFO - Skipping database initialization - running in limited mode
-INFO:     Application startup complete.
-INFO:     127.0.0.1:57754 - "GET /health HTTP/1.1" 200 OK
+nohup: python: No such file or directory

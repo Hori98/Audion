@@ -84,7 +84,7 @@ class AudioService {
     request: AudioCreateRequest,
     authToken?: string
   ): Promise<AudioGenerationResponse> {
-    const response = await fetch(`${API_BASE_URL}/api/v1/audio/generate`, {
+    const response = await fetch(`${API_BASE_URL}/audio/generate`, {
       method: 'POST',
       headers: await this.getAuthHeaders(authToken),
       body: JSON.stringify(request),
@@ -105,7 +105,7 @@ class AudioService {
     audioId: string,
     authToken?: string
   ): Promise<AudioStatusResponse> {
-    const response = await fetch(`${API_BASE_URL}/api/v1/audio/status/${audioId}`, {
+    const response = await fetch(`${API_BASE_URL}/audio/status/${audioId}`, {
       method: 'GET',
       headers: await this.getAuthHeaders(authToken),
     });
@@ -130,7 +130,7 @@ class AudioService {
     if (params.page) searchParams.set('page', params.page.toString());
     if (params.per_page) searchParams.set('per_page', params.per_page.toString());
 
-    const response = await fetch(`${API_BASE_URL}/api/v1/audio/library?${searchParams}`, {
+    const response = await fetch(`${API_BASE_URL}/audio/library?${searchParams}`, {
       method: 'GET',
       headers: await this.getAuthHeaders(authToken),
     });
@@ -150,7 +150,7 @@ class AudioService {
     audioId: string,
     authToken?: string
   ): Promise<AudioContentResponse> {
-    const response = await fetch(`${API_BASE_URL}/api/v1/audio/${audioId}`, {
+    const response = await fetch(`${API_BASE_URL}/audio/${audioId}`, {
       method: 'GET',
       headers: await this.getAuthHeaders(authToken),
     });
@@ -170,7 +170,7 @@ class AudioService {
     audioId: string,
     authToken?: string
   ): Promise<{ message: string }> {
-    const response = await fetch(`${API_BASE_URL}/api/v1/audio/${audioId}`, {
+    const response = await fetch(`${API_BASE_URL}/audio/${audioId}`, {
       method: 'DELETE',
       headers: await this.getAuthHeaders(authToken),
     });
@@ -190,7 +190,7 @@ class AudioService {
     audioId: string,
     authToken?: string
   ): Promise<{ message: string; play_count: number }> {
-    const response = await fetch(`${API_BASE_URL}/api/v1/audio/${audioId}/play`, {
+    const response = await fetch(`${API_BASE_URL}/audio/${audioId}/play`, {
       method: 'POST',
       headers: await this.getAuthHeaders(authToken),
     });

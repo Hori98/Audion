@@ -3,13 +3,14 @@
  * Consistent header across all tabs with user icon, app logo, and search
  */
 
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   TouchableOpacity,
   Text,
   StyleSheet,
 } from 'react-native';
+import SlideMenu from './SlideMenu';
 
 interface UnifiedHeaderProps {
   onUserPress?: () => void;
@@ -20,13 +21,24 @@ export default function UnifiedHeader({
   onUserPress, 
   onSearchPress 
 }: UnifiedHeaderProps) {
+  const [showSlideMenu, setShowSlideMenu] = useState(false);
+
+  const handleUserPress = () => {
+    if (onUserPress) {
+      onUserPress();
+    } else {
+      setShowSlideMenu(true);
+    }
+  };
+
   return (
-    <View style={styles.container}>
-      {/* Left: User Icon */}
-      <TouchableOpacity 
-        style={styles.userButton}
-        onPress={onUserPress}
-      >
+    <>
+      <View style={styles.container}>
+        {/* Left: User Icon */}
+        <TouchableOpacity 
+          style={styles.userButton}
+          onPress={handleUserPress}
+        >
         <View style={styles.userIcon}>
           <Text style={styles.userIconText}>👤</Text>
         </View>
@@ -44,7 +56,14 @@ export default function UnifiedHeader({
       >
         <Text style={styles.searchIcon}>🔍</Text>
       </TouchableOpacity>
-    </View>
+      </View>
+
+      {/* Slide Menu */}
+      <SlideMenu
+        visible={showSlideMenu}
+        onClose={() => setShowSlideMenu(false)}
+      />
+    </>
   );
 }
 

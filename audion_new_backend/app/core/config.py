@@ -21,7 +21,12 @@ class Settings(BaseSettings):
     # API Configuration
     api_v1_prefix: str = Field(default="/api/v1", env="API_V1_PREFIX")
     cors_origins: list[str] = Field(
-        default=["http://localhost:8081", "http://localhost:19006"], env="CORS_ORIGINS"
+        default=[
+            "http://localhost:8081", 
+            "http://localhost:19006", 
+            "http://localhost:8087",  # Frontend port
+            "http://localhost:8090"   # Alternative frontend port
+        ], env="CORS_ORIGINS"
     )
 
     # Database
