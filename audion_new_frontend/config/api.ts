@@ -6,8 +6,8 @@
 // API Base Configuration
 export const API_CONFIG = {
   BASE_URL: __DEV__ 
-    ? 'http://localhost:8004/api/v1'  // Development - new backend
-    : 'https://api.audion.app/v1',    // Production
+    ? process.env.EXPO_PUBLIC_BACKEND_URL + '/api' || 'http://192.168.11.30:8003/api'  // Development - use env variable
+    : 'https://api.audion.app/api',    // Production
   TIMEOUT: 10000,
 } as const;
 

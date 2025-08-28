@@ -4,10 +4,24 @@
  */
 
 import React from 'react';
-import { StyleSheet, SafeAreaView, ActivityIndicator, Alert } from 'react-native';
-import { WebView, WebViewNavigation } from 'react-native-webview';
+import { StyleSheet, SafeAreaView, ActivityIndicator, Alert, Platform } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { View, Text } from '@/components/Themed';
+
+// Platform-specific imports
+let WebView: any = null;
+let WebViewNavigation: any = null;
+
+// Only import react-native-webview on native platforms
+if (Platform.OS !== 'web') {
+  try {
+    const webViewModule = require('react-native-webview');
+    WebView = webViewModule.WebView;
+    WebViewNavigation = webViewModule.WebViewNavigation;
+  } catch (error) {
+    console.warn('react-native-webview not available:', error);
+  }
+}
 
 interface ArticleWebViewProps {
   url: string;
@@ -25,7 +39,7 @@ const ArticleWebViewUI: React.FC<ArticleWebViewProps> = ({ url, title }) => {
     setLoading(false);
   };
 
-  const handleNavigationStateChange = (navState: WebViewNavigation) => {
+  const handleNavigationStateChange = (navState: any) => {
     // 外部リンクをブロックすることも可能
     return true;
   };
@@ -36,6 +50,54 @@ const ArticleWebViewUI: React.FC<ArticleWebViewProps> = ({ url, title }) => {
         <View style={styles.errorContainer}>
           <Text style={styles.errorText}>⚠️ エラー</Text>
           <Text style={styles.errorMessage}>{error}</Text>
+          <Text 
+            style={styles.backButton}
+            onPress={() => router.back()}
+          >
+            ← 戻る
+          </Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // Web platform: use iframe
+  if (Platform.OS === 'web') {
+    return (
+      <SafeAreaView style={styles.container}>
+        {loading && (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color="#007AFF" />
+            <Text style={styles.loadingText}>記事を読み込み中...</Text>
+          </View>
+        )}
+        <View style={styles.webContainer}>
+          <iframe
+            src={url}
+            style={{
+              width: '100%',
+              height: '100%',
+              border: 'none',
+            }}
+            onLoad={() => setLoading(false)}
+            onError={() => {
+              setError('記事の読み込みに失敗しました');
+              setLoading(false);
+            }}
+            title={title || '記事'}
+          />
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // Native platform: use WebView
+  if (!WebView) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorText}>⚠️ エラー</Text>
+          <Text style={styles.errorMessage}>WebViewが利用できません</Text>
           <Text 
             style={styles.backButton}
             onPress={() => router.back()}
@@ -94,6 +156,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#ffffff',
   },
   webview: {
+    flex: 1,
+  },
+  webContainer: {
     flex: 1,
   },
   loadingContainer: {

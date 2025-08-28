@@ -22,9 +22,11 @@ import { RSSFeedState, RSSFeedActions } from '../hooks/useRSSFeed';
 import { Article } from '../services/ArticleService';
 import HorizontalTabs from './HorizontalTabs';
 import UnifiedHeader from './UnifiedHeader';
+import SearchModal from './SearchModal';
 
 interface FeedUIProps extends RSSFeedState, RSSFeedActions {
   user: any; // From auth context
+  onSearchPress?: () => void;
 }
 
 // ミニマムなUIスタイル（将来のUI刷新で差し替え対象）
@@ -287,6 +289,7 @@ export const FeedUI: React.FC<FeedUIProps> = ({
   setSelectedSource,
   setSelectedGenre,
   setRssUrl,
+  onSearchPress,
 }) => {
   if (loading) {
     return (
@@ -349,7 +352,7 @@ export const FeedUI: React.FC<FeedUIProps> = ({
 
   return (
     <View style={styles.container}>
-      <UnifiedHeader />
+      <UnifiedHeader onSearchPress={onSearchPress} />
       
       <ScrollView
         refreshControl={

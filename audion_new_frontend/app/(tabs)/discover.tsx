@@ -11,6 +11,7 @@ import {
 import { useAuth } from '../../context/AuthContext';
 import HorizontalTabs from '../../components/HorizontalTabs';
 import UnifiedHeader from '../../components/UnifiedHeader';
+import SearchModal from '../../components/SearchModal';
 
 interface CommunityAudio {
   id: string;
@@ -31,6 +32,7 @@ export default function DiscoverScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [communityAudios, setCommunityAudios] = useState<CommunityAudio[]>([]);
   const [selectedCategory, setSelectedCategory] = useState('all');
+  const [showSearchModal, setShowSearchModal] = useState(false);
 
   const categories = [
     { id: 'all', name: 'すべて' },
@@ -146,6 +148,20 @@ export default function DiscoverScreen() {
     fetchCommunityAudios();
   };
 
+  const handleSearchResult = (result: any) => {
+    switch (result.type) {
+      case 'article':
+        // Handle community audio result
+        console.log('Selected community audio:', result.title);
+        break;
+      case 'genre':
+        setSelectedCategory(result.id || 'all');
+        break;
+      default:
+        break;
+    }
+  };
+
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
@@ -157,7 +173,7 @@ export default function DiscoverScreen() {
 
   return (
     <View style={styles.container}>
-      <UnifiedHeader />
+      <UnifiedHeader onSearchPress={() => setShowSearchModal(true)} />
 
       <ScrollView 
         contentContainerStyle={styles.scrollContent}
@@ -233,6 +249,12 @@ export default function DiscoverScreen() {
           </View>
         </View>
       </ScrollView>
+
+      <SearchModal
+        visible={showSearchModal}
+        onClose={() => setShowSearchModal(false)}
+        onResultPress={handleSearchResult}
+      />
     </View>
   );
 }

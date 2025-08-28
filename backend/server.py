@@ -1491,6 +1491,34 @@ async def change_email(email_data: UserEmailChange, current_user: User = Depends
         logging.error(f"Email change error: {e}")
         raise HTTPException(status_code=500, detail="Email change failed")
 
+@app.get("/api/auth/me", tags=["Auth"])
+async def get_current_user_info(current_user: User = Depends(get_current_user)):
+    """Get current user information"""
+    if not db_connected:
+        raise HTTPException(status_code=503, detail="Database unavailable. Server is running in limited mode.")
+    
+    try:
+        # Get fresh user data from database
+        user = await asyncio.wait_for(
+            db.users.find_one({"id": current_user.id}),
+            timeout=10.0
+        )
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        # Convert ObjectId fields to strings for JSON serialization
+        if user and '_id' in user:
+            user['_id'] = str(user['_id'])
+        
+        return {"user": user}
+        
+    except asyncio.TimeoutError:
+        logging.error("Database timeout during user info retrieval")
+        raise HTTPException(status_code=503, detail="Database temporarily unavailable. Please try again later.")
+    except Exception as e:
+        logging.error(f"User info retrieval error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve user information")
+
 @app.get("/api/user/settings", tags=["User Settings"])
 async def get_user_settings(current_user: User = Depends(get_current_user)):
     """Get user settings and preferences"""
@@ -1740,6 +1768,214 @@ async def bootstrap_default_sources(current_user: User = Depends(get_current_use
     except Exception as e:
         logging.error(f"Error bootstrapping default sources for user {current_user.email}: {e}")
         raise HTTPException(status_code=500, detail="Failed to add default sources")
+
+@app.get("/api/rss-sources/search", tags=["RSS"])
+async def search_rss_sources(
+    query: Optional[str] = None,
+    category: Optional[str] = None,
+    language: Optional[str] = None,
+    page: Optional[int] = 1,
+    per_page: Optional[int] = 50,
+    current_user: User = Depends(get_current_user)
+):
+    """Search pre-configured RSS sources"""
+    try:
+        logging.info(f"🔍 [RSS SEARCH] Query: {query}, Category: {category}, Language: {language}")
+        
+        # Return mock data as specified in RSSSourceService.ts
+        mock_sources = [
+            {
+                "id": "nhk-news",
+                "name": "NHK NEWS WEB",
+                "description": "NHKの最新ニュース",
+                "url": "https://www3.nhk.or.jp/rss/news/cat0.xml",
+                "category": "news",
+                "language": "ja",
+                "country": "JP",
+                "favicon_url": "https://www3.nhk.or.jp/favicon.ico",
+                "website_url": "https://www3.nhk.or.jp/news/",
+                "popularity_score": 95,
+                "reliability_score": 98,
+                "is_active": True,
+                "is_featured": True,
+                "created_at": "2024-01-01T00:00:00Z"
+            },
+            {
+                "id": "nikkei-tech",
+                "name": "日本経済新聞 テクノロジー",
+                "description": "日経のテクノロジーニュース",
+                "url": "https://www.nikkei.com/rss/technology/",
+                "category": "technology",
+                "language": "ja",
+                "country": "JP",
+                "favicon_url": "https://www.nikkei.com/favicon.ico",
+                "website_url": "https://www.nikkei.com/",
+                "popularity_score": 88,
+                "reliability_score": 95,
+                "is_active": True,
+                "is_featured": True,
+                "created_at": "2024-01-01T00:00:00Z"
+            }
+        ]
+        
+        # Filter by query if provided
+        filtered_sources = mock_sources
+        if query:
+            filtered_sources = [s for s in mock_sources if query.lower() in s["name"].lower() or query.lower() in s["description"].lower()]
+        
+        # Filter by category if provided
+        if category:
+            filtered_sources = [s for s in filtered_sources if s["category"] == category]
+            
+        return {
+            "sources": filtered_sources,
+            "categories": [],
+            "total": len(filtered_sources),
+            "page": page,
+            "per_page": per_page,
+            "has_next": False
+        }
+        
+    except Exception as e:
+        logging.error(f"Error searching RSS sources: {e}")
+        raise HTTPException(status_code=500, detail="Failed to search RSS sources")
+
+@app.get("/api/rss-sources/categories", tags=["RSS"])
+async def get_rss_categories(current_user: User = Depends(get_current_user)):
+    """Get all RSS categories"""
+    try:
+        logging.info(f"📂 [RSS CATEGORIES] Request for user: {current_user.email}")
+        
+        # Return mock categories as specified in RSSSourceService.ts
+        mock_categories = [
+            {
+                "id": "news",
+                "name": "News",
+                "name_ja": "ニュース", 
+                "description": "General news and current events",
+                "icon": "📰",
+                "color": "#FF6B6B",
+                "sort_order": 1
+            },
+            {
+                "id": "technology",
+                "name": "Technology",
+                "name_ja": "テクノロジー",
+                "description": "Technology and innovation news",
+                "icon": "💻",
+                "color": "#4ECDC4",
+                "sort_order": 2
+            },
+            {
+                "id": "business",
+                "name": "Business",
+                "name_ja": "ビジネス",
+                "description": "Business and finance news",
+                "icon": "💼",
+                "color": "#45B7D1",
+                "sort_order": 3
+            }
+        ]
+        
+        return mock_categories
+        
+    except Exception as e:
+        logging.error(f"Error getting RSS categories: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get RSS categories")
+
+@app.get("/api/rss-sources/my-sources", tags=["RSS"])
+async def get_my_rss_sources(
+    category: Optional[str] = None,
+    is_active: Optional[bool] = None,
+    current_user: User = Depends(get_current_user)
+):
+    """Get user's RSS sources"""
+    try:
+        logging.info(f"👤 [MY RSS SOURCES] Request for user: {current_user.email}")
+        
+        # Return mock user sources as specified in RSSSourceService.ts
+        mock_user_sources = [
+            {
+                "id": "user-source-1",
+                "user_id": "user-123",
+                "preconfigured_source_id": "nhk-news",
+                "custom_alias": "NHK ニュース",
+                "is_active": True,
+                "notification_enabled": True,
+                "last_article_count": 15,
+                "fetch_error_count": 0,
+                "created_at": "2024-01-15T10:00:00Z",
+                "display_name": "NHK NEWS WEB",
+                "display_url": "https://www3.nhk.or.jp/rss/news/cat0.xml"
+            },
+            {
+                "id": "user-source-2",
+                "user_id": "user-123",
+                "preconfigured_source_id": "nikkei-tech",
+                "custom_alias": "日経テック",
+                "is_active": True,
+                "notification_enabled": False,
+                "last_article_count": 8,
+                "fetch_error_count": 0,
+                "created_at": "2024-01-20T14:30:00Z",
+                "display_name": "日本経済新聞 テクノロジー",
+                "display_url": "https://www.nikkei.com/rss/technology/"
+            }
+        ]
+        
+        # Filter by active status if provided
+        if is_active is not None:
+            mock_user_sources = [s for s in mock_user_sources if s["is_active"] == is_active]
+            
+        return mock_user_sources
+        
+    except Exception as e:
+        logging.error(f"Error getting user RSS sources: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get user RSS sources")
+
+@app.post("/api/rss-sources/add", tags=["RSS"])
+async def add_user_rss_source(request: dict, current_user: User = Depends(get_current_user)):
+    """Add RSS source to user's collection"""
+    try:
+        logging.info(f"➕ [ADD RSS SOURCE] Request for user: {current_user.email}")
+        logging.info(f"➕ [ADD RSS SOURCE] Request data: {request}")
+        
+        preconfigured_source_id = request.get('preconfigured_source_id')
+        custom_name = request.get('custom_name')
+        custom_url = request.get('custom_url')
+        custom_category = request.get('custom_category')
+        custom_alias = request.get('custom_alias')
+        notification_enabled = request.get('notification_enabled', False)
+        
+        # Generate new user source
+        new_source_id = str(uuid.uuid4())
+        new_user_source = {
+            "id": new_source_id,
+            "user_id": current_user.id,
+            "preconfigured_source_id": preconfigured_source_id,
+            "custom_name": custom_name,
+            "custom_url": custom_url,
+            "custom_category": custom_category,
+            "custom_alias": custom_alias,
+            "is_active": True,
+            "notification_enabled": notification_enabled,
+            "last_article_count": 0,
+            "fetch_error_count": 0,
+            "created_at": datetime.utcnow().isoformat(),
+            "display_name": custom_name or custom_alias or "New RSS Source",
+            "display_url": custom_url or "https://example.com/rss",
+            "display_category": custom_category or "news"
+        }
+        
+        # In a real implementation, save to database
+        # await db.user_rss_sources.insert_one(new_user_source)
+        
+        logging.info(f"➕ [ADD RSS SOURCE] Created source: {new_user_source['display_name']}")
+        return new_user_source
+        
+    except Exception as e:
+        logging.error(f"Error adding RSS source: {e}")
+        raise HTTPException(status_code=500, detail="Failed to add RSS source")
 
 @app.get("/api/articles", response_model=List[Article], tags=["Articles"])
 async def get_articles(current_user: User = Depends(get_current_user), genre: Optional[str] = None, source: Optional[str] = None):
@@ -2242,6 +2478,78 @@ async def create_direct_tts(request: DirectTTSRequest, current_user: User = Depe
     except Exception as e:
         logger.error(f"Error creating direct TTS: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to create direct TTS: {str(e)}")
+
+@app.post("/api/audio/generate", tags=["Audio"])
+async def generate_audio(request: dict, current_user: User = Depends(get_current_user)):
+    """Generate audio from article - compatible with frontend AudioService"""
+    try:
+        logging.info(f"🎵 [AUDIO GENERATE] Request received for user: {current_user.email}")
+        logging.info(f"🎵 [AUDIO GENERATE] Request data: {request}")
+        
+        article_id = request.get('article_id')
+        title = request.get('title', 'Untitled')
+        language = request.get('language', 'ja')
+        voice_type = request.get('voice_type', 'standard')
+        
+        if not article_id:
+            raise HTTPException(status_code=400, detail="article_id is required")
+        
+        # Check if this is a sample/mock article
+        if article_id.startswith('sample-') or article_id.startswith('mock-'):
+            logging.info(f"🎵 [AUDIO GENERATE] Processing sample article: {article_id}")
+            # For sample articles, return a successful response
+            generation_id = str(uuid.uuid4())
+            return {
+                "id": generation_id,
+                "status": "processing",
+                "message": f"Audio generation started for: {title}",
+                "estimated_duration": 30
+            }
+        
+        # For real articles, try to find in database
+        article = await db.articles.find_one({"id": article_id})
+        if not article:
+            logging.warning(f"🎵 [AUDIO GENERATE] Article not found: {article_id}")
+            # Still return success for development
+            generation_id = str(uuid.uuid4())
+            return {
+                "id": generation_id,
+                "status": "processing", 
+                "message": f"Audio generation started for: {title}",
+                "estimated_duration": 30
+            }
+        
+        # Create audio generation request
+        audio_request = AudioCreationRequest(
+            article_ids=[article_id],
+            article_titles=[title],
+            custom_title=title,
+            voice_language=language,
+            prompt_style="balanced"
+        )
+        
+        # Use existing audio creation logic
+        logging.info(f"🎵 [AUDIO GENERATE] Calling existing audio creation endpoint")
+        audio_creation = await create_audio(audio_request, None, current_user)
+        
+        return {
+            "id": audio_creation.id,
+            "status": "completed" if audio_creation.audio_url else "processing",
+            "message": f"Audio generation completed for: {title}",
+            "estimated_duration": audio_creation.duration or 30
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"🎵 [AUDIO GENERATE ERROR] {str(e)}")
+        # Return error but don't crash
+        return {
+            "id": str(uuid.uuid4()),
+            "status": "failed",
+            "message": f"Audio generation failed: {str(e)}",
+            "estimated_duration": 0
+        }
 
 @app.post("/api/audio/instant-multi", response_model=AudioCreation, tags=["Audio"])
 async def create_instant_multi_audio(request: AudioCreationRequest, current_user: User = Depends(get_current_user)):

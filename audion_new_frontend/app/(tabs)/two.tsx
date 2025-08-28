@@ -12,6 +12,7 @@ import {
 import { useAuth } from '../../context/AuthContext';
 import HorizontalTabs from '../../components/HorizontalTabs';
 import UnifiedHeader from '../../components/UnifiedHeader';
+import SearchModal from '../../components/SearchModal';
 
 interface AudioContent {
   id: string;
@@ -51,6 +52,7 @@ export default function LibraryScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [showCreatePlaylistModal, setShowCreatePlaylistModal] = useState(false);
+  const [showSearchModal, setShowSearchModal] = useState(false);
 
   const fetchAudioLibrary = async () => {
     try {
@@ -152,6 +154,21 @@ export default function LibraryScreen() {
     fetchAudioLibrary();
   };
 
+  const handleSearchResult = (result: any) => {
+    switch (result.type) {
+      case 'article':
+        // Handle audio content search
+        console.log('Selected audio:', result.title);
+        break;
+      case 'genre':
+        // Filter content by type/category  
+        setActiveTab(result.id === 'playlist' ? 'playlists' : 'mylist');
+        break;
+      default:
+        break;
+    }
+  };
+
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
@@ -163,7 +180,7 @@ export default function LibraryScreen() {
 
   return (
     <View style={styles.container}>
-      <UnifiedHeader />
+      <UnifiedHeader onSearchPress={() => setShowSearchModal(true)} />
 
       {/* Tab Header */}
       <HorizontalTabs
@@ -291,6 +308,12 @@ export default function LibraryScreen() {
           </View>
         )}
       </ScrollView>
+
+      <SearchModal
+        visible={showSearchModal}
+        onClose={() => setShowSearchModal(false)}
+        onResultPress={handleSearchResult}
+      />
     </View>
   );
 }

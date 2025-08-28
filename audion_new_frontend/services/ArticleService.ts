@@ -48,10 +48,10 @@ class ArticleService {
   ): Promise<T> {
     const token = await this.getAuthToken();
     
-    console.log('🌐 [ArticleService DEBUG] Making request to:', `${API_BASE_URL}/api${endpoint}`);
+    console.log('🌐 [ArticleService DEBUG] Making request to:', `${API_BASE_URL}${endpoint}`);
     console.log('🌐 [ArticleService DEBUG] With auth token:', token ? 'YES' : 'NO');
     
-    const response = await fetch(`${API_BASE_URL}/api${endpoint}`, {
+    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
       ...options,
       headers: {
         'Content-Type': 'application/json',
@@ -75,16 +75,20 @@ class ArticleService {
     page?: number;
     per_page?: number;
     category?: string;
+    genre?: string;
     search?: string;
     source_name?: string;
+    source?: string;
   }): Promise<ArticleListResponse> {
     const searchParams = new URLSearchParams();
     
     if (params?.page) searchParams.append('page', params.page.toString());
     if (params?.per_page) searchParams.append('per_page', params.per_page.toString());
     if (params?.category) searchParams.append('category', params.category);
+    if (params?.genre) searchParams.append('genre', params.genre);
     if (params?.search) searchParams.append('search', params.search);
     if (params?.source_name) searchParams.append('source_name', params.source_name);
+    if (params?.source) searchParams.append('source', params.source);
 
     const queryString = searchParams.toString();
     const endpoint = `/articles${queryString ? `?${queryString}` : ''}`;
