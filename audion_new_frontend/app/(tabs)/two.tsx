@@ -13,6 +13,7 @@ import { useAuth } from '../../context/AuthContext';
 import HorizontalTabs from '../../components/HorizontalTabs';
 import UnifiedHeader from '../../components/UnifiedHeader';
 import SearchModal from '../../components/SearchModal';
+import SchedulePickManager from '../../components/SchedulePickManager';
 
 interface AudioContent {
   id: string;
@@ -53,6 +54,7 @@ export default function LibraryScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [showCreatePlaylistModal, setShowCreatePlaylistModal] = useState(false);
   const [showSearchModal, setShowSearchModal] = useState(false);
+  const [showSchedulePickManager, setShowSchedulePickManager] = useState(false);
 
   const fetchAudioLibrary = async () => {
     try {
@@ -181,6 +183,16 @@ export default function LibraryScreen() {
   return (
     <View style={styles.container}>
       <UnifiedHeader onSearchPress={() => setShowSearchModal(true)} />
+
+      {/* SchedulePick Access Button */}
+      <View style={styles.schedulePickSection}>
+        <TouchableOpacity 
+          style={styles.schedulePickButton}
+          onPress={() => setShowSchedulePickManager(true)}
+        >
+          <Text style={styles.schedulePickButtonText}>📅 SchedulePick管理</Text>
+        </TouchableOpacity>
+      </View>
 
       {/* Tab Header */}
       <HorizontalTabs
@@ -313,6 +325,11 @@ export default function LibraryScreen() {
         visible={showSearchModal}
         onClose={() => setShowSearchModal(false)}
         onResultPress={handleSearchResult}
+      />
+
+      <SchedulePickManager
+        visible={showSchedulePickManager}
+        onClose={() => setShowSchedulePickManager(false)}
       />
     </View>
   );
@@ -579,5 +596,27 @@ const styles = StyleSheet.create({
   playCount: {
     fontSize: 12,
     color: '#666666',
+  },
+
+  // SchedulePick styles
+  schedulePickSection: {
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.1)',
+  },
+  schedulePickButton: {
+    backgroundColor: '#6f42c1',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  schedulePickButtonText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });
