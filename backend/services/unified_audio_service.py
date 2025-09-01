@@ -66,6 +66,7 @@ except ImportError:
         voice_name: str
         chapters: Optional[List[Dict]] = None
         articles_count: int = 0
+        article_ids: Optional[List[str]] = None
 
 class AudioGenerationMode(Enum):
     """音声生成モード"""
@@ -137,7 +138,8 @@ class UnifiedAudioService:
                 voice_language=request.voice_language,
                 voice_name=request.voice_name,
                 chapters=self._generate_chapters(selected_articles, audio_creation.duration),
-                articles_count=len(selected_articles)
+                articles_count=len(selected_articles),
+                article_ids=[article.get('id', str(uuid.uuid4())) for article in selected_articles] if selected_articles else []
             )
             
             self.logger.info(f"🎵 UNIFIED AUDIO: Successfully generated {mode.value} audio: {response.id}")

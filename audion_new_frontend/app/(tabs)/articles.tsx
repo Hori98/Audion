@@ -6,17 +6,19 @@
 
 import React, { useState } from 'react';
 import { Alert } from 'react-native';
+import { useRouter } from 'expo-router';
 import { useAuth } from '../../context/AuthContext';
-import { useRSSFeed } from '../../hooks/useRSSFeed';
+import { useRSSFeedContext } from '../../context/RSSFeedContext';
 import { FeedUI } from '../../components/FeedUI';
 import SearchModal from '../../components/SearchModal';
 
 export default function ArticlesScreen() {
   // 1. 認証情報を取得
   const { user } = useAuth();
+  const router = useRouter();
   
-  // 2. ビジネスロジックを取得（カスタムフック）
-  const rssState = useRSSFeed();
+  // 2. ビジネスロジックを取得（共通化されたContext経由）
+  const rssState = useRSSFeedContext();
   
   // 3. 検索機能の状態管理
   const [showSearchModal, setShowSearchModal] = useState(false);
@@ -36,6 +38,7 @@ export default function ArticlesScreen() {
         break;
     }
   };
+
   
   // 4. UIコンポーネントにpropsとして渡すだけ
   return (

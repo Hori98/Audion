@@ -10,6 +10,8 @@ import {
   Text
 } from 'react-native';
 import { useAuth } from '../../context/AuthContext';
+import { useSettings } from '../../context/SettingsContext';
+import { API_CONFIG } from '../../config/api';
 import HorizontalTabs from '../../components/HorizontalTabs';
 import UnifiedHeader from '../../components/UnifiedHeader';
 import SearchModal from '../../components/SearchModal';
@@ -41,7 +43,8 @@ interface Playlist {
 }
 
 export default function LibraryScreen() {
-  const { user } = useAuth();
+  const { user, token } = useAuth();
+  const { settings } = useSettings();
   const [activeTab, setActiveTab] = useState<'playlists' | 'mylist'>('playlists');
   
   const libraryTabs = [
@@ -57,75 +60,99 @@ export default function LibraryScreen() {
   const [showSchedulePickManager, setShowSchedulePickManager] = useState(false);
 
   const fetchAudioLibrary = async () => {
-    try {
-      // TODO: Replace with actual API call
-      // const data = await AudioService.getAudioLibrary();
-      // setAudioContent(data.audio_contents);
-      
-      // Mock audio data
-      setAudioContent([
-        {
-          id: '1',
-          title: 'Audio: Understanding React Native Navigation',
-          script: 'HOST1: Today we\'re discussing React Native navigation...',
-          audio_url: '/path/to/audio1.mp3',
-          duration: 480,
-          language: 'ja',
-          voice_type: 'alloy',
-          status: 'completed',
-          play_count: 3,
-          created_at: '2024-01-15T10:30:00Z',
-          updated_at: '2024-01-15T10:30:00Z'
-        },
-        {
-          id: '2',
-          title: 'Audio: FastAPI Production Best Practices',
-          script: 'HOST1: FastAPI has become increasingly popular...',
-          audio_url: undefined,
-          duration: 0,
-          language: 'ja',
-          voice_type: 'alloy',
-          status: 'processing',
-          play_count: 0,
-          created_at: '2024-01-14T14:20:00Z',
-          updated_at: '2024-01-14T14:20:00Z'
-        }
-      ]);
+    if (!token) {
+      console.log('No auth token available for library fetch');
+      setLoading(false);
+      setRefreshing(false);
+      return;
+    }
 
-      // Mock playlist data
+    try {
+      // 実際のAPI呼び出し（downloaded_audioから取得）
+      const response = await fetch(`${API_CONFIG.BASE_URL}/audio/downloaded`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`API error: ${response.status}`);
+      }
+
+      const data = await response.json();
+      console.log('📚 [LIBRARY] Fetched audio library:', data);
+
+      // downloaded_audioのレスポンスを AudioContent 形式に変換
+      const audioContents: AudioContent[] = (data.audio_files || []).map((item: any) => ({
+        id: item.audio_id,
+        title: item.title || 'Untitled Audio',
+        script: item.script || '',
+        audio_url: item.audio_url,
+        duration: item.duration || 0,
+        language: 'ja' as const,
+        voice_type: 'alloy',
+        status: 'completed' as const,
+        play_count: item.play_count || 0,
+        created_at: item.created_at || new Date().toISOString(),
+        updated_at: item.updated_at || new Date().toISOString()
+      }));
+
+      setAudioContent(audioContents);
+
+      // プレイリスト用のモックデータ（将来的には実APIに置き換え）
       setPlaylists([
         {
           id: 'default',
           name: 'お気に入り',
           description: 'お気に入りのオーディオコンテンツ',
-          audioCount: 5,
-          duration: 3240, // 54 minutes
+          audioCount: audioContents.length,
+          duration: audioContents.reduce((total, audio) => total + audio.duration, 0),
           createdAt: '2024-01-10T00:00:00Z',
-          updatedAt: '2024-01-15T12:00:00Z',
+          updatedAt: new Date().toISOString(),
           isDefault: true
-        },
-        {
-          id: '1',
-          name: 'テクノロジーニュース',
-          description: 'IT・テクノロジー関連のニュース音声',
-          audioCount: 8,
-          duration: 2160, // 36 minutes
-          createdAt: '2024-01-12T00:00:00Z',
-          updatedAt: '2024-01-14T18:30:00Z'
-        },
-        {
-          id: '2',
-          name: '経済・ビジネス',
-          description: '経済ニュースとビジネス情報',
-          audioCount: 3,
-          duration: 1440, // 24 minutes
-          createdAt: '2024-01-13T00:00:00Z',
-          updatedAt: '2024-01-13T20:15:00Z'
         }
       ]);
+
+      console.log('📚 [LIBRARY] Library updated with', audioContents.length, 'audio files');
+
     } catch (error) {
       console.error('Error fetching audio library:', error);
-      Alert.alert('Error', 'Failed to load audio library');
+      
+      // エラー時はモックデータで代用（開発用）
+      if (__DEV__) {
+        console.log('📚 [LIBRARY] Using fallback mock data in development');
+        setAudioContent([
+          {
+            id: 'mock-1',
+            title: 'Mock Audio: Development Test',
+            script: 'This is mock data for development purposes',
+            audio_url: undefined,
+            duration: 300,
+            language: 'ja',
+            voice_type: 'alloy',
+            status: 'completed',
+            play_count: 1,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          }
+        ]);
+        setPlaylists([
+          {
+            id: 'mock-default',
+            name: 'Development Test',
+            description: 'Mock playlist for development',
+            audioCount: 1,
+            duration: 300,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            isDefault: true
+          }
+        ]);
+      } else {
+        Alert.alert('Error', 'Failed to load audio library');
+      }
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -184,15 +211,17 @@ export default function LibraryScreen() {
     <View style={styles.container}>
       <UnifiedHeader onSearchPress={() => setShowSearchModal(true)} />
 
-      {/* SchedulePick Access Button */}
-      <View style={styles.schedulePickSection}>
-        <TouchableOpacity 
-          style={styles.schedulePickButton}
-          onPress={() => setShowSchedulePickManager(true)}
-        >
-          <Text style={styles.schedulePickButtonText}>📅 SchedulePick管理</Text>
-        </TouchableOpacity>
-      </View>
+      {/* SchedulePick Access Button - 設定で有効時のみ表示 */}
+      {settings.isSchedulePickEnabled && (
+        <View style={styles.schedulePickSection}>
+          <TouchableOpacity 
+            style={styles.schedulePickButton}
+            onPress={() => setShowSchedulePickManager(true)}
+          >
+            <Text style={styles.schedulePickButtonText}>📅 SchedulePick管理</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* Tab Header */}
       <HorizontalTabs
@@ -327,10 +356,13 @@ export default function LibraryScreen() {
         onResultPress={handleSearchResult}
       />
 
-      <SchedulePickManager
-        visible={showSchedulePickManager}
-        onClose={() => setShowSchedulePickManager(false)}
-      />
+      {/* SchedulePickManager Modal - 設定で有効時のみ表示 */}
+      {settings.isSchedulePickEnabled && (
+        <SchedulePickManager
+          visible={showSchedulePickManager}
+          onClose={() => setShowSchedulePickManager(false)}
+        />
+      )}
     </View>
   );
 }

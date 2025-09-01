@@ -39,6 +39,7 @@ import FeedActionBar from '../../components/FeedActionBar';
 import ManualPickPanel from '../../components/ManualPickPanel';
 import AutoPickService from '../../services/AutoPickService';
 import SubscriptionService from '../../services/SubscriptionService';
+import useReadingHistory from '../../hooks/useReadingHistory';
 
 // Memory optimization utilities
 const MemoryUtils = {
@@ -101,6 +102,7 @@ export default function FeedScreen() {
   const { t } = useTranslation();
   const { donateShortcut } = useSiriShortcuts();
   const router = useRouter();
+  const { readingHistory, markAsRead, isRead, isReadThisWeek } = useReadingHistory();
   const [articles, setArticles] = useState<Article[]>([]);
   const [sources, setSources] = useState<RSSSource[]>([]);
   const [loading, setLoading] = useState(true);
@@ -121,7 +123,6 @@ export default function FeedScreen() {
   const [feedLikedArticles, setFeedLikedArticles] = useState<Set<string>>(new Set());
   const [feedDislikedArticles, setFeedDislikedArticles] = useState<Set<string>>(new Set());
   const [archivedArticles, setArchivedArticles] = useState<Set<string>>(new Set()); // Track archived articles
-  const [readingHistory, setReadingHistory] = useState<Map<string, Date>>(new Map()); // Track reading history by article ID
   const [searchQuery, setSearchQuery] = useState(''); // Search functionality
   const [readLaterStatus, setReadLaterStatus] = useState<Map<string, boolean>>(new Map());
   const [selectedArticle, setSelectedArticle] = useState<Article | null>(null);
@@ -231,10 +232,7 @@ export default function FeedScreen() {
           await loadGlobalSelection();
           await loadArchivedArticles();
           
-          // Load reading history and set it
-          const history = await loadReadingHistoryFromStorage();
-          console.log(`Feed: Loaded reading history with ${history.size} entries`);
-          setReadingHistory(history);
+          // Reading history is now managed by useReadingHistory hook
           
           await loadReadLaterStatus();
           // Force refresh sources to get latest changes from sources screen
@@ -297,34 +295,7 @@ export default function FeedScreen() {
     }
   };
 
-  // Load reading history from AsyncStorage (unified with Home implementation)
-  const loadReadingHistoryFromStorage = async (): Promise<Map<string, Date>> => {
-    try {
-      const history = await AsyncStorage.getItem('reading_history');
-      if (history) {
-        const parsed = JSON.parse(history);
-        const map = new Map();
-        Object.entries(parsed).forEach(([key, value]) => {
-          map.set(key, new Date(value as string));
-        });
-        return map;
-      }
-    } catch (error) {
-      console.warn('Error loading reading history:', error);
-    }
-    return new Map();
-  };
-
-  const saveReadingHistoryToStorage = async (history: Map<string, Date>) => {
-    try {
-      const historyObj = Object.fromEntries(
-        Array.from(history.entries()).map(([key, value]) => [key, value.toISOString()])
-      );
-      await AsyncStorage.setItem('reading_history', JSON.stringify(historyObj));
-    } catch (error) {
-      console.warn('Error saving reading history:', error);
-    }
-  };
+  // Reading history is now managed by useReadingHistory hook
 
   // Load Read Later status for all articles
   const loadReadLaterStatus = async () => {
@@ -377,10 +348,7 @@ export default function FeedScreen() {
   const recordArticleReading = async (article: Article) => {
     try {
       const readAt = new Date();
-      const newHistory = new Map(readingHistory);
-      newHistory.set(article.id, readAt);
-      setReadingHistory(newHistory);
-      await saveReadingHistory(newHistory);
+      await markAsRead(article.id, readAt);
 
       // Also send to backend for persistence and analytics
       axios.post(
@@ -419,17 +387,7 @@ export default function FeedScreen() {
   };
 
   // Check if article was read this week
-  const isReadThisWeek = (articleId: string): boolean => {
-    const readDate = readingHistory.get(articleId);
-    if (!readDate) return false;
-    
-    const now = new Date();
-    const weekStart = new Date(now);
-    weekStart.setDate(now.getDate() - now.getDay()); // Start of current week (Sunday)
-    weekStart.setHours(0, 0, 0, 0);
-    
-    return readDate >= weekStart;
-  };
+  // isReadThisWeek is now provided by useReadingHistory hook
 
   // Filter articles based on reading status, source, genre, and search query (memoized)
   // Memory-optimized filteredArticles with early returns
@@ -456,10 +414,10 @@ export default function FeedScreen() {
     if (hasReadingFilter) {
       switch (selectedReadingFilter) {
         case 'Unread':
-          filtered = filtered.filter(article => !readingHistory.has(article.id));
+          filtered = filtered.filter(article => !isRead(article.id));
           break;
         case 'Read':
-          filtered = filtered.filter(article => readingHistory.has(article.id));
+          filtered = filtered.filter(article => isRead(article.id));
           break;
         case 'This Week\'s Reads':
           filtered = filtered.filter(article => isReadThisWeek(article.id));
@@ -622,12 +580,9 @@ export default function FeedScreen() {
   };
 
   const handleArticlePress = async (article: Article) => {
-    // Save reading history
-    const newHistory = new Map(readingHistory);
-    newHistory.set(article.id, new Date());
-    console.log(`Feed: Marking article ${article.id} as read. History size: ${newHistory.size}`);
-    setReadingHistory(newHistory);
-    await saveReadingHistoryToStorage(newHistory);
+    // Mark as read using the hook
+    await markAsRead(article.id, new Date());
+    console.log(`Feed: Marked article ${article.id} as read`);
     
     // Record interaction
     await PersonalizationService.recordInteraction({

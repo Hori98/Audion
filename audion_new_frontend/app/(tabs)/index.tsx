@@ -1,145 +1,86 @@
-import React, { useState } from 'react';
-import { StyleSheet, ScrollView, TouchableOpacity, RefreshControl, Alert, View, Text } from 'react-native';
+/**
+ * Home Screen - ニュースアプリ風UI
+ * 既存ニュースアプリ（SmartNews/Yahoo!ニュース）のUI/UX完全コピー
+ * スイッチングコスト最小化でユーザー獲得を目指す
+ */
+
+import React, { useState, useEffect } from 'react';
+import { 
+  StyleSheet, 
+  FlatList, 
+  TouchableOpacity, 
+  RefreshControl, 
+  Alert, 
+  View, 
+  Text,
+  Image,
+  StatusBar,
+  Dimensions 
+} from 'react-native';
+import { useRouter } from 'expo-router';
 import { useAuth } from '../../context/AuthContext';
-import { router } from 'expo-router';
+import { useRSSFeedContext } from '../../context/RSSFeedContext';
+import { useSettings } from '../../context/SettingsContext';
+import { useAutoPick } from '../../context/AutoPickContext';
+import { autoPickProgressService } from '../../services/AutoPickProgressService';
 import HorizontalTabs from '../../components/HorizontalTabs';
+import HeroCarousel from '../../components/HeroCarousel';
+import ArticleCard from '../../components/ArticleCard';
 import UnifiedHeader from '../../components/UnifiedHeader';
 import SearchModal from '../../components/SearchModal';
-import HeroCarousel from '../../components/HeroCarousel';
-import { useRSSFeed } from '../../hooks/useRSSFeed';
-import AudioService from '../../services/AudioService';
+import FloatingAutoPickButton from '../../components/FloatingAutoPickButton';
+import ArticleDetailModal from '../../components/ArticleDetailModal';
+import { Article } from '../../services/ArticleService';
+import { API_CONFIG } from '../../config/api';
 
-const GENRES = [
-  { id: 'all', name: 'すべて' },
-  { id: 'news', name: 'ニュース' },
-  { id: 'technology', name: 'テクノロジー' },
+const { width: screenWidth } = Dimensions.get('window');
+
+// ニュースアプリ風カテゴリ設定
+const NEWS_CATEGORIES = [
+  { id: 'all', name: 'トップ' },
+  { id: 'technology', name: 'テック' },
   { id: 'business', name: 'ビジネス' },
   { id: 'sports', name: 'スポーツ' },
   { id: 'entertainment', name: 'エンタメ' },
-  { id: 'science', name: 'サイエンス' },
-  { id: 'politics', name: '政治' },
-  { id: 'economics', name: '経済' },
   { id: 'international', name: '国際' },
-  { id: 'health', name: '健康' },
-  { id: 'lifestyle', name: 'ライフスタイル' },
-  { id: 'education', name: '教育' },
-  { id: 'environment', name: '環境' },
-  { id: 'culture', name: '文化' },
-  { id: 'food', name: '食・グルメ' },
-  { id: 'travel', name: '旅行' },
-  { id: 'automotive', name: '自動車' },
-  { id: 'real-estate', name: '不動産' },
-  { id: 'finance', name: '金融' }
+  { id: 'lifestyle', name: 'ライフ' },
 ];
 
 export default function HomeScreen() {
-  const { user } = useAuth();
+  const { user, token } = useAuth();
+  const { settings } = useSettings();
+  const { startTask, updateTask, completeTask, failTask, clearTask } = useAutoPick();
+  const router = useRouter();
+  
+  // デバッグ: 設定状態をログ出力（初期化時のみ）
+  const [loggedSettings, setLoggedSettings] = useState(false);
+  useEffect(() => {
+    if (!loggedSettings && settings.isAutoPickEnabled !== undefined) {
+      console.log('HomeScreen - AutoPick設定:', settings.isAutoPickEnabled);
+      setLoggedSettings(true);
+    }
+  }, [settings.isAutoPickEnabled, loggedSettings]);
   const [refreshing, setRefreshing] = useState(false);
   const [showSearchModal, setShowSearchModal] = useState(false);
+  const [selectedArticle, setSelectedArticle] = useState<Article | null>(null);
+  const [showArticleModal, setShowArticleModal] = useState(false);
+
+  // クリーンアップ用のuseEffect
+  useEffect(() => {
+    return () => {
+      // コンポーネント終了時にSSE接続を閉じる
+      autoPickProgressService.stopMonitoring();
+    };
+  }, []);
+  
+  // RSS Feed データを取得（共通化されたContext経由）
   const { 
     articles, 
     loading, 
     selectedGenre,
     setSelectedGenre,
     onRefresh: rssRefresh 
-  } = useRSSFeed();
-
-  // Transform RSS articles to hero format, fallback to mock data
-  const getHeroItems = () => {
-    if (articles && articles.length > 0) {
-      return articles.slice(0, 5).map((article, index) => ({
-        id: article.id,
-        title: article.title,
-        description: article.summary || article.title,
-        mediaName: article.source_name || 'ニュースソース',
-        publishedAt: article.published_at,
-        imageUrl: `https://picsum.photos/400/240?random=${article.id}`, // Placeholder until RSS images
-        url: article.url
-      }));
-    }
-    
-    // Fallback to mock data when no articles available
-    return [
-      {
-        id: 'mock-1',
-        title: 'AI技術の最新動向：ChatGPTを超える新世代モデルが登場',
-        description: '人工知能の分野で革命的な進歩が続く中、新たなLLMモデルが業界に大きな変化をもたらす可能性を秘めている。',
-        mediaName: 'TechCrunch Japan',
-        publishedAt: '2025-01-23T09:00:00Z',
-        imageUrl: 'https://picsum.photos/400/240?random=1',
-        url: 'https://example.com/ai-tech-news'
-      },
-      {
-        id: 'mock-2', 
-        title: '経済市場の回復傾向が鮮明に、専門家が分析する今後の展望',
-        description: '今四半期の経済指標は予想を上回る結果となり、アナリストたちは慎重ながらも楽観的な見通しを示している。',
-        mediaName: '日本経済新聞',
-        publishedAt: '2025-01-23T08:30:00Z',
-        imageUrl: 'https://picsum.photos/400/240?random=2',
-        url: 'https://example.com/economy-news'
-      }
-    ];
-  };
-
-  const heroItems = getHeroItems();
-
-  // 実際の記事から注目記事とおすすめ記事を取得
-  const getFeaturedArticles = () => {
-    if (articles && articles.length > 5) {
-      return articles.slice(5, 7); // Hero Carouselの後の2記事を使用
-    }
-    return [{
-      id: 'sample-featured-1',
-      title: 'サンプル記事',
-      summary: 'これはサンプル記事です。実際の記事データが取得できない場合に表示されます。',
-      url: null,
-      source_name: 'ダミー',
-      published_at: new Date().toISOString(),
-      category: 'news'
-    }, {
-      id: 'sample-featured-2', 
-      title: 'サンプル記事',
-      summary: 'これはサンプル記事です。実際の記事データが取得できない場合に表示されます。',
-      url: null,
-      source_name: 'ダミー',
-      published_at: new Date().toISOString(),
-      category: 'sports'
-    }];
-  };
-
-  const getRecommendedArticles = () => {
-    if (articles && articles.length > 7) {
-      return articles.slice(7, 10); // さらに次の3記事を使用
-    }
-    return [{
-      id: 'sample-recommended-1',
-      title: 'サンプル記事',
-      summary: 'これはサンプル記事です。実際の記事データが取得できない場合に表示されます。',
-      url: null,
-      source_name: 'ダミー',
-      published_at: new Date().toISOString(),
-      category: 'technology'
-    }, {
-      id: 'sample-recommended-2',
-      title: 'サンプル記事', 
-      summary: 'これはサンプル記事です。実際の記事データが取得できない場合に表示されます。',
-      url: null,
-      source_name: 'ダミー',
-      published_at: new Date().toISOString(),
-      category: 'business'
-    }, {
-      id: 'sample-recommended-3',
-      title: 'サンプル記事',
-      summary: 'これはサンプル記事です。実際の記事データが取得できない場合に表示されます。',
-      url: null,
-      source_name: 'ダミー',
-      published_at: new Date().toISOString(),
-      category: 'sports'
-    }];
-  };
-
-  const featuredArticles = getFeaturedArticles();
-  const recommendedArticles = getRecommendedArticles();
+  } = useRSSFeedContext();
 
   const onRefresh = () => {
     setRefreshing(true);
@@ -147,215 +88,340 @@ export default function HomeScreen() {
     setTimeout(() => setRefreshing(false), 1000);
   };
 
-  const handleArticlePress = (article: { title: string; url?: string }) => {
-    if (article.url) {
-      router.push({
-        pathname: '/article-webview',
-        params: { 
-          url: article.url, 
-          title: article.title 
-        }
-      });
-    } else {
-      // Sample articles don't have real URLs, so show a demo message
-      Alert.alert(
-        '記事を開く',
-        `${article.title}\n\n※ これはサンプル記事です。実際の実装では記事のURLが必要です。`,
-        [{ text: 'OK' }]
-      );
-    }
+  const handleArticlePress = (article: Article) => {
+    setSelectedArticle(article);
+    setShowArticleModal(true);
   };
 
-  const handleSearchResult = (result: any) => {
-    // Handle different types of search results
-    switch (result.type) {
-      case 'article':
-        handleArticlePress({ title: result.title, url: result.url });
-        break;
-      case 'genre':
-        setSelectedGenre(result.id || 'all');
-        break;
-      case 'source':
-        // Navigate to feed tab with selected source
-        Alert.alert('ソース選択', `${result.title}のコンテンツを表示します`);
-        break;
-      default:
-        break;
-    }
+  const handleCloseArticleModal = () => {
+    setShowArticleModal(false);
+    setSelectedArticle(null);
   };
 
-  const handleHeroItemPress = (item: any) => {
-    if (item.url) {
-      router.push({
-        pathname: '/article-webview',
-        params: { 
-          url: item.url, 
-          title: item.title 
-        }
-      });
-    } else {
-      Alert.alert(
-        'ニュース記事',
-        `${item.title}\n\n※ サンプル記事です`,
-        [{ text: 'OK' }]
-      );
+  const handleAutoPick = async () => {
+    if (!token) {
+      Alert.alert('エラー', '認証が必要です。ログインしてください。');
+      return;
     }
-  };
 
-  const handleAudioGenerate = async (articleId: string, title: string) => {
-    console.log('🎵 [AUDIO DEBUG] Generate button pressed for:', title);
+    const genreName = NEWS_CATEGORIES.find(c => c.id === selectedGenre)?.name || 'トップ';
     
     Alert.alert(
-      '音声生成',
-      `"${title}"の音声を生成しますか？`,
+      'AutoPick音声生成', 
+      `選択中のジャンル「${genreName}」で自動音声生成を開始しますか？`,
       [
         { text: 'キャンセル', style: 'cancel' },
-        {
-          text: '生成開始',
-          onPress: async () => {
-            try {
-              console.log('🎵 [AUDIO DEBUG] Starting audio generation...');
-              
-              // Call AudioService (シングルトンなのでnewは不要)
-              const response = await AudioService.generateAudio({
-                article_id: articleId,
-                title: title,
-                language: 'ja',
-                voice_type: 'standard'
-              });
-              
-              console.log('🎵 [AUDIO DEBUG] Audio generation response:', response);
-              Alert.alert('成功', '音声生成を開始しました！');
-              
-            } catch (error) {
-              console.error('🎵 [AUDIO ERROR] Audio generation failed:', error);
-              Alert.alert('エラー', `音声生成に失敗しました: ${error.message || 'Unknown error'}`);
-            }
+        { text: '生成開始', onPress: async () => {
+          try {
+            // 実際のAutoPickAPI呼び出しを実装
+            await callAutoPickAPI(selectedGenre, genreName);
+            
+          } catch (error) {
+            console.error('AutoPick error:', error);
+            Alert.alert('エラー', 'AutoPick機能でエラーが発生しました。');
           }
-        }
+        }}
       ]
     );
   };
 
+  const callAutoPickAPI = async (genre: string, genreName: string) => {
+    try {
+      // AutoPick APIの呼び出し - 新しいタスクベースシステム
+      const response = await fetch(`${API_CONFIG.BASE_URL}/auto-pick/create-audio`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          max_articles: 3,
+          preferred_genres: genre !== 'all' ? [genre] : undefined,
+          source_priority: "balanced",
+          time_based_filtering: true,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`AutoPick API error: ${response.status}`);
+      }
+
+      const taskResponse = await response.json();
+      console.log('🎯 [AUTOPICK] Task started:', taskResponse);
+      
+      // タスク監視を開始
+      startTask(taskResponse.task_id);
+      
+      // SSE監視を開始
+      autoPickProgressService.startMonitoring(
+        taskResponse.task_id,
+        token!,
+        {
+          onProgress: (data) => {
+            console.log('📊 [PROGRESS]', data);
+            updateTask({
+              status: data.status,
+              progress: data.progress,
+              message: data.message,
+            });
+          },
+          onComplete: (data) => {
+            console.log('✅ [COMPLETE]', data);
+            
+            if (data.status === 'completed') {
+              completeTask(data.result, data.debug_info);
+              showCompletionAlert(data.result, data.debug_info, genreName);
+            } else if (data.status === 'failed') {
+              failTask(data.error || 'Unknown error', data.debug_info);
+              Alert.alert('エラー', `AutoPick生成に失敗しました: ${data.error}`);
+            }
+            
+            // 3秒後にタスク表示をクリア
+            setTimeout(() => clearTask(), 3000);
+          },
+          onError: (error) => {
+            console.error('📊 [SSE_ERROR]', error);
+            failTask(error);
+            Alert.alert('接続エラー', 'リアルタイム監視に失敗しました');
+          }
+        }
+      );
+
+    } catch (error) {
+      console.error('AutoPick API call failed:', error);
+      failTask(error.toString());
+      Alert.alert('エラー', 'AutoPick APIの呼び出しに失敗しました');
+      throw error;
+    }
+  };
+
+  const showCompletionAlert = (result: any, debugInfo: any, genreName: string) => {
+    const duration = result?.duration;
+    const durationText = duration 
+      ? `${Math.floor(duration / 60)}分${duration % 60}秒`
+      : '不明';
+    
+    const baseMessage = `ジャンル「${genreName}」の音声が生成されました！\n\nタイトル: ${result?.title || '不明'}\n記事数: ${result?.article_ids?.length || '不明'}件\n再生時間: ${durationText}`;
+    
+    // 開発環境でのみデバッグ情報を追加
+    let fullMessage = baseMessage;
+    if (__DEV__ && debugInfo) {
+      const debugText = `\n\n--- DEBUG INFO ---\n処理時間: ${debugInfo.processing_time_ms}ms\n取得記事数: ${debugInfo.total_articles_fetched}件\nスクリプト長: ${debugInfo.script_length}文字\nプラン: ${debugInfo.user_plan}`;
+      fullMessage = baseMessage + debugText;
+    }
+    
+    Alert.alert(
+      '音声生成完了',
+      fullMessage,
+      [
+        { text: 'OK', style: 'default' },
+        ...__DEV__ && result?.audio_url ? [{
+          text: '再生テスト',
+          style: 'default',
+          onPress: () => {
+            handlePlayFromCompletionPopup(result.id, result.audio_url);
+          }
+        }] : []
+      ]
+    );
+  };
+
+  const handlePlayFromCompletionPopup = async (audioId: string, audioUrl: string) => {
+    try {
+      console.log('🎵 [PLAY] Attempting to play audio:', { audioId, audioUrl });
+      
+      if (!audioUrl) {
+        Alert.alert('エラー', '音声ファイルのURLが見つかりません');
+        return;
+      }
+
+      // ライブラリ画面に遷移して再生
+      router.push('/(tabs)/two');
+      
+      // 少し遅延してから再生を試行（画面遷移後）
+      setTimeout(() => {
+        console.log('🎵 [PLAY] Ready to play on library screen');
+        // TODO: 実際の再生機能はUnifiedAudioPlayerまたは統合音声システムで実装
+      }, 500);
+      
+    } catch (error) {
+      console.error('🎵 [PLAY] Play error:', error);
+      Alert.alert('再生エラー', '音声の再生に失敗しました');
+    }
+  };
+
+  // 音声再生機能（ヒーローカルーセル用）
+  const handlePlayPress = (article: any) => {
+    Alert.alert('音声生成', `「${article.title}」の音声を生成しますか？`);
+  };
+
+
+  // データを階層別に分割
+  const heroArticles = articles.slice(0, 5); // ヒーロー用の最初の5記事
+  const largeCardArticles = articles.slice(5, 8); // 大きいカード用
+  const smallCardArticles = articles.slice(8); // 小さいカード用
+
+  // 大きいカード用のレンダリング関数
+  const renderLargeCard = ({ item, index }: { item: any; index: number }) => (
+    <TouchableOpacity 
+      style={styles.largeCard}
+      onPress={() => handleArticlePress(item)}
+      activeOpacity={0.8}
+    >
+      {/* 画像エリア */}
+      <View style={styles.largeImageContainer}>
+        {item.thumbnail_url ? (
+          <Image 
+            source={{ uri: item.thumbnail_url }}
+            style={styles.largeImage}
+            resizeMode="cover"
+          />
+        ) : (
+          <View style={[styles.largeImage, styles.placeholderImage]}>
+            <Text style={styles.placeholderText}>📰</Text>
+          </View>
+        )}
+        
+        {/* ジャンルラベル */}
+        <View style={styles.genreLabel}>
+          <Text style={styles.genreLabelText}>
+            {item.category || ''}
+          </Text>
+        </View>
+      </View>
+
+      {/* テキスト情報 */}
+      <View style={styles.textContent}>
+        <Text style={styles.articleTitle} numberOfLines={2}>
+          {item.title}
+        </Text>
+        
+        <Text style={styles.articleSummary} numberOfLines={2}>
+          {item.summary || '記事の詳細内容をお読みいただけます。'}
+        </Text>
+
+        {/* メタ情報 */}
+        <View style={styles.metaInfo}>
+          <Text style={styles.sourceName}>
+            {item.source_name || 'News Source'}
+          </Text>
+          <Text style={styles.publishTime}>
+            {item.published_at ? 
+              new Date(item.published_at).toLocaleDateString('ja-JP', {
+                month: 'short', 
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+              }) : 
+              '配信時刻不明'
+            }
+          </Text>
+        </View>
+      </View>
+    </TouchableOpacity>
+  );
+
   return (
     <View style={styles.container}>
-      <UnifiedHeader 
-        onSearchPress={() => setShowSearchModal(true)}
+      <StatusBar barStyle="light-content" backgroundColor="#000000" />
+      
+      {/* FlatListで全体を管理し、ヘッダーコンポーネントでヒーローを表示 */}
+      <FlatList
+        data={smallCardArticles}
+        renderItem={({ item }) => (
+          <ArticleCard 
+            article={item}
+            onPress={handleArticlePress}
+            showAudioPlayer={true}
+          />
+        )}
+        keyExtractor={(item) => item.id}
+        refreshControl={
+          <RefreshControl 
+            refreshing={refreshing || loading} 
+            onRefresh={onRefresh}
+            tintColor="#007bff"
+            colors={['#007bff']}
+          />
+        }
+        ListHeaderComponent={
+          <View>
+            {/* 元のヘッダー */}
+            <UnifiedHeader 
+              onSearchPress={() => setShowSearchModal(true)} 
+            />
+
+            {/* カテゴリータブ */}
+            <HorizontalTabs
+              tabs={NEWS_CATEGORIES}
+              selectedTab={selectedGenre}
+              onTabSelect={setSelectedGenre}
+              style={styles.categoryTabs}
+            />
+
+            {/* ゾーン1: ヒーローカルーセル（トップのみ表示） */}
+            {selectedGenre === 'all' && heroArticles.length > 0 && (
+              <HeroCarousel
+                articles={heroArticles}
+                onArticlePress={handleArticlePress}
+                onPlayPress={handlePlayPress}
+              />
+            )}
+
+            {/* ゾーン2: 大きいカード */}
+            {largeCardArticles.length > 0 && (
+              <View style={styles.largeCardSection}>
+                <Text style={styles.sectionTitle}>注目記事</Text>
+                <FlatList
+                  data={largeCardArticles}
+                  renderItem={renderLargeCard}
+                  keyExtractor={(item) => item.id}
+                  scrollEnabled={false}
+                />
+              </View>
+            )}
+
+            {/* ゾーン3: 小さいカードセクションのタイトル */}
+            {smallCardArticles.length > 0 && (
+              <Text style={styles.sectionTitle}>その他のニュース</Text>
+            )}
+          </View>
+        }
+        contentContainerStyle={styles.contentContainer}
+        showsVerticalScrollIndicator={false}
+        // パフォーマンス最適化
+        removeClippedSubviews={true}
+        maxToRenderPerBatch={10}
+        windowSize={10}
       />
 
-      <ScrollView 
-        contentContainerStyle={styles.scrollContent}
-        refreshControl={<RefreshControl refreshing={refreshing || loading} onRefresh={onRefresh} />}
-      >
-        {/* Genre Selection */}
-        <HorizontalTabs
-          tabs={GENRES}
-          selectedTab={selectedGenre}
-          onTabSelect={setSelectedGenre}
-          style={styles.genreSection}
+      {/* AutoPick フローティングボタン - 設定で有効時のみ表示 */}
+      {settings.isAutoPickEnabled && (
+        <FloatingAutoPickButton
+          onPress={handleAutoPick}
+          selectedGenre={selectedGenre}
+          genreName={NEWS_CATEGORIES.find(c => c.id === selectedGenre)?.name || 'トップ'}
+          tabBarHeight={10}
+          miniPlayerHeight={0}
+          isMiniPlayerVisible={false}
         />
+      )}
 
-        {/* Hero Carousel Section */}
-        <HeroCarousel
-          items={heroItems}
-          onItemPress={handleHeroItemPress}
-        />
-
-        {/* Featured News Section */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>注目のニュース</Text>
-          
-          {featuredArticles.map((article, index) => (
-            <TouchableOpacity 
-              key={article.id}
-              style={styles.articleCard}
-              onPress={() => handleArticlePress({
-                title: article.title,
-                url: article.url
-              })}
-            >
-              <View style={styles.articleContent}>
-                <Text style={styles.articleTitle}>{article.title}</Text>
-                <Text style={styles.articleSummary}>
-                  {article.summary || 'サンプル記事の概要です。'}
-                </Text>
-                <View style={styles.articleMeta}>
-                  <Text style={styles.articleSource}>{article.source_name}</Text>
-                  <Text style={styles.articleTime}>
-                    {article.published_at ? new Date(article.published_at).toLocaleString('ja-JP', { 
-                      month: 'numeric', 
-                      day: 'numeric', 
-                      hour: 'numeric',
-                      minute: '2-digit'
-                    }) : '最近'}
-                  </Text>
-                  <TouchableOpacity 
-                    style={styles.generateButton}
-                    onPress={() => handleAudioGenerate(article.id, article.title)}
-                  >
-                    <Text style={styles.generateButtonText}>♪</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        {/* Recommended Section */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>おすすめ</Text>
-          
-          {recommendedArticles.map((article, index) => (
-            <TouchableOpacity 
-              key={article.id}
-              style={styles.articleCard}
-              onPress={() => handleArticlePress({
-                title: article.title,
-                url: article.url
-              })}
-            >
-              <View style={styles.articleContent}>
-                <Text style={styles.articleTitle}>{article.title}</Text>
-                <Text style={styles.articleSummary}>
-                  {article.summary || 'サンプル記事の概要です。'}
-                </Text>
-                <View style={styles.articleMeta}>
-                  <Text style={styles.articleSource}>{article.source_name}</Text>
-                  <Text style={styles.articleTime}>
-                    {article.published_at ? new Date(article.published_at).toLocaleString('ja-JP', { 
-                      month: 'numeric', 
-                      day: 'numeric', 
-                      hour: 'numeric',
-                      minute: '2-digit'
-                    }) : '最近'}
-                  </Text>
-                  <TouchableOpacity 
-                    style={styles.generateButton}
-                    onPress={() => handleAudioGenerate(article.id, article.title)}
-                  >
-                    <Text style={styles.generateButtonText}>♪</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-      </ScrollView>
-
-      {/* Floating AutoPick Button */}
-      <TouchableOpacity 
-        style={styles.floatingAutoPickButton}
-        onPress={() => Alert.alert('AutoPick', 'AutoPick機能（実装予定）')}
-      >
-        <Text style={styles.floatingAutoPickText}>🎯</Text>
-      </TouchableOpacity>
-
-      {/* Search Modal */}
+      {/* SearchModal */}
       <SearchModal
         visible={showSearchModal}
         onClose={() => setShowSearchModal(false)}
-        onResultPress={handleSearchResult}
+        onResultPress={(result) => {
+          console.log('Search result:', result);
+          setShowSearchModal(false);
+        }}
+      />
+
+      {/* ArticleDetailModal */}
+      <ArticleDetailModal
+        article={selectedArticle}
+        visible={showArticleModal}
+        onClose={handleCloseArticleModal}
       />
     </View>
   );
@@ -366,75 +432,84 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#000000',
   },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingTop: 60, // Account for status bar and dynamic island
-    paddingBottom: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.1)',
-  },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#ffffff',
-  },
-  floatingAutoPickButton: {
-    position: 'absolute',
-    bottom: 100, // Above tab bar
-    right: 20,
-    width: 56,
-    height: 56,
-    backgroundColor: '#007bff',
-    borderRadius: 28,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8, // Android shadow
-  },
-  floatingAutoPickText: {
-    fontSize: 24,
-    color: '#ffffff',
-  },
-  scrollContent: {
-    flexGrow: 1,
-    paddingBottom: 24,
-  },
-  genreSection: {
+  categoryTabs: {
     paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1a1a1a',
   },
-  section: {
-    paddingHorizontal: 20,
-    marginBottom: 32,
+  contentContainer: {
+    paddingBottom: 100, // Space for floating button
   },
+
+  // セクション用スタイル
   sectionTitle: {
     fontSize: 18,
-    fontWeight: '600',
+    fontWeight: 'bold',
     color: '#ffffff',
-    marginBottom: 12,
+    marginHorizontal: 16,
+    marginVertical: 12,
   },
-  articleCard: {
+  largeCardSection: {
+    marginBottom: 20,
+  },
+
+  // 大きいカード用スタイル  
+  largeCard: {
     backgroundColor: '#111111',
-    borderRadius: 8,
-    padding: 16,
-    marginBottom: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.05)',
+    borderRadius: 12,
+    marginHorizontal: 16,
+    marginBottom: 16,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#222222',
   },
-  articleContent: {
-    flex: 1,
+
+  // 大きいカード画像エリア
+  largeImageContainer: {
+    position: 'relative',
+    height: 200,
+  },
+  largeImage: {
+    width: '100%',
+    height: '100%',
+  },
+  placeholderImage: {
+    backgroundColor: '#2a2a2a',
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: '100%',
+  },
+  placeholderText: {
+    fontSize: 32,
+    opacity: 0.5,
+  },
+
+  // ジャンルラベル
+  genreLabel: {
+    position: 'absolute',
+    top: 12,
+    left: 12,
+    backgroundColor: 'rgba(0, 123, 255, 0.9)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  genreLabelText: {
+    color: '#ffffff',
+    fontSize: 10,
+    fontWeight: '600',
+  },
+
+  // 大きいカードのテキストコンテンツ
+  textContent: {
+    padding: 16,
   },
   articleTitle: {
     fontSize: 16,
     fontWeight: '600',
     color: '#ffffff',
-    marginBottom: 8,
     lineHeight: 22,
+    marginBottom: 8,
   },
   articleSummary: {
     fontSize: 14,
@@ -442,32 +517,21 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     marginBottom: 12,
   },
-  articleMeta: {
+
+  // メタ情報
+  metaInfo: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  articleSource: {
+  sourceName: {
     fontSize: 12,
     color: '#007bff',
     fontWeight: '600',
-    flex: 1,
   },
-  articleTime: {
+  publishTime: {
     fontSize: 12,
     color: '#888888',
-    marginRight: 12,
   },
-  generateButton: {
-    backgroundColor: '#007bff',
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  generateButtonText: {
-    fontSize: 14,
-    color: '#ffffff',
-  },
+
 });

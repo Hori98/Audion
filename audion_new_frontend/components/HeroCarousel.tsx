@@ -1,313 +1,458 @@
-/**
- * Hero Carousel Component
- * Horizontal sliding news carousel with thumbnails, titles, and media names
- */
-
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
-  ScrollView,
-  TouchableOpacity,
   Text,
-  Image,
   StyleSheet,
+  TouchableOpacity,
+  ScrollView,
   Dimensions,
+  Image,
 } from 'react-native';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const HERO_ITEM_WIDTH = SCREEN_WIDTH - 40; // Account for padding
-
-interface HeroItem {
-  id: string;
-  title: string;
-  description: string;
-  mediaName: string;
-  publishedAt: string;
-  imageUrl?: string;
-  url?: string;
-}
+// ArticleServiceから型をインポート
+import { Article } from '../services/ArticleService';
+import { formatTimeAgo } from '../utils/dateUtils';
 
 interface HeroCarouselProps {
-  items: HeroItem[];
-  onItemPress?: (item: HeroItem) => void;
+  articles: Article[];
+  onArticlePress: (article: Article) => void;
+  onPlayPress: (article: Article) => void;
+  style?: any;
 }
 
-export default function HeroCarousel({ items, onItemPress }: HeroCarouselProps) {
+const { width: screenWidth } = Dimensions.get('window');
+const CARD_WIDTH = screenWidth - 32; // 16px margin on each side
+const CARD_SPACING = 16;
+
+export default function HeroCarousel({
+  articles,
+  onArticlePress,
+  onPlayPress,
+  style,
+}: HeroCarouselProps) {
+  const [currentIndex, setCurrentIndex] = useState(1); // 真ん中から開始
   const scrollViewRef = useRef<ScrollView>(null);
-  const [activeIndex, setActiveIndex] = useState(0);
-  const [isScrolling, setIsScrolling] = useState(false);
-  
-  // Create infinite loop by duplicating items
-  const infiniteItems = items.length > 0 ? [
-    ...items.slice(-2), // Last 2 items at the beginning
-    ...items,           // Original items
-    ...items.slice(0, 2) // First 2 items at the end
-  ] : [];
-  
-  const totalItems = infiniteItems.length;
-  const originalLength = items.length;
-  
+  const autoScrollTimer = useRef<number | null>(null);
+  const isScrollingRef = useRef(false);
+  const restartTimeoutRef = useRef<number | null>(null);
+
+  // 表示用記事配列（前後に複製を配置して無限スクロールを実現）
+  const displayArticles = React.useMemo(() => {
+    if (articles.length === 0) return [];
+    if (articles.length === 1) return articles;
+    
+    const limitedArticles = articles.slice(0, 5); // 最大5記事まで
+    
+    // [last, 1, 2, 3, 4, 5, first] の配列を作成
+    return [
+      limitedArticles[limitedArticles.length - 1], // 最後の記事を先頭に
+      ...limitedArticles,
+      limitedArticles[0] // 最初の記事を末尾に
+    ];
+  }, [articles]);
+
+  // 初期位置設定（真ん中から開始するため1番目に移動）
   useEffect(() => {
-    // Start at the first real item (skip the duplicated items at the beginning)
-    if (items.length > 0 && scrollViewRef.current) {
-      scrollViewRef.current.scrollTo({
-        x: 2 * HERO_ITEM_WIDTH,
-        animated: false
-      });
-      setActiveIndex(0);
+    if (displayArticles.length > 2 && scrollViewRef.current) {
+      setTimeout(() => {
+        scrollViewRef.current?.scrollTo({
+          x: 1 * (CARD_WIDTH + CARD_SPACING),
+          animated: false,
+        });
+      }, 100);
     }
-  }, [items]);
+  }, [displayArticles.length]);
+
+  // 自動スクロール機能（5秒間隔）
+  useEffect(() => {
+    if (displayArticles.length <= 2) return; // 実質的に1記事以下の場合は自動スクロールしない
+
+    const startAutoScroll = () => {
+      autoScrollTimer.current = setInterval(() => {
+        if (!isScrollingRef.current) {
+          setCurrentIndex(prev => {
+            const nextIndex = prev + 1;
+            scrollViewRef.current?.scrollTo({
+              x: nextIndex * (CARD_WIDTH + CARD_SPACING),
+              animated: true,
+            });
+            return nextIndex;
+          });
+        }
+      }, 5000); // 5秒間隔
+    };
+
+    startAutoScroll();
+
+    return () => {
+      if (autoScrollTimer.current) {
+        clearInterval(autoScrollTimer.current);
+      }
+      if (restartTimeoutRef.current) {
+        clearTimeout(restartTimeoutRef.current);
+      }
+    };
+  }, [displayArticles.length]);
 
   const handleScroll = (event: any) => {
-    const scrollPosition = event.nativeEvent.contentOffset.x;
-    const index = Math.round(scrollPosition / HERO_ITEM_WIDTH);
+    if (displayArticles.length <= 2) return;
     
-    // Calculate the real index (accounting for duplicated items)
-    const realIndex = ((index - 2) % originalLength + originalLength) % originalLength;
-    setActiveIndex(realIndex);
+    const offsetX = event.nativeEvent.contentOffset.x;
+    const index = Math.round(offsetX / (CARD_WIDTH + CARD_SPACING));
+    
+    // インジケータ表示用のインデックス計算（0-4の範囲）
+    const actualArticleCount = Math.min(articles.length, 5);
+    let indicatorIndex;
+    
+    if (index <= 0) {
+      indicatorIndex = actualArticleCount - 1; // 最後
+    } else if (index >= displayArticles.length - 1) {
+      indicatorIndex = 0; // 最初
+    } else {
+      indicatorIndex = (index - 1) % actualArticleCount;
+    }
+    
+    setCurrentIndex(index);
   };
-  
+
   const handleScrollEnd = (event: any) => {
-    const scrollPosition = event.nativeEvent.contentOffset.x;
-    const index = Math.round(scrollPosition / HERO_ITEM_WIDTH);
+    if (displayArticles.length <= 2) return;
     
-    setIsScrolling(false);
+    isScrollingRef.current = false;
+    const offsetX = event.nativeEvent.contentOffset.x;
+    const index = Math.round(offsetX / (CARD_WIDTH + CARD_SPACING));
     
-    // Handle infinite loop position reset
-    if (scrollViewRef.current && !isScrolling) {
-      if (index < 2) {
-        // At the beginning duplicates, jump to the end of real items
-        const targetIndex = originalLength + index;
-        scrollViewRef.current.scrollTo({
-          x: targetIndex * HERO_ITEM_WIDTH,
-          animated: false
+    // 無限ループの境界処理
+    if (index <= 0) {
+      // 最初の複製（実際は最後の記事）から最後の実記事に移動
+      setTimeout(() => {
+        const targetIndex = displayArticles.length - 2;
+        scrollViewRef.current?.scrollTo({
+          x: targetIndex * (CARD_WIDTH + CARD_SPACING),
+          animated: false,
         });
-      } else if (index >= originalLength + 2) {
-        // At the end duplicates, jump to the beginning of real items
-        const targetIndex = index - originalLength;
-        scrollViewRef.current.scrollTo({
-          x: targetIndex * HERO_ITEM_WIDTH,
-          animated: false
+        setCurrentIndex(targetIndex);
+      }, 50);
+    } else if (index >= displayArticles.length - 1) {
+      // 最後の複製（実際は最初の記事）から最初の実記事に移動
+      setTimeout(() => {
+        scrollViewRef.current?.scrollTo({
+          x: 1 * (CARD_WIDTH + CARD_SPACING),
+          animated: false,
         });
-      }
+        setCurrentIndex(1);
+      }, 50);
+    } else {
+      setCurrentIndex(index);
     }
   };
-  
+
   const handleScrollBegin = () => {
-    setIsScrolling(true);
+    isScrollingRef.current = true;
+    
+    // 自動スクロールを一時停止
+    if (autoScrollTimer.current) {
+      clearInterval(autoScrollTimer.current);
+      autoScrollTimer.current = null;
+    }
+    
+    // 既存の再開タイマーをクリア
+    if (restartTimeoutRef.current) {
+      clearTimeout(restartTimeoutRef.current);
+    }
+    
+    // 4秒後に自動スクロールを再開
+    restartTimeoutRef.current = setTimeout(() => {
+      if (displayArticles.length > 2) {
+        autoScrollTimer.current = setInterval(() => {
+          if (!isScrollingRef.current) {
+            setCurrentIndex(prev => {
+              const nextIndex = prev + 1;
+              scrollViewRef.current?.scrollTo({
+                x: nextIndex * (CARD_WIDTH + CARD_SPACING),
+                animated: true,
+              });
+              return nextIndex;
+            });
+          }
+        }, 5000);
+      }
+    }, 4000) as unknown as number;
   };
 
-  const renderHeroItem = (item: HeroItem, index: number) => (
-    <TouchableOpacity
-      key={item.id}
-      style={styles.heroItem}
-      onPress={() => onItemPress?.(item)}
-    >
-      {/* Hero Image */}
-      <View style={styles.heroImageContainer}>
-        {item.imageUrl ? (
-          <Image
-            source={{ uri: item.imageUrl }}
-            style={styles.heroImage}
-            resizeMode="cover"
-          />
-        ) : (
-          <View style={styles.heroImagePlaceholder}>
-            <Text style={styles.heroImagePlaceholderText}>📰</Text>
-          </View>
-        )}
-        
-        {/* Overlay gradient for text readability */}
-        <View style={styles.heroOverlay}>
-          <View style={styles.heroOverlayTop} />
-          <View style={styles.heroOverlayBottom} />
-        </View>
-        
-        {/* Content overlay */}
-        <View style={styles.heroContent}>
-          <View style={styles.heroMeta}>
-            <Text style={styles.heroMediaName}>{item.mediaName}</Text>
-            <Text style={styles.heroPublishedAt}>
-              {new Date(item.publishedAt).toLocaleDateString('ja-JP', {
-                month: 'short',
-                day: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit',
-              })}
-            </Text>
-          </View>
-          
-          <Text style={styles.heroTitle} numberOfLines={2}>
-            {item.title}
-          </Text>
-          
-          <Text style={styles.heroDescription} numberOfLines={2}>
-            {item.description}
-          </Text>
-        </View>
-      </View>
-    </TouchableOpacity>
-  );
+  // インジケータ表示用のインデックス計算
+  const getIndicatorIndex = () => {
+    if (displayArticles.length <= 2) return 0;
+    
+    const actualArticleCount = Math.min(articles.length, 5);
+    
+    if (currentIndex <= 0) {
+      return actualArticleCount - 1;
+    } else if (currentIndex >= displayArticles.length - 1) {
+      return 0;
+    } else {
+      return (currentIndex - 1) % actualArticleCount;
+    }
+  };
 
-  if (!items || items.length === 0) {
-    return (
-      <View style={styles.emptyContainer}>
-        <Text style={styles.emptyText}>ニュースを読み込み中...</Text>
-      </View>
-    );
+
+  const truncateText = (text: string, maxLength: number) => {
+    if (text.length <= maxLength) return text;
+    return text.substring(0, maxLength).trim() + '...';
+  };
+
+  if (!articles || articles.length === 0) {
+    return null;
   }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, style]}>
       <ScrollView
         ref={scrollViewRef}
         horizontal
-        pagingEnabled
+        pagingEnabled={false}
         showsHorizontalScrollIndicator={false}
         onScroll={handleScroll}
         onScrollBeginDrag={handleScrollBegin}
         onMomentumScrollEnd={handleScrollEnd}
         scrollEventThrottle={16}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={styles.scrollContainer}
+        snapToInterval={CARD_WIDTH + CARD_SPACING}
+        snapToAlignment="start"
+        decelerationRate="fast"
       >
-        {infiniteItems.map((item, index) => renderHeroItem(item, index))}
-      </ScrollView>
-      
-      {/* Page Indicator */}
-      <View style={styles.pageIndicator}>
-        {items.map((_, index) => (
-          <View
-            key={index}
-            style={[
-              styles.pageIndicatorDot,
-              index === activeIndex && styles.pageIndicatorDotActive,
-            ]}
-          />
+        {displayArticles.map((article, index) => (
+          <TouchableOpacity
+            key={`${article.id}-${index}`}
+            style={styles.heroCard}
+            onPress={() => onArticlePress(article)}
+            activeOpacity={0.95}
+          >
+            {/* Background Image */}
+            {article.thumbnail_url ? (
+              <Image
+                source={{ uri: article.thumbnail_url }}
+                style={styles.backgroundImage}
+                resizeMode="cover"
+              />
+            ) : (
+              <View style={[styles.backgroundImage, styles.placeholderBackground]}>
+                <Text style={styles.placeholderIcon}>📰</Text>
+              </View>
+            )}
+            
+            {/* Gradient Overlay */}
+            <View style={styles.gradientOverlay} />
+            
+            {/* Content Overlay - 画面下部40%に集約 */}
+            <View style={styles.contentOverlay}>
+              <View style={styles.bottomContent}>
+                {/* Source and Time */}
+                <View style={styles.metaInfo}>
+                  <View style={styles.sourceContainer}>
+                    <Text style={styles.sourceText}>{article.source_name}</Text>
+                  </View>
+                  <Text style={styles.timeText}>{formatTimeAgo(article.published_at)}</Text>
+                </View>
+
+                {/* Title and Summary */}
+                <View style={styles.textContent}>
+                  <Text style={styles.heroTitle} numberOfLines={2}>
+                    {truncateText(article.title, 80)}
+                  </Text>
+                  {article.summary && (
+                    <Text style={styles.heroSummary} numberOfLines={2}>
+                      {truncateText(article.summary, 100)}
+                    </Text>
+                  )}
+                </View>
+              </View>
+            </View>
+          </TouchableOpacity>
         ))}
-      </View>
+      </ScrollView>
+
+      {/* Page Indicators */}
+      {articles.length > 1 && (
+        <View style={styles.indicators}>
+          {articles.slice(0, 5).map((_, index) => (
+            <View
+              key={index}
+              style={[
+                styles.indicator,
+                index === getIndicatorIndex() && styles.activeIndicator,
+              ]}
+            />
+          ))}
+        </View>
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    marginBottom: 24,
+    height: 300,
+    marginVertical: 8,
   },
-  scrollContent: {
-    paddingHorizontal: 20,
+  scrollContainer: {
+    paddingHorizontal: 16,
+    paddingRight: 32, // Extra padding for last item
   },
-  heroItem: {
-    width: HERO_ITEM_WIDTH,
-    marginRight: 20,
-  },
-  heroImageContainer: {
-    height: 240,
+  heroCard: {
+    width: CARD_WIDTH,
+    height: 260,
+    marginRight: CARD_SPACING,
     borderRadius: 16,
     overflow: 'hidden',
     position: 'relative',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
   },
-  heroImage: {
-    width: '100%',
-    height: '100%',
-    backgroundColor: '#1a1a1a',
-  },
-  heroImagePlaceholder: {
-    width: '100%',
-    height: '100%',
-    backgroundColor: '#1a1a1a',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  heroImagePlaceholderText: {
-    fontSize: 48,
-    opacity: 0.5,
-  },
-  heroOverlay: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: '60%',
-  },
-  heroOverlayTop: {
+  backgroundImage: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
-    height: '40%',
-    backgroundColor: 'rgba(0,0,0,0)',
-  },
-  heroOverlayBottom: {
-    position: 'absolute',
     bottom: 0,
+    width: '100%',
+    height: '100%',
+  },
+  placeholderBackground: {
+    backgroundColor: '#2a2a2a',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  placeholderIcon: {
+    fontSize: 40,
+    opacity: 0.5,
+  },
+  gradientOverlay: {
+    position: 'absolute',
+    top: 0,
     left: 0,
     right: 0,
-    height: '60%',
-    backgroundColor: 'rgba(0,0,0,0.8)',
-  },
-  heroContent: {
-    position: 'absolute',
     bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.3)',
+  },
+  contentOverlay: {
+    position: 'absolute',
+    top: 0,
     left: 0,
     right: 0,
+    bottom: 0,
     padding: 20,
+    justifyContent: 'flex-end',
   },
-  heroMeta: {
+  bottomContent: {
+    // 画面下部50%に内容を集約
+    height: '50%',
+    justifyContent: 'flex-end',
+  },
+  // personalizationBadge: {
+  //   alignSelf: 'flex-start',
+  //   backgroundColor: 'rgba(0, 123, 255, 0.9)',
+  //   paddingHorizontal: 10,
+  //   paddingVertical: 6,
+  //   borderRadius: 16,
+  //   marginBottom: 8,
+  // },
+  // personalizationText: {
+  //   fontSize: 11,
+  //   fontWeight: '600',
+  //   color: '#ffffff',
+  // },
+  metaInfo: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
   },
-  heroMediaName: {
+  sourceContainer: {
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  sourceText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#007bff',
-    textTransform: 'uppercase',
+    color: '#ffffff',
   },
-  heroPublishedAt: {
+  timeText: {
     fontSize: 12,
-    color: '#cccccc',
+    color: 'rgba(255,255,255,0.8)',
+    fontWeight: '500',
+  },
+  textContent: {
+    marginTop: 12,
   },
   heroTitle: {
     fontSize: 20,
-    fontWeight: '700',
+    fontWeight: 'bold',
     color: '#ffffff',
     lineHeight: 26,
-    marginBottom: 8,
+    textShadowColor: 'rgba(0,0,0,0.5)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
   },
-  heroDescription: {
+  heroSummary: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.85)',
+    lineHeight: 18,
+    marginTop: 4,
+    textShadowColor: 'rgba(0,0,0,0.7)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
+  actionButtons: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  playButton: {
+    backgroundColor: '#007bff',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  playButtonText: {
     fontSize: 14,
-    color: '#cccccc',
-    lineHeight: 20,
+    fontWeight: '600',
+    color: '#ffffff',
   },
-  pageIndicator: {
+  readButton: {
+    backgroundColor: 'rgba(255,255,255,0.9)',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  readButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#007bff',
+  },
+  indicators: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
     marginTop: 16,
+    gap: 8,
   },
-  pageIndicatorDot: {
+  indicator: {
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#333333',
-    marginHorizontal: 4,
+    backgroundColor: '#555555',
   },
-  pageIndicatorDotActive: {
+  activeIndicator: {
     backgroundColor: '#007bff',
-    width: 20,
-  },
-  emptyContainer: {
-    height: 240,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#1a1a1a',
-    borderRadius: 16,
-    marginHorizontal: 20,
-    marginBottom: 24,
-  },
-  emptyText: {
-    fontSize: 16,
-    color: '#888888',
   },
 });

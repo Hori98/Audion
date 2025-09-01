@@ -17,6 +17,7 @@ class Article(BaseModel):
     source_name: str
     content: Optional[str] = None
     genre: Optional[str] = None
+    thumbnail_url: Optional[str] = None
 
 class AutoPickRequest(BaseModel):
     """Request model for auto-picking articles based on user preferences."""

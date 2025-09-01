@@ -216,6 +216,39 @@ def extract_articles_from_feed(feed: feedparser.FeedParserDict,
                 if hasattr(entry, 'published_parsed') and entry.published_parsed:
                     published = time.strftime('%Y-%m-%dT%H:%M:%SZ', entry.published_parsed)
                 
+                # Extract thumbnail/image URL
+                thumbnail_url = None
+                try:
+                    # Check for media:thumbnail or media:content
+                    if hasattr(entry, 'media_thumbnail') and entry.media_thumbnail:
+                        thumbnail_url = entry.media_thumbnail[0]['url']
+                    elif hasattr(entry, 'media_content') and entry.media_content:
+                        for media in entry.media_content:
+                            if 'image' in media.get('type', ''):
+                                thumbnail_url = media['url']
+                                break
+                    # Check for enclosures (common for images)
+                    elif hasattr(entry, 'enclosures') and entry.enclosures:
+                        for enclosure in entry.enclosures:
+                            if enclosure.get('type', '').startswith('image/'):
+                                thumbnail_url = enclosure['href']
+                                break
+                    # Check for links with image type
+                    elif hasattr(entry, 'links') and entry.links:
+                        for link_entry in entry.links:
+                            if link_entry.get('type', '').startswith('image/'):
+                                thumbnail_url = link_entry['href']
+                                break
+                    # Check summary/description for img tags (basic HTML parsing)
+                    if not thumbnail_url and summary:
+                        import re
+                        img_pattern = r'<img[^>]+src=["\']([^"\']+)["\']'
+                        img_match = re.search(img_pattern, summary, re.IGNORECASE)
+                        if img_match:
+                            thumbnail_url = img_match.group(1)
+                except Exception as img_e:
+                    logging.debug(f"Error extracting image URL from entry: {img_e}")
+                
                 # Classify genre
                 genre = classify_article_genre(title, summary)
                 
@@ -228,7 +261,8 @@ def extract_articles_from_feed(feed: feedparser.FeedParserDict,
                     published=published,
                     source_name=source_name,
                     content=summary,  # Use summary as content for now
-                    genre=genre
+                    genre=genre,
+                    thumbnail_url=thumbnail_url
                 )
                 
                 articles.append(article)

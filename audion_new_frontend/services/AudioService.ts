@@ -12,6 +12,18 @@ export interface AudioCreateRequest {
   voice_type?: string;
 }
 
+export interface ManualPickRequest {
+  article_ids: string[];
+  article_titles: string[];
+  article_urls?: string[];
+  article_summaries?: string[];
+  article_contents?: string[];
+  voice_language?: string;
+  voice_name?: string;
+  prompt_style?: string;
+  custom_prompt?: string;
+}
+
 export interface AudioGenerationResponse {
   id: string;
   status: 'processing' | 'completed' | 'failed';
@@ -93,6 +105,27 @@ class AudioService {
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
       throw new Error(errorData.detail || `Failed to generate audio: ${response.statusText}`);
+    }
+
+    return response.json();
+  }
+
+  /**
+   * Generate audio from manually selected articles
+   */
+  async generateManualPickAudio(
+    request: ManualPickRequest,
+    authToken?: string
+  ): Promise<AudioGenerationResponse> {
+    const response = await fetch(`${API_BASE_URL}/v2/audio/manual`, {
+      method: 'POST',
+      headers: await this.getAuthHeaders(authToken),
+      body: JSON.stringify(request),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.detail || `Failed to generate manual pick audio: ${response.statusText}`);
     }
 
     return response.json();

@@ -1,7 +1,7 @@
-from fastapi import FastAPI, HTTPException, Depends, status, Request
+from fastapi import FastAPI, HTTPException, Depends, status, Request, BackgroundTasks
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -10,7 +10,7 @@ import os
 import logging
 from pathlib import Path
 from pydantic import BaseModel, Field
-from typing import List, Optional, Dict, Tuple
+from typing import List, Optional, Dict, Tuple, Any
 import uuid
 from datetime import datetime
 import asyncio
@@ -28,12 +28,20 @@ import boto3
 from botocore.exceptions import ClientError
 import random
 import math
+import httpx
 from services.prompt_service import prompt_service
 from services.dynamic_prompt_service import dynamic_prompt_service
 
 # Import RSS service for consolidated RSS operations
 from services.rss_service import get_articles_for_user, parse_rss_feed, extract_articles_from_feed, clear_rss_cache
 from services.article_service import classify_article_genre
+
+# Import SchedulePick services
+from services.scheduler_service import create_scheduler_service, get_scheduler_service
+from services.unified_audio_service import create_unified_audio_service
+
+# Import task manager for progress tracking
+from services.task_manager import get_task_manager, TaskStatus
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -106,6 +114,20 @@ async def lifespan(app: FastAPI):
             logging.error(f"Failed to initialize preset categories: {e}")
             logging.info("Server will continue without preset categories")
         
+        # Initialize SchedulePick scheduler service (non-blocking)
+        try:
+            # Create OpenAI client for audio service
+            openai_client = AsyncOpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
+            audio_service = create_unified_audio_service(db, openai_client)
+            
+            # Create and start scheduler service
+            scheduler_service = create_scheduler_service(db, audio_service)
+            await scheduler_service.start_scheduler()
+            logging.info("SchedulePick scheduler service initialized successfully")
+        except Exception as e:
+            logging.error(f"Failed to initialize scheduler service: {e}")
+            logging.info("Server will continue without scheduler service")
+        
         # Cleanup expired deleted audio files (non-blocking)
         try:
             # Note: cleanup_expired_deleted_audio function needs to be defined if used
@@ -120,6 +142,15 @@ async def lifespan(app: FastAPI):
     yield
     
     # Shutdown
+    # Stop scheduler service
+    try:
+        scheduler_service = get_scheduler_service()
+        if scheduler_service:
+            await scheduler_service.stop_scheduler()
+            logging.info("SchedulePick scheduler service stopped successfully")
+    except Exception as e:
+        logging.error(f"Failed to stop scheduler service: {e}")
+    
     client.close()
     logging.info("Disconnected from MongoDB")
 
@@ -180,13 +211,13 @@ app.add_middleware(
 from routers.subscription import router as subscription_router
 app.include_router(subscription_router)
 
-# 🚀 NEW: Import and register unified audio router (commented out for now - will be enabled after testing)
-# try:
-#     from routers.audio_unified import router as audio_unified_router
-#     app.include_router(audio_unified_router)
-#     logging.info("✅ Unified Audio Router registered successfully")
-# except ImportError as e:
-#     logging.warning(f"⚠️ Could not import unified audio router: {e}")
+# 🚀 NEW: Import and register unified audio router
+try:
+    from routers.audio_unified import router as audio_unified_router
+    app.include_router(audio_unified_router)
+    logging.info("✅ Unified Audio Router registered successfully")
+except ImportError as e:
+    logging.warning(f"⚠️ Could not import unified audio router: {e}")
 # except Exception as e:
 #     logging.error(f"❌ Failed to register unified audio router: {e}")
 
@@ -245,6 +276,40 @@ class UserSettingsUpdate(BaseModel):
     language: Optional[str] = None  # "en", "ja"
     auto_pick_settings: Optional[dict] = None  # Auto-Pick configuration
 
+# Push Notification Models
+class PushTokenPayload(BaseModel):
+    token: str = Field(..., description="The Expo push token for this device")
+
+class PushToken(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    user_id: str = Field(..., description="User ID this token belongs to")
+    token: str = Field(..., description="The actual push token")
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    device_info: Optional[dict] = Field(default=None, description="Optional device information")
+
+class PushTokenResponse(BaseModel):
+    status: str
+    message: str
+    token_id: Optional[str] = None
+
+class NotificationHistory(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    user_id: str = Field(..., description="User ID who received the notification")
+    token: str = Field(..., description="Push token used for sending")
+    status: str = Field(..., description="Status: sent, error, delivered")
+    title: str = Field(..., description="Notification title")
+    body: str = Field(..., description="Notification body")
+    data: Optional[Dict[str, Any]] = Field(default=None, description="Additional notification data")
+    sent_at: datetime = Field(default_factory=datetime.utcnow)
+    error_details: Optional[str] = Field(default=None, description="Error details if failed")
+
+class SendNotificationPayload(BaseModel):
+    user_ids: List[str]
+    title: str
+    body: str
+    data: Optional[Dict[str, Any]] = None
+
 class RSSSource(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     user_id: str
@@ -269,7 +334,7 @@ class Article(BaseModel):
     source_name: str
     content: Optional[str] = None
     genre: Optional[str] = None
-    image_url: Optional[str] = None
+    thumbnail_url: Optional[str] = None
 
 class Bookmark(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -431,6 +496,11 @@ class AutoPickRequest(BaseModel):
     source_priority: Optional[str] = "balanced"
     time_based_filtering: Optional[bool] = True
     active_source_ids: Optional[List[str]] = None  # Explicitly specify which sources to use
+
+class TaskStartResponse(BaseModel):
+    task_id: str
+    message: str
+    status: str
 
 class UserInteraction(BaseModel):
     article_id: str
@@ -1326,6 +1396,197 @@ async def auto_pick_articles(
     logging.info(f"🔍 AUTO-PICK DEBUG: Final selection: {len(selected_articles)} articles")
     return selected_articles
 
+# ===== NOTIFICATION SERVICE HELPERS =====
+
+EXPO_PUSH_URL = "https://api.expo.dev/v2/push/send"
+
+async def send_batch_notifications(
+    user_ids: List[str],
+    title: str,
+    body: str,
+    data: Optional[Dict[str, Any]] = None
+):
+    """指定されたユーザーIDリストに一括でプッシュ通知を送信"""
+    if not db_connected:
+        logging.error("[Notifications] Database not connected, cannot send notifications")
+        return {"status": "error", "details": "Database not connected"}
+    
+    try:
+        # プッシュトークンを取得
+        tokens = await asyncio.wait_for(
+            db.push_tokens.find({"user_id": {"$in": user_ids}}).to_list(length=None),
+            timeout=5.0
+        )
+        
+        if not tokens:
+            logging.warning(f"[Notifications] No push tokens found for users: {user_ids}")
+            return {"status": "no_tokens_found"}
+        
+        # メッセージを構築
+        messages = []
+        for token_doc in tokens:
+            messages.append({
+                "to": token_doc["token"],
+                "title": title,
+                "body": body,
+                "data": data or {},
+                "sound": "default"
+            })
+        
+        logging.info(f"[Notifications] Sending {len(messages)} notifications to {len(user_ids)} users")
+        
+        # Expo Push APIに送信
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                EXPO_PUSH_URL,
+                json=messages,
+                headers={"Content-Type": "application/json"},
+                timeout=30.0
+            )
+            response.raise_for_status()
+            result = response.json()
+            
+            # レスポンスを処理
+            await handle_push_tickets(result.get('data', []), messages, tokens)
+            
+            logging.info(f"[Notifications] Successfully sent notifications, tickets: {len(result.get('data', []))}")
+            return {"status": "success", "tickets": result.get('data')}
+            
+    except httpx.HTTPStatusError as e:
+        error_msg = f"Expo API error: {e.response.status_code} - {e.response.text}"
+        logging.error(f"[Notifications] {error_msg}")
+        await log_batch_error(user_ids, title, body, data, error_msg)
+        return {"status": "error", "details": error_msg}
+    except asyncio.TimeoutError:
+        error_msg = "Database timeout during notification sending"
+        logging.error(f"[Notifications] {error_msg}")
+        return {"status": "error", "details": error_msg}
+    except Exception as e:
+        error_msg = f"Unexpected error: {str(e)}"
+        logging.error(f"[Notifications] {error_msg}")
+        await log_batch_error(user_ids, title, body, data, error_msg)
+        return {"status": "error", "details": error_msg}
+
+async def handle_push_tickets(tickets: List[Dict[str, Any]], messages: List[Dict[str, Any]], token_docs: List[Dict]):
+    """Expoからのチケットを処理し、エラーがあれば対応"""
+    for i, ticket in enumerate(tickets):
+        if i >= len(messages) or i >= len(token_docs):
+            continue
+            
+        message = messages[i]
+        token_doc = token_docs[i]
+        token = token_doc["token"]
+        user_id = token_doc["user_id"]
+        
+        # 通知履歴を記録
+        history_data = NotificationHistory(
+            user_id=user_id,
+            token=token,
+            title=message["title"],
+            body=message["body"],
+            data=message.get("data", {}),
+            status="pending"  # 初期状態
+        )
+        
+        if ticket.get('status') == 'ok':
+            # 成功
+            history_data.status = "sent"
+            logging.info(f"[Notifications] Successfully sent to user {user_id}")
+        else:
+            # エラー
+            error_details = ticket.get('details', {})
+            error_code = error_details.get('error')
+            history_data.status = "error"
+            history_data.error_details = str(error_details)
+            
+            logging.warning(f"[Notifications] Error sending to user {user_id}: {error_details}")
+            
+            # トークンが無効な場合はDBから削除
+            if error_code == 'DeviceNotRegistered':
+                try:
+                    await asyncio.wait_for(
+                        db.push_tokens.delete_one({"token": token}),
+                        timeout=5.0
+                    )
+                    logging.info(f"[Notifications] Removed invalid token for user {user_id}")
+                except Exception as e:
+                    logging.error(f"[Notifications] Failed to remove invalid token: {e}")
+        
+        # 履歴を保存
+        try:
+            await asyncio.wait_for(
+                db.notification_history.insert_one(history_data.dict()),
+                timeout=5.0
+            )
+        except Exception as e:
+            logging.error(f"[Notifications] Failed to save notification history: {e}")
+
+async def log_batch_error(user_ids: List[str], title: str, body: str, data: Optional[Dict], error: str):
+    """バッチ送信全体が失敗した場合のログを記録"""
+    if not db_connected:
+        return
+    
+    try:
+        # 各ユーザーのエラー履歴を作成
+        error_histories = []
+        for user_id in user_ids:
+            history_data = NotificationHistory(
+                user_id=user_id,
+                token="unknown",
+                status="error",
+                title=title,
+                body=body,
+                data=data or {},
+                error_details=f"Batch send failed: {error}"
+            )
+            error_histories.append(history_data.dict())
+        
+        if error_histories:
+            await asyncio.wait_for(
+                db.notification_history.insert_many(error_histories),
+                timeout=10.0
+            )
+            logging.info(f"[Notifications] Logged {len(error_histories)} error histories")
+    except Exception as e:
+        logging.error(f"[Notifications] Failed to log batch error: {e}")
+
+async def send_audio_completion_notification(user_id: str, article_title: str, audio_id: str):
+    """音声生成完了通知を送信"""
+    return await send_batch_notifications(
+        user_ids=[user_id],
+        title="🎧 音声の準備ができました！",
+        body=f"「{article_title}」の音声を再生できます。",
+        data={
+            "screen": "AudioPlayer",
+            "audioId": audio_id,
+            "type": "audio_completion"
+        }
+    )
+
+async def send_new_content_notification(user_ids: List[str], content_count: int):
+    """新着コンテンツ通知を送信"""
+    return await send_batch_notifications(
+        user_ids=user_ids,
+        title="📰 新着記事があります",
+        body=f"{content_count}件の新しい記事が追加されました。",
+        data={
+            "screen": "Feed", 
+            "type": "new_content"
+        }
+    )
+
+async def send_system_notification(user_ids: List[str], title: str, body: str, screen: Optional[str] = None):
+    """システム通知を送信"""
+    return await send_batch_notifications(
+        user_ids=user_ids,
+        title=title,
+        body=body,
+        data={
+            "screen": screen or "Feed",
+            "type": "system"
+        }
+    )
+
 # Auth helpers
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
     """
@@ -1498,10 +1759,10 @@ async def get_current_user_info(current_user: User = Depends(get_current_user)):
         raise HTTPException(status_code=503, detail="Database unavailable. Server is running in limited mode.")
     
     try:
-        # Get fresh user data from database
+        # Get fresh user data from database with shorter timeout
         user = await asyncio.wait_for(
             db.users.find_one({"id": current_user.id}),
-            timeout=10.0
+            timeout=3.0  # 3秒に短縮
         )
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
@@ -1552,6 +1813,179 @@ async def get_user_settings(current_user: User = Depends(get_current_user)):
     except Exception as e:
         logging.error(f"Settings retrieval error: {e}")
         raise HTTPException(status_code=500, detail="Failed to retrieve settings")
+
+# ===== PUSH NOTIFICATION ENDPOINTS =====
+
+@app.post("/api/push-tokens", tags=["Push Notifications"])
+async def register_push_token(
+    payload: PushTokenPayload,
+    current_user: User = Depends(get_current_user)
+):
+    """Register or update a push notification token for the current user."""
+    if not db_connected:
+        raise HTTPException(status_code=503, detail="Database unavailable. Server is running in limited mode.")
+    
+    try:
+        # Upsert logic: Update if token exists, otherwise insert.
+        # This handles new registrations, re-registrations, and user changes on the same device.
+        update_data = {
+            "$set": {
+                "user_id": current_user.id,
+                "updated_at": datetime.utcnow()
+            },
+            "$setOnInsert": {
+                "id": str(uuid.uuid4()),
+                "token": payload.token,
+                "created_at": datetime.utcnow()
+            }
+        }
+        
+        result = await asyncio.wait_for(
+            db.push_tokens.update_one(
+                {"token": payload.token},
+                update_data,
+                upsert=True
+            ),
+            timeout=10.0
+        )
+        
+        if result.upserted_id:
+            # A new token was inserted
+            logging.info(f"[PushTokens] New token registered for user {current_user.email}")
+            return PushTokenResponse(
+                status="success",
+                message="Push token registered successfully.",
+                token_id=str(result.upserted_id)
+            )
+        elif result.modified_count > 0:
+            # An existing token was updated
+            logging.info(f"[PushTokens] Token updated for user {current_user.email}")
+            return PushTokenResponse(
+                status="success", 
+                message="Push token updated successfully."
+            )
+        else:
+            # The token existed and was already associated with this user, no changes needed
+            logging.info(f"[PushTokens] Token already up-to-date for user {current_user.email}")
+            return PushTokenResponse(
+                status="success",
+                message="Push token is already up-to-date."
+            )
+            
+    except asyncio.TimeoutError:
+        logging.error("[PushTokens] Database timeout during token registration")
+        raise HTTPException(status_code=503, detail="Database temporarily unavailable. Please try again later.")
+    except Exception as e:
+        logging.error(f"[PushTokens] Token registration error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to register push token")
+
+@app.get("/api/push-tokens", tags=["Push Notifications"])
+async def get_user_push_tokens(current_user: User = Depends(get_current_user)):
+    """Get all push tokens for the current user."""
+    if not db_connected:
+        raise HTTPException(status_code=503, detail="Database unavailable. Server is running in limited mode.")
+    
+    try:
+        tokens = await asyncio.wait_for(
+            db.push_tokens.find({"user_id": current_user.id}).to_list(length=None),
+            timeout=5.0
+        )
+        
+        # Convert ObjectId fields to strings
+        for token in tokens:
+            if '_id' in token:
+                token['_id'] = str(token['_id'])
+        
+        return {"tokens": tokens}
+        
+    except asyncio.TimeoutError:
+        logging.error("[PushTokens] Database timeout during token retrieval")
+        raise HTTPException(status_code=503, detail="Database temporarily unavailable. Please try again later.")
+    except Exception as e:
+        logging.error(f"[PushTokens] Token retrieval error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve push tokens")
+
+@app.delete("/api/push-tokens/{token}", tags=["Push Notifications"])
+async def delete_push_token(token: str, current_user: User = Depends(get_current_user)):
+    """Delete a specific push token."""
+    if not db_connected:
+        raise HTTPException(status_code=503, detail="Database unavailable. Server is running in limited mode.")
+    
+    try:
+        result = await asyncio.wait_for(
+            db.push_tokens.delete_one({
+                "token": token,
+                "user_id": current_user.id
+            }),
+            timeout=5.0
+        )
+        
+        if result.deleted_count > 0:
+            logging.info(f"[PushTokens] Token deleted for user {current_user.email}")
+            return {"status": "success", "message": "Push token deleted successfully."}
+        else:
+            raise HTTPException(status_code=404, detail="Push token not found")
+            
+    except asyncio.TimeoutError:
+        logging.error("[PushTokens] Database timeout during token deletion")
+        raise HTTPException(status_code=503, detail="Database temporarily unavailable. Please try again later.")
+    except Exception as e:
+        logging.error(f"[PushTokens] Token deletion error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to delete push token")
+
+@app.post("/api/notifications/send-test", tags=["Push Notifications"])
+async def send_test_notification(
+    payload: SendNotificationPayload,
+    current_user: User = Depends(get_current_user)
+):
+    """テスト用通知送信エンドポイント"""
+    if not db_connected:
+        raise HTTPException(status_code=503, detail="Database unavailable. Server is running in limited mode.")
+    
+    try:
+        result = await send_batch_notifications(
+            user_ids=payload.user_ids if payload.user_ids else [current_user.id],
+            title=payload.title,
+            body=payload.body,
+            data=payload.data
+        )
+        
+        return result
+        
+    except Exception as e:
+        logging.error(f"[Notifications] Test notification error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to send test notification")
+
+@app.get("/api/notifications/history", tags=["Push Notifications"])
+async def get_notification_history(
+    limit: int = 20,
+    current_user: User = Depends(get_current_user)
+):
+    """ユーザーの通知履歴を取得"""
+    if not db_connected:
+        raise HTTPException(status_code=503, detail="Database unavailable. Server is running in limited mode.")
+    
+    try:
+        history = await asyncio.wait_for(
+            db.notification_history.find(
+                {"user_id": current_user.id}
+            ).sort("sent_at", -1).limit(limit).to_list(length=None),
+            timeout=10.0
+        )
+        
+        # Convert ObjectId fields to strings
+        for record in history:
+            if '_id' in record:
+                record['_id'] = str(record['_id'])
+        
+        return {"history": history}
+        
+    except asyncio.TimeoutError:
+        logging.error("[Notifications] Database timeout during history retrieval")
+        raise HTTPException(status_code=503, detail="Database temporarily unavailable. Please try again later.")
+    except Exception as e:
+        logging.error(f"[Notifications] History retrieval error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve notification history")
 
 @app.put("/api/user/settings", tags=["User Settings"])
 async def update_user_settings(settings: UserSettingsUpdate, current_user: User = Depends(get_current_user)):
@@ -2046,11 +2480,11 @@ async def get_curated_articles(current_user: User = Depends(get_current_user)):
                         article_genre = "Sports"
                     
                     # Simple image extraction
-                    image_url = None
+                    thumbnail_url = None
                     if hasattr(entry, 'links'):
                         for link in entry.links:
                             if 'image' in link.get('type', '').lower():
-                                image_url = link.get('href')
+                                thumbnail_url = link.get('href')
                                 break
                     
                     curated_articles.append(Article(
@@ -2062,7 +2496,7 @@ async def get_curated_articles(current_user: User = Depends(get_current_user)):
                         source_name=source_doc.get('name', 'Unknown'),
                         content=article_content[:1000] if len(article_content) > 1000 else article_content,
                         genre=article_genre,
-                        image_url=image_url
+                        thumbnail_url=thumbnail_url
                     ))
                     
                     # Limit total articles to avoid too many
@@ -2157,7 +2591,7 @@ async def get_articles_internal(current_user: User, genre: Optional[str] = None,
                     article_content = soup.get_text(strip=True)
 
                 # Extract image URL from entry
-                image_url = extract_image_from_entry(entry)
+                thumbnail_url = extract_image_from_entry(entry)
                 
                 article_genre = classify_genre(article_title, article_summary)
                 article = Article(
@@ -2167,7 +2601,7 @@ async def get_articles_internal(current_user: User, genre: Optional[str] = None,
                     link=getattr(entry, 'link', ""),
                     published=time.strftime('%Y-%m-%dT%H:%M:%SZ', entry.published_parsed) if hasattr(entry, 'published_parsed') and entry.published_parsed else "",
                     source_name=source_doc["name"],
-                    image_url=image_url,
+                    thumbnail_url=thumbnail_url,
                     content=article_content,
                     genre=article_genre
                 )
@@ -2695,6 +3129,17 @@ async def create_instant_multi_audio(request: AudioCreationRequest, current_user
         total_duration = (datetime.utcnow() - start_time).total_seconds()
         logging.info(f"🎉 INSTANT MULTI: Complete in {total_duration:.1f}s - Audio ID: {audio_id}")
         
+        # Send push notification for audio completion
+        try:
+            await send_audio_completion_notification(
+                user_id=current_user.id,
+                article_title=title,
+                audio_id=audio_id
+            )
+            logging.info(f"📱 [NOTIFICATIONS] Sent audio completion notification for user {current_user.id}")
+        except Exception as e:
+            logging.error(f"📱 [NOTIFICATIONS] Failed to send audio completion notification: {e}")
+        
         return AudioCreation(
             id=audio_id,
             user_id=current_user.id,
@@ -3020,7 +3465,7 @@ async def get_auto_picked_articles(request: AutoPickRequest, http_request: Reque
                     article_content = article_content.strip()
                     
                     # Extract image URL from RSS entry
-                    image_url = extract_image_from_entry(entry)
+                    thumbnail_url = extract_image_from_entry(entry)
                     
                     # Use unified article service for consistent genre classification
                     article_genre = classify_article_genre(article_title, article_summary)
@@ -3031,7 +3476,7 @@ async def get_auto_picked_articles(request: AutoPickRequest, http_request: Reque
                         link=getattr(entry, 'link', ""),
                         published=time.strftime('%Y-%m-%dT%H:%M:%SZ', entry.published_parsed) if hasattr(entry, 'published_parsed') and entry.published_parsed else "",
                         source_name=source["name"],
-                        image_url=image_url,
+                        thumbnail_url=thumbnail_url,
                         content=article_content,
                         genre=article_genre
                     )
@@ -3415,20 +3860,34 @@ async def test_genre_classification(
         logging.error(f"Error testing classification: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/api/auto-pick/create-audio", response_model=AudioCreation, tags=["Auto-Pick"])
-async def create_auto_picked_audio(request: AutoPickRequest, current_user: User = Depends(get_current_user)):
-    """Auto-pick articles and create audio in one step"""
+async def process_auto_pick_background(task_id: str, request: AutoPickRequest, user: User):
+    """Background task for AutoPick processing with progress updates"""
+    task_manager = get_task_manager()
+    
     try:
-        # Get auto-picked articles
-        sources = await db.rss_sources.find({"user_id": current_user.id}).to_list(100)
-        if not sources:
-            raise HTTPException(status_code=404, detail="No RSS sources found")
+        await task_manager.update_task(
+            task_id,
+            status=TaskStatus.IN_PROGRESS,
+            progress=5,
+            message="RSS フィードを取得中..."
+        )
         
-        # Fetch articles (similar to auto-pick endpoint)
+        # Get auto-picked articles
+        sources = await db.rss_sources.find({"user_id": user.id}).to_list(100)
+        if not sources:
+            await task_manager.fail_task(task_id, "RSS sources not found")
+            return
+        
+        await task_manager.update_task(
+            task_id,
+            progress=15,
+            message="記事を解析中..."
+        )
+        
+        # Fetch articles (similar to existing logic)
         all_articles = []
-        for source in sources:
+        for i, source in enumerate(sources):
             try:
-                # 🆕 Use consolidated RSS service instead of duplicate logic
                 feed = parse_rss_feed(source["url"], use_cache=True)
                 if not feed:
                     continue
@@ -3437,27 +3896,21 @@ async def create_auto_picked_audio(request: AutoPickRequest, current_user: User 
                     article_title = getattr(entry, 'title', "No Title")
                     article_summary = getattr(entry, 'summary', getattr(entry, 'description', "No summary available"))
                     
-                    # Get full content from RSS entry (try multiple fields for better content)
+                    # Get full content from RSS entry
                     article_content = ""
                     if hasattr(entry, 'content') and entry.content:
-                        # Use the first content entry if available
                         if isinstance(entry.content, list) and len(entry.content) > 0:
                             article_content = entry.content[0].get('value', '')
                         else:
                             article_content = str(entry.content)
                     
-                    # Fallback to summary/description if no full content
                     if not article_content or len(article_content.strip()) < 100:
                         article_content = getattr(entry, 'summary', getattr(entry, 'description', "No content available"))
                     
-                    # Clean HTML tags from content
-                    article_content = re.sub(r'<[^>]+>', '', article_content)
-                    article_content = article_content.strip()
-                    
-                    # Extract image URL from RSS entry
-                    image_url = extract_image_from_entry(entry)
-                    
+                    article_content = re.sub(r'<[^>]+>', '', article_content).strip()
+                    thumbnail_url = extract_image_from_entry(entry)
                     article_genre = classify_genre(article_title, article_summary)
+                    
                     article = Article(
                         id=str(uuid.uuid4()),
                         title=article_title,
@@ -3465,32 +3918,39 @@ async def create_auto_picked_audio(request: AutoPickRequest, current_user: User 
                         link=getattr(entry, 'link', ""),
                         published=time.strftime('%Y-%m-%dT%H:%M:%SZ', entry.published_parsed) if hasattr(entry, 'published_parsed') and entry.published_parsed else "",
                         source_name=source["name"],
-                        image_url=image_url,
+                        thumbnail_url=thumbnail_url,
                         content=article_content,
                         genre=article_genre
                     )
                     all_articles.append(article)
                     
-                    # Update or insert article in database with full content
                     await db.articles.update_one(
                         {"title": article_title, "source_name": source["name"]},
                         {"$set": article.dict()},
                         upsert=True
                     )
+                    
             except Exception as e:
                 logging.warning(f"Error parsing RSS feed {source['url']}: {e}")
                 continue
+            
+            # Progress update for each source processed
+            progress = min(15 + (i + 1) * 15 // len(sources), 30)
+            await task_manager.update_task(task_id, progress=progress)
         
-        # Get user's subscription to determine max articles limit
-        subscription = await get_or_create_subscription(current_user.id)
+        await task_manager.update_task(
+            task_id,
+            progress=35,
+            message="記事を選択中..."
+        )
+        
+        # Get user's subscription and auto-pick articles
+        subscription = await get_or_create_subscription(user.id)
         user_max_articles = subscription['max_audio_articles']
-        
-        # Use the minimum of requested articles and user's plan limit  
         effective_max_articles = min(request.max_articles or user_max_articles, user_max_articles)
         
-        # Auto-pick articles
         picked_articles = await auto_pick_articles(
-            user_id=current_user.id,
+            user_id=user.id,
             all_articles=all_articles,
             max_articles=effective_max_articles,
             preferred_genres=request.preferred_genres,
@@ -3500,46 +3960,68 @@ async def create_auto_picked_audio(request: AutoPickRequest, current_user: User 
         )
         
         if not picked_articles:
-            raise HTTPException(status_code=404, detail="No suitable articles found for auto-pick")
+            await task_manager.fail_task(task_id, "No suitable articles found")
+            return
+            
+        await task_manager.update_task(
+            task_id,
+            progress=50,
+            message="コンテンツを生成中..."
+        )
         
         # Create audio from picked articles
         articles_content = [f"Title: {article.title}\nSummary: {article.summary}\nSource: {article.source_name}" for article in picked_articles]
-        # Get user's subscription plan for dynamic length calculation
-        subscription = await db.subscriptions.find_one({"user_id": user_id})
+        subscription = await db.subscriptions.find_one({"user_id": user.id})
         user_plan = subscription.get("plan", "free") if subscription else "free"
         
-        # Calculate optimal script length using UNIFIED system
         optimal_script_length = await calculate_unified_script_length(
             articles_content, 
             user_plan, 
             len(articles_content),
-            voice_language="en-US",  # Auto-pick default
+            voice_language="en-US",
             prompt_style="recommended"
+        )
+        
+        await task_manager.update_task(
+            task_id,
+            progress=65,
+            message="AI がスクリプトを作成中..."
         )
         
         script = await summarize_articles_with_openai(
             articles_content, 
-            prompt_style="recommended",  # Auto-pick uses default recommended style for now
+            prompt_style="recommended",
             custom_prompt=None,
-            voice_language="ja-JP",  # Auto-pick uses Japanese by default
+            voice_language="ja-JP",
             target_length=optimal_script_length
         )
+        
         generated_title = await generate_audio_title_with_openai(articles_content)
+        
+        await task_manager.update_task(
+            task_id,
+            progress=80,
+            message="音声を合成中..."
+        )
         
         audio_data = await convert_text_to_speech(script)
         audio_url = audio_data['url']
         duration = audio_data['duration']
-
-        title = generated_title
         
-        # Generate chapters based on article count and duration
+        await task_manager.update_task(
+            task_id,
+            progress=90,
+            message="音声を保存中..."
+        )
+        
+        # Generate chapters and create audio creation record
         chapters = []
         article_titles = [article.title for article in picked_articles]
         if len(article_titles) > 1:
             chapter_duration = duration // len(article_titles)
             for i, (article, article_title) in enumerate(zip(picked_articles, article_titles)):
-                start_time = i * chapter_duration * 1000  # Convert to milliseconds
-                end_time = ((i + 1) * chapter_duration if i < len(article_titles) - 1 else duration) * 1000  # Convert to milliseconds
+                start_time = i * chapter_duration * 1000
+                end_time = ((i + 1) * chapter_duration if i < len(article_titles) - 1 else duration) * 1000
                 chapters.append({
                     "title": article_title,
                     "start_time": start_time,
@@ -3548,15 +4030,15 @@ async def create_auto_picked_audio(request: AutoPickRequest, current_user: User 
                 })
         
         audio_creation = AudioCreation(
-            user_id=current_user.id, 
-            title=title, 
+            user_id=user.id,
+            title=generated_title,
             article_ids=[article.id for article in picked_articles],
-            article_titles=article_titles, 
+            article_titles=article_titles,
             audio_url=audio_url,
             duration=duration,
             script=script,
             chapters=chapters,
-            prompt_style="recommended",  # Auto-pick uses default recommended style
+            prompt_style="recommended",
             custom_prompt=None
         )
         
@@ -3564,7 +4046,7 @@ async def create_auto_picked_audio(request: AutoPickRequest, current_user: User 
         
         # Auto-download the created audio
         auto_download = DownloadedAudio(
-            user_id=current_user.id,
+            user_id=user.id,
             audio_id=audio_creation.id,
             auto_downloaded=True
         )
@@ -3577,12 +4059,105 @@ async def create_auto_picked_audio(request: AutoPickRequest, current_user: User 
                 interaction_type="created_audio",
                 genre=article.genre
             )
-            await update_user_preferences(current_user.id, interaction)
+            await update_user_preferences(user.id, interaction)
         
-        return audio_creation
+        # Prepare debug info
+        debug_info = {
+            "total_articles_fetched": len(all_articles),
+            "articles_selected": len(picked_articles),
+            "selected_articles": [{"title": a.title, "source": a.source_name, "genre": a.genre} for a in picked_articles],
+            "script_length": len(script),
+            "user_plan": user_plan,
+            "duration_seconds": duration,
+            "chapters_count": len(chapters),
+            "processing_time_ms": int((datetime.utcnow().timestamp() - datetime.fromisoformat(task_manager.get_task(task_id)["created_at"]).timestamp()) * 1000)
+        }
+        
+        await task_manager.complete_task(
+            task_id,
+            result=audio_creation.dict(),
+            debug_info=debug_info
+        )
+        
+        # Send push notification for audio completion
+        try:
+            await send_audio_completion_notification(
+                user_id=user.id,
+                article_title=generated_title,
+                audio_id=audio_creation.id
+            )
+            logging.info(f"📱 [NOTIFICATIONS] Sent AutoPick audio completion notification for user {user.id}")
+        except Exception as e:
+            logging.error(f"📱 [NOTIFICATIONS] Failed to send AutoPick audio completion notification: {e}")
+            
+    except Exception as e:
+        logging.error(f"AutoPick background task error: {e}")
+        await task_manager.fail_task(task_id, str(e), {"error_details": str(e)})
+
+@app.post("/api/auto-pick/create-audio", response_model=TaskStartResponse, tags=["Auto-Pick"])
+async def create_auto_picked_audio(request: AutoPickRequest, background_tasks: BackgroundTasks, current_user: User = Depends(get_current_user)):
+    """Start AutoPick audio creation and return task ID for progress monitoring"""
+    try:
+        # Create task and return task ID immediately
+        task_manager = get_task_manager()
+        task_id = task_manager.create_task("autopick", current_user.id)
+        
+        # Start background processing
+        background_tasks.add_task(process_auto_pick_background, task_id, request, current_user)
+        
+        logging.info(f"🎯 [AUTOPICK] Started task {task_id} for user {current_user.id}")
+        
+        return TaskStartResponse(
+            task_id=task_id,
+            message="AutoPick音声生成を開始しました",
+            status="pending"
+        )
         
     except Exception as e:
-        logging.error(f"Auto-pick create audio error: {e}")
+        logging.error(f"Auto-pick task creation error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+async def get_current_user_from_token_param(token: Optional[str] = None):
+    """Get current user from token query parameter (for SSE compatibility)"""
+    global db_connected
+    if not db_connected:
+        raise HTTPException(status_code=503, detail="Database not connected")
+        
+    if not token:
+        raise HTTPException(status_code=401, detail="Authentication token required")
+    
+    # Use same simple auth logic as get_current_user
+    user = await db.users.find_one({"id": token})
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid authentication credentials")
+    
+    return User(**user)
+
+@app.get("/api/auto-pick/status/{task_id}")
+async def stream_autopick_progress(task_id: str, token: Optional[str] = None, current_user: User = Depends(get_current_user_from_token_param)):
+    """Stream AutoPick progress using Server-Sent Events (SSE)"""
+    try:
+        task_manager = get_task_manager()
+        task = task_manager.get_task(task_id)
+        
+        # Verify task belongs to current user
+        if task.get("user_id") != current_user.id:
+            raise HTTPException(status_code=403, detail="Access denied to this task")
+        
+        return StreamingResponse(
+            task_manager.stream_task_progress(task_id),
+            media_type="text/plain",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "Content-Type": "text/event-stream",
+            }
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"SSE streaming error for task {task_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 async def initialize_preset_categories():
@@ -4150,7 +4725,7 @@ async def setup_user_onboard(request: OnboardRequest, current_user: User = Depen
                     # Generate welcome audio
                     articles_content = [f"Title: {article['title']}\nSummary: {article['summary']}" for article in sample_articles]
                     # Get user's subscription plan for dynamic length calculation
-                    subscription = await db.subscriptions.find_one({"user_id": user_id})
+                    subscription = await db.subscriptions.find_one({"user_id": current_user.id})
                     user_plan = subscription.get("plan", "free") if subscription else "free"
                     
                     # Calculate optimal script length using UNIFIED system

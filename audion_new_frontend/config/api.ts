@@ -6,9 +6,9 @@
 // API Base Configuration
 export const API_CONFIG = {
   BASE_URL: __DEV__ 
-    ? process.env.EXPO_PUBLIC_BACKEND_URL + '/api' || 'http://192.168.11.30:8003/api'  // Development - use env variable
+    ? process.env.EXPO_PUBLIC_API_BASE_URL || 'http://192.168.11.34:8003/api'  // Development - use env variable
     : 'https://api.audion.app/api',    // Production
-  TIMEOUT: 10000,
+  TIMEOUT: parseInt(process.env.EXPO_PUBLIC_API_TIMEOUT || '15000'),  // Use env variable, default 15 seconds (短縮)
 } as const;
 
 // API Endpoints

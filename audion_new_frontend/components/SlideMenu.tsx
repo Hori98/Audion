@@ -17,7 +17,15 @@ import {
   Alert,
 } from 'react-native';
 import { useAuth } from '../context/AuthContext';
+import FontAwesome from '@expo/vector-icons/FontAwesome';
+import { useRouter } from 'expo-router';
 import SettingsScreen from './SettingsScreen';
+import AccountScreen from './settings/AccountScreen';
+import ContentPlaybackScreen from './settings/ContentPlaybackScreen';
+import AppearanceScreen from './settings/AppearanceScreen';
+import NotificationsScreen from './NotificationsScreen';
+import DataStorageScreen from './settings/DataStorageScreen';
+import SupportInfoScreen from './settings/SupportInfoScreen';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const MENU_WIDTH = SCREEN_WIDTH * 0.7; // 70% of screen width
@@ -37,6 +45,7 @@ interface SlideMenuProps {
 
 export default function SlideMenu({ visible, onClose }: SlideMenuProps) {
   const { user, logout } = useAuth();
+  const router = useRouter();
   const slideAnim = useRef(new Animated.Value(-MENU_WIDTH)).current;
   const opacityAnim = useRef(new Animated.Value(0)).current;
   const [activeSettingsScreen, setActiveSettingsScreen] = useState<string | null>(null);
@@ -84,51 +93,61 @@ export default function SlideMenu({ visible, onClose }: SlideMenuProps) {
 
   const menuItems: MenuItem[] = [
     {
-      id: 'profile',
-      title: 'プロフィール',
-      icon: '👤',
-      onPress: () => setActiveSettingsScreen('プロフィール'),
+      id: 'account',
+      title: 'アカウント',
+      icon: 'user-circle',
+      onPress: () => setActiveSettingsScreen('account'),
+      showArrow: true,
+    },
+    {
+      id: 'content-playback',
+      title: 'コンテンツと再生',
+      icon: 'play-circle',
+      onPress: () => setActiveSettingsScreen('content-playback'),
+      showArrow: true,
+    },
+    {
+      id: 'appearance',
+      title: '外観と表示',
+      icon: 'paint-brush',
+      onPress: () => setActiveSettingsScreen('appearance'),
       showArrow: true,
     },
     {
       id: 'notifications',
       title: '通知',
-      icon: '🔔',
-      onPress: () => setActiveSettingsScreen('通知'),
+      icon: 'bell',
+      onPress: () => setActiveSettingsScreen('notifications'),
       showArrow: true,
     },
     {
-      id: 'privacy',
-      title: 'プライバシーと安全',
-      icon: '🔒',
-      onPress: () => setActiveSettingsScreen('プライバシーと安全'),
+      id: 'data-storage',
+      title: 'データとストレージ',
+      icon: 'database',
+      onPress: () => setActiveSettingsScreen('data-storage'),
       showArrow: true,
     },
     {
-      id: 'accessibility',
-      title: 'アクセシビリティ',
-      icon: '♿',
-      onPress: () => console.log('Accessibility pressed'),
+      id: 'support-info',
+      title: 'サポートと情報',
+      icon: 'info-circle',
+      onPress: () => setActiveSettingsScreen('support-info'),
       showArrow: true,
     },
     {
-      id: 'help',
-      title: 'ヘルプセンター',
-      icon: '❓',
-      onPress: () => console.log('Help pressed'),
-      showArrow: true,
-    },
-    {
-      id: 'settings',
+      id: 'core-settings',
       title: '設定とプライバシー',
-      icon: '⚙️',
-      onPress: () => setActiveSettingsScreen('設定とプライバシー'),
+      icon: 'cogs',
+      onPress: () => {
+        router.push('/settings');
+        onClose();
+      },
       showArrow: true,
     },
     {
       id: 'logout',
       title: 'ログアウト',
-      icon: '🚪',
+      icon: 'sign-out',
       onPress: handleLogout,
       showArrow: false,
     },
@@ -144,7 +163,12 @@ export default function SlideMenu({ visible, onClose }: SlideMenuProps) {
       onPress={item.onPress}
     >
       <View style={styles.menuItemContent}>
-        <Text style={styles.menuIcon}>{item.icon}</Text>
+        <FontAwesome 
+          name={item.icon as any} 
+          size={20} 
+          color={item.id === 'logout' ? '#ff4444' : '#ffffff'}
+          style={styles.menuIcon}
+        />
         <Text style={[
           styles.menuTitle,
           item.id === 'logout' && styles.logoutText
@@ -153,7 +177,7 @@ export default function SlideMenu({ visible, onClose }: SlideMenuProps) {
         </Text>
       </View>
       {item.showArrow && (
-        <Text style={styles.menuArrow}>›</Text>
+        <FontAwesome name="chevron-right" size={14} color="#666666" style={styles.menuArrow} />
       )}
     </TouchableOpacity>
   );
@@ -229,12 +253,46 @@ export default function SlideMenu({ visible, onClose }: SlideMenuProps) {
         </SafeAreaView>
       </Animated.View>
 
-      {/* Settings Screen Modal */}
-      {activeSettingsScreen && (
-        <SettingsScreen
-          visible={!!activeSettingsScreen}
+      {/* Settings Screen Modals */}
+      {activeSettingsScreen === 'account' && (
+        <AccountScreen
+          visible={true}
           onClose={() => setActiveSettingsScreen(null)}
-          title={activeSettingsScreen}
+        />
+      )}
+      
+      {activeSettingsScreen === 'content-playback' && (
+        <ContentPlaybackScreen
+          visible={true}
+          onClose={() => setActiveSettingsScreen(null)}
+        />
+      )}
+      
+      {activeSettingsScreen === 'appearance' && (
+        <AppearanceScreen
+          visible={true}
+          onClose={() => setActiveSettingsScreen(null)}
+        />
+      )}
+      
+      {activeSettingsScreen === 'notifications' && (
+        <NotificationsScreen
+          visible={true}
+          onClose={() => setActiveSettingsScreen(null)}
+        />
+      )}
+      
+      {activeSettingsScreen === 'data-storage' && (
+        <DataStorageScreen
+          visible={true}
+          onClose={() => setActiveSettingsScreen(null)}
+        />
+      )}
+      
+      {activeSettingsScreen === 'support-info' && (
+        <SupportInfoScreen
+          visible={true}
+          onClose={() => setActiveSettingsScreen(null)}
         />
       )}
     </Modal>
@@ -356,7 +414,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   menuIcon: {
-    fontSize: 20,
+    width: 20,
     marginRight: 16,
   },
   menuTitle: {
@@ -365,8 +423,6 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   menuArrow: {
-    fontSize: 18,
-    color: '#666666',
     marginLeft: 8,
   },
   logoutItem: {

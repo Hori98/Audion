@@ -4,7 +4,7 @@
  * bolt.new/Figma刷新時はこのファイルを差し替えるだけ
  */
 
-import React from 'react';
+import React, { useState } from 'react';
 import {
   StyleSheet,
   ScrollView,
@@ -16,17 +16,25 @@ import {
   FlatList,
   View,
   Text,
+  Alert,
 } from 'react-native';
-import { Link } from 'expo-router';
 import { RSSFeedState, RSSFeedActions } from '../hooks/useRSSFeed';
 import { Article } from '../services/ArticleService';
+import { useSettings } from '../context/SettingsContext';
 import HorizontalTabs from './HorizontalTabs';
 import UnifiedHeader from './UnifiedHeader';
 import SearchModal from './SearchModal';
+import ArticleCard from './ArticleCard';
+import ArticleDetailModal from './ArticleDetailModal';
+import ManualPickModal from './ManualPickModal';
+import FloatingAutoPickButton from './FloatingAutoPickButton';
+import AudioService, { ManualPickRequest } from '../services/AudioService';
 
 interface FeedUIProps extends RSSFeedState, RSSFeedActions {
   user: any; // From auth context
   onSearchPress?: () => void;
+  selectedReadStatus?: string;
+  setSelectedReadStatus?: (status: string) => void;
 }
 
 // ミニマムなUIスタイル（将来のUI刷新で差し替え対象）
@@ -39,6 +47,12 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: '#000000',
+  },
+  loadingText: {
+    marginTop: 16,
+    color: '#ffffff',
+    fontSize: 16,
   },
   header: {
     paddingHorizontal: 20,
@@ -244,6 +258,62 @@ const styles = StyleSheet.create({
     padding: 12,
     marginBottom: 12,
   },
+  actionButtonsSection: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    gap: 12,
+    marginBottom: 16,
+  },
+  audioGenerationButton: {
+    flex: 1,
+    backgroundColor: '#9F2B9F',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  audioGenerationButtonText: {
+    color: 'white',
+    fontWeight: '600',
+    fontSize: 14,
+  },
+  manualPickButton: {
+    flex: 1,
+    backgroundColor: '#FF9500',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  manualPickButtonText: {
+    color: 'white',
+    fontWeight: '600',
+    fontSize: 14,
+  },
+  readStatusModalContent: {
+    backgroundColor: '#111111',
+    borderRadius: 12,
+    padding: 20,
+    margin: 20,
+    marginTop: 100,
+  },
+  readStatusOption: {
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    marginVertical: 4,
+  },
+  selectedReadStatusOption: {
+    backgroundColor: '#007AFF',
+  },
+  readStatusOptionText: {
+    color: '#ffffff',
+    fontSize: 16,
+    textAlign: 'center',
+  },
+  selectedReadStatusOptionText: {
+    fontWeight: '600',
+  },
 });
 
 const RSS_SOURCES = [
@@ -263,6 +333,13 @@ const GENRES = [
   { id: 'entertainment', name: 'エンタメ' }
 ];
 
+const READ_STATUS_FILTERS = [
+  { id: 'all', name: 'すべて' },
+  { id: 'unread', name: '未読' },
+  { id: 'read', name: '既読' },
+  { id: 'saved', name: '保存済み' }
+];
+
 export const FeedUI: React.FC<FeedUIProps> = ({
   // State
   user,
@@ -280,6 +357,7 @@ export const FeedUI: React.FC<FeedUIProps> = ({
   rssUrl,
   audioGenerating,
   audioProgress,
+  selectedReadStatus,
   
   // Actions
   onRefresh,
@@ -289,70 +367,157 @@ export const FeedUI: React.FC<FeedUIProps> = ({
   setSelectedSource,
   setSelectedGenre,
   setRssUrl,
+  setSelectedReadStatus,
   onSearchPress,
 }) => {
+  // 設定Context
+  const { settings } = useSettings();
+  
+  // 記事詳細モーダル用のステート
+  const [selectedArticle, setSelectedArticle] = useState<Article | null>(null);
+  const [showArticleModal, setShowArticleModal] = useState(false);
+  
+  // Manual Pickモーダル用のステート
+  const [showManualPickModal, setShowManualPickModal] = useState(false);
+  
+  // 既読ステータス選択モーダル用のステート
+  const [showReadStatusModal, setShowReadStatusModal] = useState(false);
+  
+  // ManualPickモード用のステート
+  const [isManualPickMode, setIsManualPickMode] = useState(false);
+  const [selectedArticleIds, setSelectedArticleIds] = useState<Set<string>>(new Set());
+
+  const handleArticlePress = (article: Article) => {
+    setSelectedArticle(article);
+    setShowArticleModal(true);
+  };
+
+  const handleCloseArticleModal = () => {
+    setShowArticleModal(false);
+    setSelectedArticle(null);
+  };
+
+  // 既読タブ表示時のManualPickモード自動開始（設定で有効時のみ）
+  React.useEffect(() => {
+    if (settings.isManualPickEnabled && selectedReadStatus === 'read') {
+      setIsManualPickMode(true);
+    } else {
+      setIsManualPickMode(false);
+      setSelectedArticleIds(new Set());
+    }
+  }, [selectedReadStatus, settings.isManualPickEnabled]);
+
+  // 記事選択/解除のハンドラー
+  const toggleArticleSelection = (articleId: string) => {
+    const newSelected = new Set(selectedArticleIds);
+    if (newSelected.has(articleId)) {
+      newSelected.delete(articleId);
+    } else {
+      if (newSelected.size >= 10) {
+        Alert.alert('制限', '最大10記事まで選択できます');
+        return;
+      }
+      newSelected.add(articleId);
+    }
+    setSelectedArticleIds(newSelected);
+  };
+
+  const handleManualPickGenerate = async (selectedArticles: Article[]) => {
+    try {
+      const request: ManualPickRequest = {
+        article_ids: selectedArticles.map(a => a.id),
+        article_titles: selectedArticles.map(a => a.title),
+        article_summaries: selectedArticles.map(a => a.summary),
+        voice_language: 'ja-JP',
+        voice_name: 'alloy',
+        prompt_style: 'standard'
+      };
+
+      await AudioService.generateManualPickAudio(request);
+      
+    } catch (error) {
+      console.error('Manual pick generation failed:', error);
+      throw error;
+    }
+  };
+
+  // FloatingButtonからのManualPick実行
+  const handleFloatingManualPick = async () => {
+    if (selectedArticleIds.size === 0) return;
+    
+    try {
+      const selectedArticles = articles.filter(article => 
+        selectedArticleIds.has(article.id)
+      );
+      
+      await handleManualPickGenerate(selectedArticles);
+      
+      // 成功時の処理
+      Alert.alert(
+        '音声生成開始', 
+        `${selectedArticles.length}記事の音声生成を開始しました。`
+      );
+      
+      // 選択状態をリセット
+      setSelectedArticleIds(new Set());
+      
+    } catch (error) {
+      console.error('Floating Manual pick generation failed:', error);
+      Alert.alert('エラー', '音声生成に失敗しました');
+    }
+  };
+
+
+  const handleAutoPickGenerate = async () => {
+    Alert.alert(
+      'Auto-Pick生成',
+      'AIが自動的に記事を選択して音声を生成しますか？',
+      [
+        { text: 'キャンセル', style: 'cancel' },
+        { text: '生成開始', onPress: async () => {
+          try {
+            // TODO: Auto-Pick API呼び出し実装
+            console.log('Auto-Pick音声生成開始');
+            Alert.alert('実装中', 'Auto-Pick機能は実装中です');
+          } catch (error) {
+            Alert.alert('エラー', 'Auto-Pick生成に失敗しました');
+          }
+        }}
+      ]
+    );
+  };
+
+
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" />
-        <Text style={{ marginTop: 16 }}>Loading articles...</Text>
+        <ActivityIndicator size="large" color="#ffffff" />
+        <Text style={styles.loadingText}>記事を読み込み中...</Text>
       </View>
     );
   }
 
   const renderArticle = ({ item }: { item: Article }) => {
-    const isGenerating = audioGenerating[item.id] || false;
-    const progress = audioProgress[item.id];
+    const isSelected = selectedArticleIds.has(item.id);
     
     return (
-      <View style={styles.articleItem}>
-        <Link
-          href={{
-            pathname: '/article-webview',
-            params: { url: item.url, title: item.title }
-          }}
-          asChild
-        >
-          <TouchableOpacity>
-            <Text style={styles.articleTitle}>{item.title}</Text>
-            <View style={styles.articleMeta}>
-              <Text style={styles.articleSource}>{item.source_name || 'Unknown Source'}</Text>
-              <Text style={styles.articleDate}>
-                {new Date(item.published_at).toLocaleDateString('ja-JP')}
-              </Text>
-            </View>
-          </TouchableOpacity>
-        </Link>
-        
-        <TouchableOpacity
-          style={[
-            styles.audioButton,
-            isGenerating && styles.audioButtonGenerating
-          ]}
-          onPress={() => generateAudio(item.id, item.title)}
-          disabled={isGenerating}
-        >
-          <Text style={styles.audioButtonText}>
-            {isGenerating ? '⏳ 生成中...' : '🎧 音声生成'}
-          </Text>
-        </TouchableOpacity>
-        
-        {progress && (
-          <View style={styles.progressContainer}>
-            <Text style={styles.progressText}>
-              {progress.status === 'processing' 
-                ? `進捗: ${progress.progress_percent}% - ${progress.message}`
-                : progress.message}
-            </Text>
-          </View>
-        )}
-      </View>
+      <ArticleCard
+        article={item}
+        onPress={handleArticlePress}
+        isManualPickMode={isManualPickMode}
+        isSelected={isSelected}
+        onSelect={toggleArticleSelection}
+        showAudioPlayer={!isManualPickMode}
+      />
     );
   };
 
   return (
     <View style={styles.container}>
-      <UnifiedHeader onSearchPress={onSearchPress} />
+      <UnifiedHeader 
+        onSearchPress={onSearchPress}
+        onReadStatusPress={() => setShowReadStatusModal(true)}
+      />
       
       <ScrollView
         refreshControl={
@@ -375,13 +540,7 @@ export const FeedUI: React.FC<FeedUIProps> = ({
           style={styles.filterSection}
         />
 
-        {/* Add Source Button */}
-        <TouchableOpacity
-          style={styles.addSourceButton}
-          onPress={() => setShowSourceModal(true)}
-        >
-          <Text style={styles.addSourceButtonText}>+ RSSソースを追加</Text>
-        </TouchableOpacity>
+
 
         {/* Articles List */}
         <View style={styles.articlesList}>
@@ -454,6 +613,75 @@ export const FeedUI: React.FC<FeedUIProps> = ({
           </View>
         </View>
       </Modal>
+
+      {/* Article Detail Modal */}
+      <ArticleDetailModal
+        article={selectedArticle}
+        visible={showArticleModal}
+        onClose={handleCloseArticleModal}
+      />
+
+      {/* Manual Pick Modal - 設定で有効時のみ表示 */}
+      {settings.isManualPickEnabled && (
+        <ManualPickModal
+          visible={showManualPickModal}
+          onClose={() => setShowManualPickModal(false)}
+          onGenerateAudio={handleManualPickGenerate}
+        />
+      )}
+
+
+      {/* Read Status Selection Modal */}
+      <Modal visible={showReadStatusModal} animationType="slide" transparent>
+        <View style={styles.modalContainer}>
+          <View style={styles.readStatusModalContent}>
+            <TouchableOpacity
+              style={styles.closeButton}
+              onPress={() => setShowReadStatusModal(false)}
+            >
+              <Text style={styles.closeButtonText}>✕</Text>
+            </TouchableOpacity>
+            
+            <Text style={styles.modalTitle}>既読ステータスでフィルター</Text>
+            
+            {READ_STATUS_FILTERS.map((filter) => (
+              <TouchableOpacity
+                key={filter.id}
+                style={[
+                  styles.readStatusOption,
+                  selectedReadStatus === filter.id && styles.selectedReadStatusOption
+                ]}
+                onPress={() => {
+                  setSelectedReadStatus && setSelectedReadStatus(filter.id);
+                  setShowReadStatusModal(false);
+                }}
+              >
+                <Text style={[
+                  styles.readStatusOptionText,
+                  selectedReadStatus === filter.id && styles.selectedReadStatusOptionText
+                ]}>
+                  {filter.name}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+      </Modal>
+
+      {/* Floating AutoPick Button - 設定で有効時のみ表示 */}
+      {settings.isAutoPickEnabled && (
+        <FloatingAutoPickButton
+          onPress={handleAutoPickGenerate}
+          selectedGenre={selectedGenre}
+          genreName={GENRES.find(g => g.id === selectedGenre)?.name || 'すべて'}
+          tabBarHeight={10}
+          miniPlayerHeight={0}
+          isMiniPlayerVisible={false}
+          isManualPickMode={isManualPickMode}
+          selectedCount={selectedArticleIds.size}
+          onManualPickPress={handleFloatingManualPick}
+        />
+      )}
     </View>
   );
 };

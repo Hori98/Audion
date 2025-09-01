@@ -3,7 +3,7 @@
  * UI刷新時の影響を避けるため、ロジックを完全分離
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Alert } from 'react-native';
 import { useAuth } from '../context/AuthContext';
 import RSSSourceService, { 
@@ -13,6 +13,8 @@ import RSSSourceService, {
 } from '../services/RSSSourceService';
 import ArticleService, { Article } from '../services/ArticleService';
 import AudioService, { AudioGenerationResponse, AudioStatusResponse } from '../services/AudioService';
+import UnifiedAudioGenerationService from '../services/UnifiedAudioGenerationService';
+import { FEATURE_FLAGS } from '../services/config';
 
 export interface RSSFeedState {
   // Data
@@ -29,6 +31,7 @@ export interface RSSFeedState {
   showSourceModal: boolean;
   selectedSource: string;
   selectedGenre: string;
+  selectedReadStatus: string;
   rssUrl: string;
   
   // Audio generation state
@@ -49,6 +52,7 @@ export interface RSSFeedActions {
   setShowSourceModal: (show: boolean) => void;
   setSelectedSource: (source: string) => void;
   setSelectedGenre: (genre: string) => void;
+  setSelectedReadStatus: (status: string) => void;
   setRssUrl: (url: string) => void;
   
   // Audio generation
@@ -59,7 +63,7 @@ export const useRSSFeed = (): RSSFeedState & RSSFeedActions => {
   const { token } = useAuth();
   
   // Data state
-  const [articles, setArticles] = useState<Article[]>([]);
+  const [allArticles, setAllArticles] = useState<Article[]>([]); // 全記事を保持
   const [categories, setCategories] = useState<RSSCategory[]>([]);
   const [preConfiguredSources, setPreConfiguredSources] = useState<PreConfiguredRSSSource[]>([]);
   const [userSources, setUserSources] = useState<UserRSSSource[]>([]);
@@ -72,6 +76,7 @@ export const useRSSFeed = (): RSSFeedState & RSSFeedActions => {
   const [showSourceModal, setShowSourceModal] = useState(false);
   const [selectedSource, setSelectedSource] = useState('all');
   const [selectedGenre, setSelectedGenre] = useState('all');
+  const [selectedReadStatus, setSelectedReadStatus] = useState('all');
   const [rssUrl, setRssUrl] = useState('');
   
   // Audio generation state
@@ -106,93 +111,46 @@ export const useRSSFeed = (): RSSFeedState & RSSFeedActions => {
   }, [token]);
 
   const fetchArticles = useCallback(async () => {
+    setLoading(true);
     try {
-      // Debug: Check if token exists
-      console.log('🔑 [DEBUG] Checking auth token...');
-      console.log('🔑 [DEBUG] Token from useAuth:', token ? 'EXISTS' : 'MISSING');
-      console.log('📰 [DEBUG] Selected genre:', selectedGenre);
-      
       if (!token) {
-        console.error('🚨 [DEBUG] No auth token available - using mock data');
-        // Fallback to mock data for demo purposes
-        const mockArticles = [
-          {
-            id: 'mock-1',
-            title: '【暫定データ】AI技術の最新動向について',
-            summary: '人工知能技術の最新トレンドと今後の展望について解説します。',
-            url: 'https://www3.nhk.or.jp/news/',
-            source_name: 'NHK NEWS WEB',
-            published_at: new Date().toISOString(),
-            category: 'technology',
-            reading_time: 5,
-            audio_available: false,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          },
-          {
-            id: 'mock-2', 
-            title: '【暫定データ】経済市場の最新レポート',
-            summary: '今週の経済動向と市場分析をお届けします。',
-            url: 'https://www.nikkei.com/',
-            source_name: '日本経済新聞',
-            published_at: new Date(Date.now() - 3600000).toISOString(),
-            category: 'business',
-            reading_time: 8,
-            audio_available: false,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          },
-        ];
-        setArticles(mockArticles);
+        console.error('⚠️  No auth token - authentication required');
+        setAllArticles([]);
         return;
       }
       
-      // Prepare API parameters with genre filtering
-      const apiParams: any = { per_page: 20 };
-      if (selectedGenre && selectedGenre !== 'all') {
-        apiParams.genre = selectedGenre;
-        console.log('📰 [DEBUG] Filtering by genre:', selectedGenre);
+      // 全記事を一度に取得（ジャンルフィルターなし）
+      const apiParams: any = { per_page: 50 }; // より多くの記事を取得
+      if (selectedReadStatus && selectedReadStatus !== 'all') {
+        apiParams.read_filter = selectedReadStatus;
       }
       
-      console.log('📰 [DEBUG] Fetching articles with params:', apiParams);
-      const data = await ArticleService.getArticles(apiParams);
-      console.log('📰 [DEBUG] Articles fetched successfully:', data);
-      
+      const data = selectedReadStatus !== 'all' 
+        ? await ArticleService.getArticlesWithReadStatus(apiParams)
+        : await ArticleService.getArticles(apiParams);
+
       // Handle both array responses and object responses
       const articles = Array.isArray(data) ? data : (data?.articles || []);
-      console.log('📰 [DEBUG] Processing', articles.length, 'articles');
-      setArticles(articles);
+      setAllArticles(articles); // 全記事を保存
     } catch (error) {
-      console.error('❌ [DEBUG] Error fetching articles:', error);
-      console.log('🔄 [DEBUG] Falling back to mock data due to error');
-      
-      // Fallback to mock data when API fails
-      const mockArticles = [
-        {
-          id: 'fallback-1',
-          title: '【API エラー時のフォールバック】サンプル記事 1',
-          summary: 'APIエラーのため、サンプルデータを表示しています。',
-          url: 'https://www3.nhk.or.jp/news/',
-          source_name: 'Mock Data',
-          published_at: new Date().toISOString(),
-          category: 'news',
-          reading_time: 3,
-          audio_available: false,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        },
-      ];
-      setArticles(mockArticles);
+      console.error('❌ Error fetching articles:', error);
+      setAllArticles([]);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [token, selectedGenre]);
+  }, [token, selectedReadStatus]);  // selectedGenreを依存から削除
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
     fetchArticles();
   }, [fetchArticles]);
+
+  // ジャンル変更時はローディングなしで即座切り替え
+  const setSelectedGenreWithRefresh = useCallback((genre: string) => {
+    setSelectedGenre(genre);
+    // setLoading(true); コメントアウト - クライアントサイドフィルタリングのためローディング不要
+  }, []);
 
   const addPreConfiguredSource = useCallback(async (sourceId: string, sourceName: string) => {
     if (!token) {
@@ -228,60 +186,33 @@ export const useRSSFeed = (): RSSFeedState & RSSFeedActions => {
     }
     
     try {
-      Alert.alert(
-        '音声生成',
-        `"${articleTitle}"の音声を生成しますか？`,
-        [
-          { text: 'キャンセル', style: 'cancel' },
-          {
-            text: '生成開始',
-            onPress: async () => {
-              try {
-                // Set generating state
-                setAudioGenerating(prev => ({ ...prev, [articleId]: true }));
-                
-                // Start audio generation
-                const response = await AudioService.generateAudio({
-                  article_id: articleId,
-                  title: articleTitle,
-                  language: 'ja',
-                  voice_type: 'standard'
-                }, token);
-                
-                Alert.alert('成功', '音声生成を開始しました。完了まで数分お待ちください。');
-                
-                // Poll status with progress updates
-                AudioService.pollAudioStatus(
-                  response.id,
-                  token,
-                  (status) => {
-                    setAudioProgress(prev => ({ ...prev, [articleId]: status }));
-                  },
-                  3000 // Poll every 3 seconds
-                )
-                .then((finalStatus) => {
-                  setAudioGenerating(prev => ({ ...prev, [articleId]: false }));
-                  if (finalStatus.status === 'completed') {
-                    Alert.alert('完了', '音声生成が完了しました！');
-                  }
-                })
-                .catch((error) => {
-                  console.error('Audio generation polling failed:', error);
-                  setAudioGenerating(prev => ({ ...prev, [articleId]: false }));
-                  Alert.alert('エラー', '音声生成に失敗しました');
-                });
-                
-              } catch (error) {
-                console.error('Error generating audio:', error);
-                setAudioGenerating(prev => ({ ...prev, [articleId]: false }));
-                const errorMessage = error instanceof Error ? error.message : '音声生成に失敗しました';
-                Alert.alert('エラー', errorMessage);
-              }
-            }
-          }
-        ]
-      );
+      // Set generating state before starting
+      setAudioGenerating(prev => ({ ...prev, [articleId]: true }));
+      
+      const result = await UnifiedAudioGenerationService.generateAudioWithProgress({
+        articleId,
+        articleTitle,
+        language: 'ja',
+        voice_type: 'standard',
+        showUserAlerts: true, // useRSSFeedではユーザーアラートを表示
+        onProgress: (status) => {
+          setAudioProgress(prev => ({ ...prev, [articleId]: status }));
+        },
+        onSuccess: (audioUrl) => {
+          setAudioGenerating(prev => ({ ...prev, [articleId]: false }));
+        },
+        onError: (errorMessage) => {
+          setAudioGenerating(prev => ({ ...prev, [articleId]: false }));
+        }
+      }, token);
+      
+      // If user cancelled, reset generating state
+      if (!result) {
+        setAudioGenerating(prev => ({ ...prev, [articleId]: false }));
+      }
+      
     } catch (error) {
+      setAudioGenerating(prev => ({ ...prev, [articleId]: false }));
       console.error('Error in generateAudio:', error);
     }
   }, [token, audioGenerating]);
@@ -292,9 +223,27 @@ export const useRSSFeed = (): RSSFeedState & RSSFeedActions => {
     fetchRSSData();
   }, [fetchArticles, fetchRSSData]);
 
+  // selectedGenreが変更されてもAPIコールは不要 - クライアントサイドフィルタリングで対応
+  // useEffect(() => {
+  //   if (token) {
+  //     fetchArticles();
+  //   }
+  // }, [selectedGenre, token, fetchArticles]);
+
+  // クライアントサイドフィルタリング: 選択したジャンルに基づいて記事をフィルタ
+  const filteredArticles = useMemo(() => {
+    if (selectedGenre === 'all' || !selectedGenre) {
+      return allArticles;
+    }
+    return allArticles.filter(article => {
+      const articleGenre = article.genre || article.category; // genre優先、categoryをfallback
+      return articleGenre?.toLowerCase() === selectedGenre.toLowerCase();
+    });
+  }, [allArticles, selectedGenre]);
+
   return {
     // State
-    articles,
+    articles: filteredArticles, // フィルタされた記事を返す
     categories,
     preConfiguredSources,
     userSources,
@@ -305,6 +254,7 @@ export const useRSSFeed = (): RSSFeedState & RSSFeedActions => {
     showSourceModal,
     selectedSource,
     selectedGenre,
+    selectedReadStatus,
     rssUrl,
     audioGenerating,
     audioProgress,
@@ -316,7 +266,8 @@ export const useRSSFeed = (): RSSFeedState & RSSFeedActions => {
     addPreConfiguredSource,
     setShowSourceModal,
     setSelectedSource,
-    setSelectedGenre,
+    setSelectedGenre: setSelectedGenreWithRefresh,
+    setSelectedReadStatus,
     setRssUrl,
     generateAudio,
   };

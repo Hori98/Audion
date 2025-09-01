@@ -15,11 +15,13 @@ import SlideMenu from './SlideMenu';
 interface UnifiedHeaderProps {
   onUserPress?: () => void;
   onSearchPress?: () => void;
+  onReadStatusPress?: () => void;
 }
 
 export default function UnifiedHeader({ 
   onUserPress, 
-  onSearchPress 
+  onSearchPress,
+  onReadStatusPress
 }: UnifiedHeaderProps) {
   const [showSlideMenu, setShowSlideMenu] = useState(false);
 
@@ -49,13 +51,23 @@ export default function UnifiedHeader({
         <Text style={styles.appLogo}>Audion</Text>
       </View>
 
-      {/* Right: Search Icon */}
-      <TouchableOpacity 
-        style={styles.searchButton}
-        onPress={onSearchPress}
-      >
-        <Text style={styles.searchIcon}>🔍</Text>
-      </TouchableOpacity>
+      {/* Right: Icons */}
+      <View style={styles.rightSection}>
+        <TouchableOpacity 
+          style={styles.eyeButton}
+          onPress={onReadStatusPress}
+        >
+          <Text style={styles.eyeIcon}>👁</Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity 
+          style={styles.searchButton}
+          onPress={onSearchPress}
+        >
+          <Text style={styles.searchIcon}>🔍</Text>
+        </TouchableOpacity>
+        
+      </View>
       </View>
 
       {/* Slide Menu */}
@@ -118,6 +130,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   searchIcon: {
+    fontSize: 18,
+    color: '#ffffff',
+  },
+  rightSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  eyeButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#111111',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  eyeIcon: {
     fontSize: 18,
     color: '#ffffff',
   },

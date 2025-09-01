@@ -7,6 +7,7 @@ import Colors from '@/constants/Colors';
 import { useColorScheme } from '@/components/useColorScheme';
 import { useClientOnlyValue } from '@/components/useClientOnlyValue';
 import { useAuth } from '../../context/AuthContext';
+import { RSSFeedProvider } from '../../context/RSSFeedContext';
 
 // You can explore the built-in icon families and icons on the web at https://icons.expo.fyi/
 function TabBarIcon(props: {
@@ -57,49 +58,51 @@ export default function TabLayout() {
   }
 
   return (
-    <Tabs
-      screenOptions={{
-        headerShown: headerShown,
-        tabBarStyle: {
-          backgroundColor: '#000000', // Force dark theme
-          borderTopColor: 'rgba(255,255,255,0.1)',
-          borderTopWidth: 1,
-        },
-        tabBarActiveTintColor: '#007bff',
-        tabBarInactiveTintColor: '#888888',
-      }}>
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: 'ホーム',
-          tabBarIcon: ({ color }) => <TabBarIcon name="home" color={color} />,
-          headerShown: false,
-        }}
-      />
-      <Tabs.Screen
-        name="articles"
-        options={{
-          title: 'フィード',
-          tabBarIcon: ({ color }) => <TabBarIcon name="newspaper-o" color={color} />,
-          headerShown: false,
-        }}
-      />
-      <Tabs.Screen
-        name="discover"
-        options={{
-          title: 'ディスカバー',
-          tabBarIcon: ({ color }) => <TabBarIcon name="search" color={color} />,
-          headerShown: false,
-        }}
-      />
-      <Tabs.Screen
-        name="two"
-        options={{
-          title: 'ライブラリ',
-          tabBarIcon: ({ color }) => <TabBarIcon name="music" color={color} />,
-          headerShown: false,
-        }}
-      />
-    </Tabs>
+    <RSSFeedProvider>
+      <Tabs
+        screenOptions={{
+          headerShown: headerShown,
+          tabBarStyle: {
+            backgroundColor: '#000000', // Force dark theme
+            borderTopColor: 'rgba(255,255,255,0.1)',
+            borderTopWidth: 1,
+          },
+          tabBarActiveTintColor: '#007bff',
+          tabBarInactiveTintColor: '#888888',
+        }}>
+        <Tabs.Screen
+          name="index"
+          options={{
+            title: 'ホーム',
+            tabBarIcon: ({ color }) => <TabBarIcon name="home" color={color} />,
+            headerShown: false,
+          }}
+        />
+        <Tabs.Screen
+          name="articles"
+          options={{
+            title: 'フィード',
+            tabBarIcon: ({ color }) => <TabBarIcon name="newspaper-o" color={color} />,
+            headerShown: false,
+          }}
+        />
+        <Tabs.Screen
+          name="discover"
+          options={{
+            title: 'ディスカバー',
+            tabBarIcon: ({ color }) => <TabBarIcon name="search" color={color} />,
+            headerShown: false,
+          }}
+        />
+        <Tabs.Screen
+          name="two"
+          options={{
+            title: 'ライブラリ',
+            tabBarIcon: ({ color }) => <TabBarIcon name="music" color={color} />,
+            headerShown: false,
+          }}
+        />
+      </Tabs>
+    </RSSFeedProvider>
   );
 }
