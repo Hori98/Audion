@@ -1,0 +1,5 @@
+The following packages should be updated for best compatibility with the installed expo version:
+  expo@53.0.20 - expected version: 53.0.22
+  expo-router@5.1.4 - expected version: ~5.1.5
+  expo-system-ui@5.0.10 - expected version: ~5.0.11
+Your project may not work correctly until you install the expected versions of the packages.

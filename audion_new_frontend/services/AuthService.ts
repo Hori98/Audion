@@ -21,7 +21,7 @@ const STORAGE_KEYS = {
   USER: '@audion_user_data',
 } as const;
 
-// Configure axios instance
+// Configure axios instance with retry capability
 const apiClient = axios.create({
   baseURL: API_CONFIG.BASE_URL,
   timeout: API_CONFIG.TIMEOUT,
@@ -29,7 +29,7 @@ const apiClient = axios.create({
 
 // Request interceptor to add auth headers
 apiClient.interceptors.request.use((config) => {
-  console.log(`[API] ${config.method?.toUpperCase()} ${config.url}`);
+  // console.log(`[API] ${config.method?.toUpperCase()} ${config.url}`);
   return config;
 });
 
@@ -50,6 +50,29 @@ apiClient.interceptors.response.use(
     );
   }
 );
+
+// Retry helper function for critical authentication calls
+const withRetry = async <T>(
+  fn: () => Promise<T>, 
+  maxRetries: number = 2, 
+  delay: number = 1000
+): Promise<T> => {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (error: any) {
+      console.warn(`[Auth] Attempt ${attempt}/${maxRetries} failed:`, error.message);
+      
+      if (attempt === maxRetries) {
+        throw error; // Re-throw on final attempt
+      }
+      
+      // Exponential backoff delay
+      await new Promise(resolve => setTimeout(resolve, delay * attempt));
+    }
+  }
+  throw new Error('Retry attempts exhausted');
+};
 
 export class AuthService {
   /**
@@ -111,17 +134,19 @@ export class AuthService {
       throw new AuthenticationError('No authentication token found');
     }
 
-    const response: AxiosResponse<User> = await apiClient.get(
-      API_ENDPOINTS.AUTH.ME,
-      { headers: getAuthHeaders(token) }
-    );
+    return await withRetry(async () => {
+      const response: AxiosResponse<User> = await apiClient.get(
+        API_ENDPOINTS.AUTH.ME,
+        { headers: getAuthHeaders(token) }
+      );
 
-    const userData = response.data;
-    
-    // Update stored user data
-    await this.storeUserData(userData);
-    
-    return userData;
+      const userData = response.data;
+      
+      // Update stored user data
+      await this.storeUserData(userData);
+      
+      return userData;
+    }, 3, 1500); // 3回まで、1.5秒間隔でリトライ
   }
 
   /**
@@ -196,5 +221,40 @@ export class AuthService {
   static async isAuthenticated(): Promise<boolean> {
     const token = await this.getStoredToken();
     return !!token;
+  }
+
+  /**
+   * Register push notification token with backend
+   */
+  static async registerPushToken(token: string, pushToken: string): Promise<void> {
+    const response: AxiosResponse<{status: string, message: string}> = await apiClient.post(
+      '/api/push-tokens',
+      { token: pushToken },
+      { headers: getAuthHeaders(token) }
+    );
+
+    console.log('[Auth] Push token registration response:', response.data);
+  }
+
+  /**
+   * Get user's push tokens from backend
+   */
+  static async getPushTokens(token: string): Promise<any[]> {
+    const response: AxiosResponse<{tokens: any[]}> = await apiClient.get(
+      '/api/push-tokens',
+      { headers: getAuthHeaders(token) }
+    );
+
+    return response.data.tokens;
+  }
+
+  /**
+   * Delete a specific push token from backend
+   */
+  static async deletePushToken(token: string, pushToken: string): Promise<void> {
+    await apiClient.delete(
+      `/api/push-tokens/${encodeURIComponent(pushToken)}`,
+      { headers: getAuthHeaders(token) }
+    );
   }
 }

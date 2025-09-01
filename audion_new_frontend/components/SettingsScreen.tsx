@@ -1,6 +1,6 @@
 /**
- * Settings Screen Component
- * Comprehensive settings management screen
+ * Settings Screen Component - 簡素化版
+ * 4つの音声作成方式に関連する設定のみを表示
  */
 
 import React, { useState } from 'react';
@@ -39,167 +39,121 @@ interface SettingsScreenProps {
 }
 
 export default function SettingsScreen({ visible, onClose, title }: SettingsScreenProps) {
-  const { user } = useAuth();
-  const [pushNotifications, setPushNotifications] = useState(true);
-  const [emailNotifications, setEmailNotifications] = useState(false);
-  const [darkMode, setDarkMode] = useState(true);
-  const [autoPlay, setAutoPlay] = useState(true);
+  const { user, logout } = useAuth();
+  
+  // 4つの音声作成方式に関連する基本設定のみ
+  const [autoPickEnabled, setAutoPickEnabled] = useState(true);
+  const [scheduleEnabled, setScheduleEnabled] = useState(false);
+  const [notifications, setNotifications] = useState(true);
 
   const getSettingsSections = (): SettingsSection[] => {
-    switch (title) {
-      case 'プロフィール':
-        return [
+    return [
+      {
+        title: 'アカウント',
+        items: [
           {
-            title: 'アカウント情報',
-            items: [
-              {
-                id: 'email',
-                title: 'メールアドレス',
-                description: user?.email || '',
-                type: 'info',
-              },
-              {
-                id: 'username',
-                title: 'ユーザー名',
-                description: user?.email?.split('@')[0] || '',
-                type: 'button',
-                onPress: () => Alert.alert('ユーザー名変更', '実装予定の機能です'),
-              },
-              {
-                id: 'password',
-                title: 'パスワード変更',
-                type: 'button',
-                onPress: () => Alert.alert('パスワード変更', '実装予定の機能です'),
-              },
-            ],
+            id: 'email',
+            title: 'ログイン中',
+            description: user?.email || 'ゲスト',
+            type: 'info',
           },
           {
-            title: 'プロフィール設定',
-            items: [
-              {
-                id: 'bio',
-                title: 'プロフィール文',
-                type: 'button',
-                onPress: () => Alert.alert('プロフィール編集', '実装予定の機能です'),
-              },
-              {
-                id: 'avatar',
-                title: 'プロフィール画像',
-                type: 'button',
-                onPress: () => Alert.alert('画像変更', '実装予定の機能です'),
-              },
-            ],
+            id: 'logout',
+            title: 'ログアウト',
+            type: 'button',
+            onPress: () => {
+              Alert.alert(
+                'ログアウト',
+                'ログアウトしますか？',
+                [
+                  { text: 'キャンセル', style: 'cancel' },
+                  { text: 'ログアウト', style: 'destructive', onPress: logout }
+                ]
+              );
+            },
           },
-        ];
-
-      case '通知':
-        return [
+        ],
+      },
+      {
+        title: '音声作成設定',
+        items: [
           {
-            title: 'プッシュ通知',
-            items: [
-              {
-                id: 'push',
-                title: 'プッシュ通知',
-                description: 'アプリからの通知を受け取る',
-                type: 'toggle',
-                value: pushNotifications,
-                onToggle: setPushNotifications,
-              },
-              {
-                id: 'email',
-                title: 'メール通知',
-                description: 'メールで重要な更新を受け取る',
-                type: 'toggle',
-                value: emailNotifications,
-                onToggle: setEmailNotifications,
-              },
-            ],
+            id: 'autopick',
+            title: 'AutoPick機能',
+            description: 'AI自動記事選別機能を使用する',
+            type: 'toggle',
+            value: autoPickEnabled,
+            onToggle: setAutoPickEnabled,
           },
           {
-            title: '通知内容',
-            items: [
-              {
-                id: 'new_content',
-                title: '新しいコンテンツ',
-                type: 'button',
-                onPress: () => Alert.alert('通知設定', '実装予定の機能です'),
-              },
-              {
-                id: 'social',
-                title: 'ソーシャル通知',
-                type: 'button',
-                onPress: () => Alert.alert('通知設定', '実装予定の機能です'),
-              },
-            ],
-          },
-        ];
-
-      case 'プライバシーと安全':
-        return [
-          {
-            title: 'プライバシー設定',
-            items: [
-              {
-                id: 'privacy_level',
-                title: 'プライバシーレベル',
-                type: 'button',
-                onPress: () => Alert.alert('プライバシー設定', '実装予定の機能です'),
-              },
-              {
-                id: 'data_usage',
-                title: 'データ使用量',
-                type: 'button',
-                onPress: () => Alert.alert('データ設定', '実装予定の機能です'),
-              },
-            ],
-          },
-        ];
-
-      case '設定とプライバシー':
-        return [
-          {
-            title: 'アプリケーション設定',
-            items: [
-              {
-                id: 'theme',
-                title: 'ダークモード',
-                description: '目に優しい暗いテーマを使用',
-                type: 'toggle',
-                value: darkMode,
-                onToggle: setDarkMode,
-              },
-              {
-                id: 'autoplay',
-                title: '自動再生',
-                description: 'コンテンツを自動的に再生',
-                type: 'toggle',
-                value: autoPlay,
-                onToggle: setAutoPlay,
-              },
-            ],
+            id: 'schedule',
+            title: 'Schedule Pick',
+            description: '定期自動配信機能を使用する',
+            type: 'toggle',
+            value: scheduleEnabled,
+            onToggle: setScheduleEnabled,
           },
           {
-            title: 'ストレージ',
-            items: [
-              {
-                id: 'cache',
-                title: 'キャッシュをクリア',
-                type: 'button',
-                onPress: () => Alert.alert('キャッシュクリア', '実装予定の機能です'),
-              },
-              {
-                id: 'downloads',
-                title: 'ダウンロード管理',
-                type: 'button',
-                onPress: () => Alert.alert('ダウンロード管理', '実装予定の機能です'),
-              },
-            ],
+            id: 'notifications',
+            title: '通知',
+            description: '音声作成完了時に通知を受け取る',
+            type: 'toggle',
+            value: notifications,
+            onToggle: setNotifications,
           },
-        ];
-
-      default:
-        return [];
-    }
+          {
+            id: 'rss_sources',
+            title: 'RSSソース管理',
+            description: 'ニュースソースの追加・削除・管理',
+            type: 'button',
+            onPress: () => Alert.alert('実装予定', 'RSSソース管理画面は実装中です。'),
+          },
+        ],
+      },
+      {
+        title: '詳細設定',
+        items: [
+          {
+            id: 'autopick_settings',
+            title: 'AutoPick詳細設定',
+            description: '記事選別アルゴリズムとジャンル設定',
+            type: 'button',
+            onPress: () => Alert.alert('実装予定', 'AutoPick詳細設定は実装予定です。'),
+          },
+          {
+            id: 'schedule_settings',
+            title: 'Schedule詳細設定',
+            description: '配信時間とソース設定',
+            type: 'button',
+            onPress: () => Alert.alert('実装予定', 'Schedule詳細設定は実装予定です。'),
+          },
+          {
+            id: 'voice_settings',
+            title: '音声設定',
+            description: '音声の種類と速度設定',
+            type: 'button',
+            onPress: () => Alert.alert('実装予定', '音声設定は実装予定です。'),
+          },
+        ],
+      },
+      {
+        title: 'その他',
+        items: [
+          {
+            id: 'help',
+            title: 'ヘルプ',
+            type: 'button',
+            onPress: () => Alert.alert('ヘルプ', '4つの音声作成方式について\n\n• AutoPick: AI自動記事選別\n• Manual Pick: 手動記事選択\n• Schedule Pick: 定期自動配信\n• 記事音声: 個別記事URL入力'),
+          },
+          {
+            id: 'version',
+            title: 'バージョン',
+            description: '1.0.0 (ベータ版)',
+            type: 'info',
+          },
+        ],
+      },
+    ];
   };
 
   const renderSettingItem = (item: SettingItem) => {
@@ -270,7 +224,7 @@ export default function SettingsScreen({ visible, onClose, title }: SettingsScre
           <TouchableOpacity style={styles.backButton} onPress={onClose}>
             <Text style={styles.backButtonText}>‹</Text>
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>{title}</Text>
+          <Text style={styles.headerTitle}>設定</Text>
           <View style={styles.placeholder} />
         </View>
 

@@ -41,6 +41,7 @@ import HomeActionBar from '../../components/HomeActionBar';
 import AutoPickService from '../../services/AutoPickService';
 import AudioCreationProgress from '../../components/AudioCreationProgress';
 import SubscriptionService from '../../services/SubscriptionService';
+import useReadingHistory from '../../hooks/useReadingHistory';
 // import MiniPlayer from '../../components/MiniPlayer'; // Removed - using global MiniPlayer from _layout.tsx
 
 // Constants
@@ -55,6 +56,7 @@ export default function MainScreen() {
   const router = useRouter();
   const { playInstantAudio } = useUnifiedAudio();
   const { currentVoiceLanguage } = useLanguage();
+  const { readingHistory, markAsRead, isRead } = useReadingHistory();
   
   // Simplified state management like the working version
   const [articles, setArticles] = useState<Article[]>([]);
@@ -62,7 +64,6 @@ export default function MainScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [selectedGenre, setSelectedGenre] = useState<string>('All');
   const [creatingAudio, setCreatingAudio] = useState(false);
-  const [readingHistory, setReadingHistory] = useState<Map<string, Date>>(new Map());
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearchModal, setShowSearchModal] = useState(false);
   const [selectedArticle, setSelectedArticle] = useState<Article | null>(null);
@@ -141,14 +142,11 @@ export default function MainScreen() {
       const initializeData = async () => {
         if (!token) return;
 
-        // Initialize reading history and other services first
-        const [history] = await Promise.all([
-          loadReadingHistoryFromStorage(),
+        // Initialize services (reading history now managed by useReadingHistory hook)
+        await Promise.all([
           NotificationService.getInstance().initialize(),
           ArchiveService.getInstance().initialize(token),
         ]);
-
-        setReadingHistory(history);
         
         // Fetch articles after other initialization is complete
         await fetchArticles();
@@ -208,34 +206,7 @@ export default function MainScreen() {
     fetchArticles().finally(() => setRefreshing(false));
   }, [selectedGenre]);
 
-  // Load reading history from AsyncStorage
-  const loadReadingHistoryFromStorage = async (): Promise<Map<string, Date>> => {
-    try {
-      const history = await AsyncStorage.getItem('reading_history');
-      if (history) {
-        const parsed = JSON.parse(history);
-        const map = new Map();
-        Object.entries(parsed).forEach(([key, value]) => {
-          map.set(key, new Date(value as string));
-        });
-        return map;
-      }
-    } catch (error) {
-      console.warn('Error loading reading history:', error);
-    }
-    return new Map();
-  };
-
-  const saveReadingHistoryToStorage = async (history: Map<string, Date>) => {
-    try {
-      const historyObj = Object.fromEntries(
-        Array.from(history.entries()).map(([key, value]) => [key, value.toISOString()])
-      );
-      await AsyncStorage.setItem('reading_history', JSON.stringify(historyObj));
-    } catch (error) {
-      console.warn('Error saving reading history:', error);
-    }
-  };
+  // Reading history is now managed by useReadingHistory hook
 
   const convertArticleToDirectTTS = async (article: Article) => {
     try {
@@ -318,11 +289,8 @@ export default function MainScreen() {
   };
 
   const handleArticlePress = async (article: Article) => {
-    // Save reading history
-    const newHistory = new Map(readingHistory);
-    newHistory.set(article.id, new Date());
-    setReadingHistory(newHistory);
-    await saveReadingHistoryToStorage(newHistory);
+    // Mark as read using the hook
+    await markAsRead(article.id, new Date());
     
     // Record interaction
     await PersonalizationService.recordInteraction({
@@ -708,7 +676,7 @@ export default function MainScreen() {
                 article={article}
                 onPress={handleArticlePress}
                 onPlayPress={handlePlayPress}
-                isRead={readingHistory.has(article.id)}
+                isRead={isRead(article.id)}
               />
             ))}
           </View>
@@ -732,7 +700,7 @@ export default function MainScreen() {
                 article={article}
                 onPress={handleArticlePress}
                 onPlayPress={handlePlayPress}
-                isRead={readingHistory.has(article.id)}
+                isRead={isRead(article.id)}
               />
             ))}
           </View>

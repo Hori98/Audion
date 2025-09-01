@@ -28,3 +28,5 @@ feedparser
 aiofiles
 mutagen
 beautifulsoup4
+apscheduler>=3.10.0
+httpx>=0.24.0

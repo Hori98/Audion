@@ -5,6 +5,7 @@
 
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { AuthService } from '../services/AuthService';
+import NotificationService from '../services/NotificationService';
 import { 
   AuthContextType, 
   User, 
@@ -81,6 +82,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
       setUser(authResponse.user);
       
       console.log('[Auth] Login successful:', authResponse.user.email);
+      
+      // ログイン成功後、プッシュ通知を登録
+      await registerPushNotifications(authResponse.access_token);
+      
     } catch (error) {
       console.error('[Auth] Login failed:', error);
       throw error;
@@ -106,11 +111,44 @@ export function AuthProvider({ children }: AuthProviderProps) {
       setUser(registerResponse.user);
       
       console.log('[Auth] Registration successful:', registerResponse.user.email);
+      
+      // 登録成功後、プッシュ通知を登録
+      await registerPushNotifications(registerResponse.access_token);
+      
     } catch (error) {
       console.error('[Auth] Registration failed:', error);
       throw error;
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  /**
+   * プッシュ通知を登録（ログイン後に呼び出される）
+   */
+  const registerPushNotifications = async (authToken: string) => {
+    try {
+      console.log('[Auth] Registering push notifications...');
+      
+      // NotificationServiceでExpo Push Tokenを取得
+      const pushToken = await NotificationService.registerForPushNotifications();
+      
+      if (!pushToken) {
+        console.warn('[Auth] Push token registration failed - no token received');
+        return;
+      }
+
+      // バックエンドにトークンを送信
+      await AuthService.registerPushToken(authToken, pushToken);
+      console.log('[Auth] Push token registered:', pushToken);
+
+      // デバッグ情報をログ出力
+      const debugInfo = NotificationService.getDebugInfo();
+      console.log('[Auth] Notification debug info:', debugInfo);
+
+    } catch (error) {
+      console.error('[Auth] Push notification registration failed:', error);
+      // プッシュ通知登録の失敗はログイン全体を失敗させない
     }
   };
 

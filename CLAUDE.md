@@ -495,7 +495,68 @@ Use `backend_test.py` to run comprehensive API tests including authentication, R
   - Revenue sharing models for content creators and publishers
 
 ### 🔮 Phase 4: Advanced Features (Future)
-#### 4.1 AI & Personalization
+
+#### 4.1 UGC共有システム・コミュニティ機能 ⭐ **戦略的最重要機能**
+
+**コンセプト**: "作成したコンテンツがコミュニティの共有資産となり、優秀な作品は自動的に収益化される循環型エコシステム"
+
+##### Phase 4.1A: 基盤構築（データベース・API設計）
+- [ ] **MongoDB拡張データベース設計**
+  - `users`コレクション拡張（プロフィール・統計・クリエイターランク）
+  - `audios`コレクション（UGC音声メタデータ・品質スコア・公開設定）
+  - `likes`, `comments`, `follows`コレクション（SNS機能基盤）
+- [ ] **FastAPI統合設計**
+  - UGC共有API（`POST /audios`, `PUT /audios/{id}`）
+  - コミュニティ発見API（`GET /discover/feed`）
+  - SNS機能API（`/like`, `/follow`, `/comments`）
+
+##### Phase 4.1B: UGC共有システム実装
+- [ ] **デフォルト共有設定**
+  - 音声作成時に「コミュニティ共有」がデフォルトON
+  - 共有ON時の自動discoverタブ配信システム
+  - 共有設定変更時の即座反映（配信開始・停止）
+- [ ] **音声品質評価システム**
+  - 再生回数・いいね数・コメント数による品質スコア算出
+  - バッチ処理による定期的スコア更新
+  - 優秀音声の自動ランキング・プロモーション
+
+##### Phase 4.1C: SNS・コミュニティ機能
+- [ ] **ユーザープロフィール・フォロー機能**
+  - クリエータープロフィール画面（bio、実績、フォロワー数）
+  - フォロー・フォロワー管理
+  - フォロー中クリエイターの新着通知
+- [ ] **インタラクション機能**
+  - いいねボタン（ハート/星アニメーション）
+  - コメントシステム（返信・スレッド機能）
+  - シェア機能（SNS連携・アプリ内共有）
+
+##### Phase 4.1D: 収益化・インセンティブシステム
+- [ ] **クリエイター収益化**
+  - 再生回数・いいね数に基づく収益分配システム
+  - Stripe Connect統合による自動支払い
+  - クリエイターダッシュボード（収益・統計表示）
+- [ ] **クリエイターランク制度**
+  - Bronze/Silver/Gold/Platinum ティア制
+  - ランクアップ条件（フォロワー数・品質スコア・総再生数）
+  - ランク別特典（収益率・プロモーション優遇・バッジ表示）
+
+##### Phase 4.1E: スイッチングコスト創出機能
+- [ ] **蓄積型価値システム**
+  - 投稿音声数・獲得いいね数・フォロワー数の可視化
+  - 「実績バッジ」システム（初投稿・100いいね達成・人気クリエイターなど）
+  - 過去投稿の再生統計・収益履歴の永続保存
+- [ ] **コミュニティ依存性強化**
+  - 他ユーザーからのフォロー・コメントによる「承認欲求」充足
+  - 定期的な「人気音声ランキング」「新人クリエイター特集」
+  - コミュニティイベント・コンテスト機能
+
+**期待される効果**:
+- ユーザーの能動的コンテンツ作成によるアプリ定着率向上
+- 優秀コンテンツの循環によるアプリ体験品質向上  
+- 収益化モデルによるビジネス持続性確保
+- SNS要素によるユーザー間エンゲージメント最大化
+
+#### 4.2 AI & Personalization
 - [ ] **Advanced AI Features**
   - Voice cloning for personalized hosts
   - Dynamic content adaptation based on user behavior
@@ -505,7 +566,7 @@ Use `backend_test.py` to run comprehensive API tests including authentication, R
   - Auto-categorization of content
   - Predictive content generation
 
-#### 4.2 Platform Expansion
+#### 4.3 Platform Expansion
 - [ ] **Multi-Platform Support**
   - Web application deployment
   - Desktop applications (Electron)

@@ -6,15 +6,18 @@ export interface Article {
   title: string;
   summary: string;
   content?: string;
-  url: string;
+  link: string;
   source_name: string;
   published_at: string;
   category?: string;
+  genre?: string;  // ジャンル情報追加（バックエンドからcategoryまたはgenreが来る）
   thumbnail_url?: string;
   reading_time: number;
   audio_available: boolean;
   created_at: string;
   updated_at: string;
+  read_status?: 'unread' | 'read' | 'saved';
+  read_at?: string;
 }
 
 export interface ArticleListResponse {
@@ -35,10 +38,7 @@ export interface ImportRSSResponse {
 class ArticleService {
   private async getAuthToken(): Promise<string | null> {
     const token = await AsyncStorage.getItem('@audion_auth_token');
-    console.log('🔑 [ArticleService DEBUG] Token from AsyncStorage:', token ? 'EXISTS' : 'MISSING');
-    if (token) {
-      console.log('🔑 [ArticleService DEBUG] Token preview:', token.substring(0, 20) + '...');
-    }
+    // Token validation completed
     return token;
   }
 
@@ -48,8 +48,7 @@ class ArticleService {
   ): Promise<T> {
     const token = await this.getAuthToken();
     
-    console.log('🌐 [ArticleService DEBUG] Making request to:', `${API_BASE_URL}${endpoint}`);
-    console.log('🌐 [ArticleService DEBUG] With auth token:', token ? 'YES' : 'NO');
+    // API request: ${API_BASE_URL}${endpoint}
     
     const response = await fetch(`${API_BASE_URL}${endpoint}`, {
       ...options,
@@ -60,11 +59,10 @@ class ArticleService {
       },
     });
 
-    console.log('🌐 [ArticleService DEBUG] Response status:', response.status, response.statusText);
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({ detail: 'Unknown error' }));
-      console.error('❌ [ArticleService DEBUG] Request failed:', errorData);
+      console.error('❌ API request failed:', errorData);
       throw new Error(errorData.detail || 'Request failed');
     }
 
@@ -129,6 +127,81 @@ class ArticleService {
 
   async getArticleCategories(): Promise<{ categories: string[] }> {
     return this.makeRequest<{ categories: string[] }>('/articles/categories/list');
+  }
+
+  // 既読ステータス管理
+  async markAsRead(articleId: string): Promise<void> {
+    const readArticles = await this.getReadArticles();
+    const newReadStatus = {
+      id: articleId,
+      read_at: new Date().toISOString(),
+      status: 'read' as const
+    };
+    
+    const updatedReadArticles = [
+      ...readArticles.filter(item => item.id !== articleId),
+      newReadStatus
+    ];
+    
+    await AsyncStorage.setItem('@audion_read_articles', JSON.stringify(updatedReadArticles));
+  }
+
+  async markAsSaved(articleId: string): Promise<void> {
+    const readArticles = await this.getReadArticles();
+    const newSavedStatus = {
+      id: articleId,
+      read_at: new Date().toISOString(),
+      status: 'saved' as const
+    };
+    
+    const updatedReadArticles = [
+      ...readArticles.filter(item => item.id !== articleId),
+      newSavedStatus
+    ];
+    
+    await AsyncStorage.setItem('@audion_read_articles', JSON.stringify(updatedReadArticles));
+  }
+
+  async getReadArticles(): Promise<Array<{id: string; read_at: string; status: 'read' | 'saved'}>> {
+    const stored = await AsyncStorage.getItem('@audion_read_articles');
+    return stored ? JSON.parse(stored) : [];
+  }
+
+  async getArticlesWithReadStatus(params?: {
+    page?: number;
+    per_page?: number;
+    category?: string;
+    genre?: string;
+    search?: string;
+    source_name?: string;
+    source?: string;
+    read_filter?: 'all' | 'unread' | 'read' | 'saved';
+  }): Promise<ArticleListResponse> {
+    const response = await this.getArticles(params);
+    const readArticles = await this.getReadArticles();
+    
+    // 既読ステータスをマージ
+    const articlesWithStatus = response.articles.map(article => {
+      const readInfo = readArticles.find(r => r.id === article.id);
+      return {
+        ...article,
+        read_status: readInfo?.status || 'unread',
+        read_at: readInfo?.read_at
+      };
+    });
+
+    // フィルタリング適用
+    let filteredArticles = articlesWithStatus;
+    if (params?.read_filter && params.read_filter !== 'all') {
+      filteredArticles = articlesWithStatus.filter(article => 
+        article.read_status === params.read_filter
+      );
+    }
+
+    return {
+      ...response,
+      articles: filteredArticles
+    };
   }
 }
 
