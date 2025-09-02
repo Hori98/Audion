@@ -17,6 +17,7 @@ import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { useLanguage } from '../context/LanguageContext';
 import { useTranslation } from 'react-i18next';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import AutoPickDebugMenu from '../components/AutoPickDebugMenu';
 import DebugService from '../services/DebugService';
 import CacheService from '../services/CacheService';
@@ -35,6 +36,21 @@ interface QuickSettingItem {
   onPress?: () => void;
   onToggle?: (value: boolean) => void;
 }
+
+interface PlaybackSettings {
+  defaultSpeed: number;
+  autoPlay: boolean;
+  skipSilences: boolean;
+}
+
+const playbackSpeeds = [
+  { value: 0.75, label: '0.75x' },
+  { value: 1.0, label: '1.0x' },
+  { value: 1.25, label: '1.25x' },
+  { value: 1.5, label: '1.5x' },
+  { value: 1.75, label: '1.75x' },
+  { value: 2.0, label: '2.0x' },
+];
 
 export default function QuickSettingsScreen() {
   const router = useRouter();
@@ -56,6 +72,14 @@ export default function QuickSettingsScreen() {
   const [voiceLanguageModalVisible, setVoiceLanguageModalVisible] = useState(false);
   const [accountModalVisible, setAccountModalVisible] = useState(false);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  
+  // コンテンツと再生設定の展開状態
+  const [contentPlaybackExpanded, setContentPlaybackExpanded] = useState(false);
+  const [playbackSettings, setPlaybackSettings] = useState<PlaybackSettings>({
+    defaultSpeed: 1.0,
+    autoPlay: false,
+    skipSilences: false,
+  });
 
   // Fetch user profile on mount
   useEffect(() => {
@@ -72,8 +96,31 @@ export default function QuickSettingsScreen() {
       }
     };
 
+    const loadPlaybackSettings = async () => {
+      try {
+        const playbackData = await AsyncStorage.getItem('playback_settings');
+        if (playbackData) {
+          setPlaybackSettings(JSON.parse(playbackData));
+        }
+      } catch (error) {
+        console.error('Failed to load playback settings:', error);
+      }
+    };
+
     fetchUserProfile();
+    loadPlaybackSettings();
   }, [user]);
+
+  // 再生設定保存ハンドラー
+  const handlePlaybackSettingChange = async (newSettings: Partial<PlaybackSettings>) => {
+    const updatedSettings = { ...playbackSettings, ...newSettings };
+    setPlaybackSettings(updatedSettings);
+    try {
+      await AsyncStorage.setItem('playback_settings', JSON.stringify(updatedSettings));
+    } catch (error) {
+      console.error('Failed to save playback settings:', error);
+    }
+  };
 
   const handleLogout = () => {
     Alert.alert(
@@ -205,20 +252,12 @@ export default function QuickSettingsScreen() {
       onPress: () => setThemeModalVisible(true)
     },
     {
-      id: 'schedule',
-      title: t('settings.scheduleDelivery'),
-      subtitle: t('settings.scheduleSubtitle'),
-      icon: 'time-outline',
+      id: 'content-playback',
+      title: 'コンテンツと再生',
+      subtitle: '音声作成方式別設定と再生オプション',
+      icon: 'play-circle-outline',
       type: 'navigation',
-      onPress: () => router.push('/schedule-content-settings')
-    },
-    {
-      id: 'auto-pick',
-      title: 'Auto-Pick設定',
-      subtitle: '記事選定アルゴリズムの詳細設定',
-      icon: 'settings-outline',
-      type: 'navigation',
-      onPress: () => router.push('/auto-pick-settings')
+      onPress: () => router.push('/content-playback')
     },
     {
       id: 'prompt-settings',
@@ -262,14 +301,6 @@ export default function QuickSettingsScreen() {
       icon: 'diamond-outline',
       type: 'navigation',
       onPress: () => router.push('/subscription-limits')
-    },
-    {
-      id: 'developer',
-      title: t('settings.developerOptions'),
-      subtitle: DebugService.isDebugModeEnabled() ? t('settings.debugEnabled') : t('settings.debugDisabled'),
-      icon: 'code-outline',
-      type: 'navigation',
-      onPress: () => setDebugMenuVisible(true)
     },
     {
       id: 'logout',
@@ -410,49 +441,50 @@ export default function QuickSettingsScreen() {
           </Text>
           <View style={styles.settingsContainer}>
             {appSettings.map((setting) => (
-              <TouchableOpacity
-                key={setting.id}
-                style={[styles.settingItem, { backgroundColor: theme.card }]}
-                onPress={() => {
-                  if (setting.onPress) {
-                    setting.onPress();
-                  }
-                }}
-                disabled={!setting.onPress}
-              >
-                <View style={styles.settingLeft}>
-                  <View style={[styles.iconContainer, { backgroundColor: theme.accent }]}>
-                    <Ionicons 
-                      name={setting.icon as any} 
-                      size={20} 
-                      color={theme.primary} 
-                    />
-                  </View>
-                  <View style={styles.settingText}>
-                    <Text style={[styles.settingTitle, { color: theme.text }]}>
-                      {setting.title}
-                    </Text>
-                    {setting.subtitle && (
-                      <Text style={[styles.settingSubtitle, { color: theme.textSecondary }]}>
-                        {setting.subtitle}
+              <React.Fragment key={setting.id}>
+                <TouchableOpacity
+                  style={[styles.settingItem, { backgroundColor: theme.card }]}
+                  onPress={() => {
+                    if (setting.onPress) {
+                      setting.onPress();
+                    }
+                  }}
+                  disabled={!setting.onPress}
+                >
+                  <View style={styles.settingLeft}>
+                    <View style={[styles.iconContainer, { backgroundColor: theme.accent }]}>
+                      <Ionicons 
+                        name={setting.icon as any} 
+                        size={20} 
+                        color={theme.primary} 
+                      />
+                    </View>
+                    <View style={styles.settingText}>
+                      <Text style={[styles.settingTitle, { color: theme.text }]}>
+                        {setting.title}
                       </Text>
+                      {setting.subtitle && (
+                        <Text style={[styles.settingSubtitle, { color: theme.textSecondary }]}>
+                          {setting.subtitle}
+                        </Text>
+                      )}
+                    </View>
+                  </View>
+                  <View style={styles.settingRight}>
+                    {setting.type === 'toggle' && (
+                      <Switch
+                        value={setting.value}
+                        onValueChange={setting.onToggle}
+                        trackColor={{ false: theme.border, true: theme.primary }}
+                        thumbColor={setting.value ? '#fff' : theme.background}
+                      />
+                    )}
+                    {(setting.type === 'navigation' || setting.type === 'action') && (
+                      <Ionicons name="chevron-forward" size={20} color={theme.textMuted} />
                     )}
                   </View>
-                </View>
-                <View style={styles.settingRight}>
-                  {setting.type === 'toggle' && (
-                    <Switch
-                      value={setting.value}
-                      onValueChange={setting.onToggle}
-                      trackColor={{ false: theme.border, true: theme.primary }}
-                      thumbColor={setting.value ? '#fff' : theme.background}
-                    />
-                  )}
-                  {(setting.type === 'navigation' || setting.type === 'action') && (
-                    <Ionicons name="chevron-forward" size={20} color={theme.textMuted} />
-                  )}
-                </View>
-              </TouchableOpacity>
+                </TouchableOpacity>
+              </React.Fragment>
             ))}
           </View>
         </View>
@@ -1155,5 +1187,56 @@ const createStyles = (theme: any) => StyleSheet.create({
   },
   closeModalButton: {
     marginTop: 8,
+  },
+  // 展開エリア用スタイル
+  expandedSettingsContainer: {
+    marginTop: -8,
+    marginHorizontal: 20,
+    marginBottom: 8,
+    padding: 16,
+    borderBottomLeftRadius: 12,
+    borderBottomRightRadius: 12,
+  },
+  expandedSection: {
+    gap: 20,
+  },
+  expandedSectionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 12,
+  },
+  expandedSettingItem: {
+    marginBottom: 16,
+  },
+  expandedSettingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
+  expandedSettingLabel: {
+    fontSize: 15,
+    fontWeight: '500',
+    marginBottom: 8,
+  },
+  expandedSettingDescription: {
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  speedSelector: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 8,
+  },
+  speedButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  speedButtonText: {
+    fontSize: 14,
+    fontWeight: '500',
   },
 });
