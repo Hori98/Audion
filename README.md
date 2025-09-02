@@ -1,126 +1,143 @@
-# Audion Web UI
+# 🎧 Audion - AI-Powered Audio News Platform
 
-A modern web interface for the Audion AI-powered audio news platform.
+RSS記事やWebコンテンツを高品質な音声コンテンツに変換し、いつでもどこでも「聴く」ことで情報収集を可能にするReact NativeプラットフォームとFastAPIバックエンド。
 
-## Features
+## 📋 Project Documentation
 
-- **Authentication**: Secure login and registration
-- **RSS Management**: Add and manage your news sources
-- **Article Feed**: Browse and select articles from your RSS feeds
-- **Audio Creation**: Generate AI-powered audio summaries from selected articles
-- **Audio Library**: Manage and play your created audio content
-- **Responsive Design**: Works seamlessly on desktop and mobile devices
+### **📖 Primary Documentation**
+- **[PROJECT_MASTER_PLAN.md](./PROJECT_MASTER_PLAN.md)** - 📌 **Single Source of Truth for all project information**
+- **[CLAUDE.md](./CLAUDE.md)** - AI development guidelines and collaboration instructions  
 
-## Getting Started
+### **📚 Supporting Documentation**
+- `TECHNICAL_SPEC.md` - Technical specifications and API documentation
+- `DEVELOPMENT_BEST_PRACTICES.md` - Code quality and development guidelines
+- `TESTING_GUIDE.md` - Testing procedures and quality assurance
 
-1. **Install dependencies**:
-   ```bash
-   npm install
-   ```
+### **🗂️ Archived Documentation**
+Historical documents moved to `docs_archive/` to prevent confusion with current status.
 
-2. **Set up environment variables**:
-   ```bash
-   cp .env.example .env
-   ```
-   Edit `.env` and set your backend API URL.
+## 🚀 Quick Start
 
-3. **Start the development server**:
-   ```bash
-   npm run dev
-   ```
-
-4. **Make sure your backend is running**:
-   The backend should be running on `http://localhost:8000` (or update the API URL in your `.env` file).
-
-## Project Structure
-
-```
-src/
-├── components/          # React components
-│   ├── AuthScreen.jsx   # Login/register interface
-│   ├── FeedScreen.jsx   # Article browsing and selection
-│   ├── SourcesScreen.jsx # RSS source management
-│   ├── LibraryScreen.jsx # Audio library and player
-│   ├── AudioPlayer.jsx  # Bottom audio player component
-│   └── Layout.jsx       # Main app layout
-├── contexts/            # React contexts
-│   ├── AuthContext.jsx  # Authentication state management
-│   └── AudioContext.jsx # Audio player state management
-└── main.jsx            # App entry point
+### **Backend (Required First)**
+```bash
+# Start backend server
+./start-dev-fixed.sh
+# Backend runs on: http://192.168.11.30:8003
 ```
 
-## Key Features
+### **Frontend (Choose One)**
+```bash
+# Option 1: Latest development frontend (Recommended)
+cd audion_new_frontend
+npm install
+npx expo start
 
-### Authentication
-- Clean, modern login/register interface
-- Secure token-based authentication
-- Persistent login state
+# Option 2: Main project frontend (More features, some incomplete)  
+cd audion-app
+npm install
+npx expo start
+```
 
-### RSS Source Management
-- Add RSS feeds with name and URL
-- Visual source cards with metadata
-- Easy source deletion
-- URL validation
+### **Verification**
+```bash
+# Check backend is running
+curl http://192.168.11.30:8003/api/articles
+# Should return ~65 articles from 6 RSS sources
+```
 
-### Article Feed
-- Grid layout of articles from your RSS sources
-- Multi-select functionality with visual indicators
-- Article metadata (source, date, genre)
-- Direct links to original articles
-- Bulk audio creation from selected articles
+## 🏗️ Current Architecture
 
-### Audio Library
-- List of all created audio content
-- Inline audio player with controls
-- Audio renaming functionality
-- Script viewing for AI-generated content
-- Download functionality
-- Audio deletion
+### **Frontend Options**
+```
+audion_new_frontend/     # ✅ Latest development (Recommended)
+├── app/(tabs)/          # Main tab screens (articles, library, etc)
+├── components/          # 40+ React Native components  
+├── services/            # AutoPick progress, API integration
+└── context/             # Authentication, AutoPick state management
 
-### Audio Player
-- Persistent bottom player
-- Play/pause, skip controls
-- Progress bar with seeking
-- Visual feedback for currently playing audio
-- Animated audio wave indicators
+audion-app/              # 🚧 Feature-rich but complex
+├── app/(tabs)/          # Comprehensive tab system
+├── components/          # 70+ components with advanced features
+├── services/            # Extensive service layer
+└── context/             # Complex state management
+```
 
-## Design System
+### **Backend**
+```
+backend/
+├── server.py            # ✅ Main FastAPI server (5,653 lines)
+├── services/            # AI, RSS, audio processing services  
+├── models/              # Database models (MongoDB)
+└── routers/             # API endpoint organization
+```
 
-- **Colors**: Primary purple theme with careful contrast ratios
-- **Typography**: Clean, readable fonts with proper hierarchy
-- **Components**: Consistent button styles, cards, and form elements
-- **Animations**: Subtle transitions and loading states
-- **Responsive**: Mobile-first design with breakpoints
+## ✅ Current Features (January 2025)
 
-## API Integration
+### **Core Functionality**
+- **✅ User Authentication**: JWT-based login/registration system
+- **✅ RSS Article Integration**: 6 sources, 65+ articles successfully fetched
+- **✅ AutoPick AI Audio Generation**: OpenAI GPT + TTS with real-time progress monitoring
+- **✅ Audio Library**: Real API integration with playback controls
+- **✅ Search & Discovery**: Advanced fuzzy search with relevance scoring
 
-The app integrates with the Audion backend API for:
-- User authentication (`/auth/login`, `/auth/register`)
-- RSS source management (`/sources`)
-- Article fetching (`/articles`)
-- Audio creation (`/audio/create`)
-- Audio library management (`/audio/library`)
+### **Recent Implementations**  
+- **✅ Server-Sent Events (SSE)**: Real-time AutoPick progress monitoring
+- **✅ Task Manager**: Background audio generation with progress tracking
+- **✅ EventSource Compatibility**: react-native-sse integration for React Native
+- **✅ Library Integration**: Converted from mock data to real API calls
 
-## Development
+## 🎯 Development Status
 
-- Built with React 18 and Vite
-- Styled with Tailwind CSS
-- Uses Axios for API calls
-- Date formatting with date-fns
-- Icons from Lucide React
+### **✅ Working & Verified**
+- Backend operational at `http://192.168.11.30:8003`
+- RSS article fetching from 6 configured sources  
+- AutoPick audio generation with progress monitoring
+- Authentication system with JWT tokens
+- Basic audio playback functionality
 
-## Production Deployment
+### **🚧 In Progress**
+- Frontend architecture consolidation (`audion-app/` vs `audion_new_frontend/`)
+- Backend modular refactoring (server.py → clean architecture)
+- Production deployment preparation
 
-1. Build the project:
-   ```bash
-   npm run build
-   ```
+### **📋 Planned**
+- Social & community features (user-generated content sharing)
+- Freemium monetization system implementation
+- Content rights & licensing framework
+- Advanced personalization algorithms
 
-2. Deploy the `dist` folder to your hosting service
-3. Update the `VITE_API_URL` environment variable to point to your production backend
+## ⚠️ Important Documentation Rules
 
-## Browser Support
+### **Single Source of Truth**
+**All project information should reference [PROJECT_MASTER_PLAN.md](./PROJECT_MASTER_PLAN.md) as the authoritative source.**
 
-- Modern browsers with ES6+ support
-- Chrome, Firefox, Safari, Edge
-- Mobile browsers (iOS Safari, Chrome Mobile)
+### **Update Protocol**
+1. **Architecture changes** → Update `PROJECT_MASTER_PLAN.md` first
+2. **Feature implementations** → Update status immediately upon completion  
+3. **Bug reports** → Reference current architecture in master plan
+
+### **Historical Context**
+Documents in `docs_archive/` are preserved for historical reference but should not be used for current development decisions.
+
+## 🔧 Development Environment
+
+### **Requirements**
+- **Backend**: Python 3.13+, MongoDB, OpenAI API key
+- **Frontend**: Node.js 18+, Expo CLI, React Native development environment
+- **Mobile Testing**: iOS Simulator, Android Emulator, or physical device
+
+### **Environment Variables**
+```bash
+# Backend (.env)
+OPENAI_API_KEY=your_openai_key
+MONGO_URL=mongodb_connection_string
+
+# Frontend (expo config)
+API_BASE_URL=http://192.168.11.30:8003
+```
+
+---
+
+**📅 Last Updated**: January 30, 2025  
+**📋 For complete project status**: See [PROJECT_MASTER_PLAN.md](./PROJECT_MASTER_PLAN.md)  
+**🤖 AI Development**: See [CLAUDE.md](./CLAUDE.md) for AI collaboration guidelines

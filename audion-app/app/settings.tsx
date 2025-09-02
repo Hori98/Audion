@@ -17,7 +17,6 @@ import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { useLanguage } from '../context/LanguageContext';
 import { useTranslation } from 'react-i18next';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import AutoPickDebugMenu from '../components/AutoPickDebugMenu';
 import DebugService from '../services/DebugService';
 import CacheService from '../services/CacheService';
@@ -37,20 +36,6 @@ interface QuickSettingItem {
   onToggle?: (value: boolean) => void;
 }
 
-interface PlaybackSettings {
-  defaultSpeed: number;
-  autoPlay: boolean;
-  skipSilences: boolean;
-}
-
-const playbackSpeeds = [
-  { value: 0.75, label: '0.75x' },
-  { value: 1.0, label: '1.0x' },
-  { value: 1.25, label: '1.25x' },
-  { value: 1.5, label: '1.5x' },
-  { value: 1.75, label: '1.75x' },
-  { value: 2.0, label: '2.0x' },
-];
 
 export default function QuickSettingsScreen() {
   const router = useRouter();
@@ -73,13 +58,6 @@ export default function QuickSettingsScreen() {
   const [accountModalVisible, setAccountModalVisible] = useState(false);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   
-  // コンテンツと再生設定の展開状態
-  const [contentPlaybackExpanded, setContentPlaybackExpanded] = useState(false);
-  const [playbackSettings, setPlaybackSettings] = useState<PlaybackSettings>({
-    defaultSpeed: 1.0,
-    autoPlay: false,
-    skipSilences: false,
-  });
 
   // Fetch user profile on mount
   useEffect(() => {
@@ -96,31 +74,9 @@ export default function QuickSettingsScreen() {
       }
     };
 
-    const loadPlaybackSettings = async () => {
-      try {
-        const playbackData = await AsyncStorage.getItem('playback_settings');
-        if (playbackData) {
-          setPlaybackSettings(JSON.parse(playbackData));
-        }
-      } catch (error) {
-        console.error('Failed to load playback settings:', error);
-      }
-    };
-
     fetchUserProfile();
-    loadPlaybackSettings();
   }, [user]);
 
-  // 再生設定保存ハンドラー
-  const handlePlaybackSettingChange = async (newSettings: Partial<PlaybackSettings>) => {
-    const updatedSettings = { ...playbackSettings, ...newSettings };
-    setPlaybackSettings(updatedSettings);
-    try {
-      await AsyncStorage.setItem('playback_settings', JSON.stringify(updatedSettings));
-    } catch (error) {
-      console.error('Failed to save playback settings:', error);
-    }
-  };
 
   const handleLogout = () => {
     Alert.alert(
@@ -1187,56 +1143,5 @@ const createStyles = (theme: any) => StyleSheet.create({
   },
   closeModalButton: {
     marginTop: 8,
-  },
-  // 展開エリア用スタイル
-  expandedSettingsContainer: {
-    marginTop: -8,
-    marginHorizontal: 20,
-    marginBottom: 8,
-    padding: 16,
-    borderBottomLeftRadius: 12,
-    borderBottomRightRadius: 12,
-  },
-  expandedSection: {
-    gap: 20,
-  },
-  expandedSectionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 12,
-  },
-  expandedSettingItem: {
-    marginBottom: 16,
-  },
-  expandedSettingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 4,
-  },
-  expandedSettingLabel: {
-    fontSize: 15,
-    fontWeight: '500',
-    marginBottom: 8,
-  },
-  expandedSettingDescription: {
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  speedSelector: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginTop: 8,
-  },
-  speedButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    borderWidth: 1,
-  },
-  speedButtonText: {
-    fontSize: 14,
-    fontWeight: '500',
   },
 });

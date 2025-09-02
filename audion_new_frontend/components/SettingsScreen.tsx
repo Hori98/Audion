@@ -16,6 +16,7 @@ import {
   Alert,
 } from 'react-native';
 import { useAuth } from '../context/AuthContext';
+import AudioGenerationSettings from './AudioGenerationSettings';
 
 interface SettingItem {
   id: string;
@@ -45,6 +46,7 @@ export default function SettingsScreen({ visible, onClose, title }: SettingsScre
   const [autoPickEnabled, setAutoPickEnabled] = useState(true);
   const [scheduleEnabled, setScheduleEnabled] = useState(false);
   const [notifications, setNotifications] = useState(true);
+  const [showAudioSettings, setShowAudioSettings] = useState(false);
 
   const getSettingsSections = (): SettingsSection[] => {
     return [
@@ -114,11 +116,11 @@ export default function SettingsScreen({ visible, onClose, title }: SettingsScre
         title: '詳細設定',
         items: [
           {
-            id: 'autopick_settings',
-            title: 'AutoPick詳細設定',
-            description: '記事選別アルゴリズムとジャンル設定',
+            id: 'audio_generation_settings',
+            title: '音声生成プロンプト設定',
+            description: 'Auto Pick / Manual / Schedule のプロンプト設定',
             type: 'button',
-            onPress: () => Alert.alert('実装予定', 'AutoPick詳細設定は実装予定です。'),
+            onPress: () => setShowAudioSettings(true),
           },
           {
             id: 'schedule_settings',
@@ -240,6 +242,12 @@ export default function SettingsScreen({ visible, onClose, title }: SettingsScre
           ))}
         </ScrollView>
       </SafeAreaView>
+      
+      {/* 音声生成設定モーダル */}
+      <AudioGenerationSettings
+        visible={showAudioSettings}
+        onClose={() => setShowAudioSettings(false)}
+      />
     </Modal>
   );
 }
