@@ -1,7 +1,7 @@
 /**
- * Content & Playback Settings Screen (MECE準拠)
- * コンテンツと再生 - 「何を」「どのように」聴くかの統合設定
- * Auto-Pick, Manual-Pick, RSS管理, 再生設定を統合
+ * Content & Playback Settings Screen - Unified Audio Generation Control
+ * 音声作成方式別統合管理（AutoPick → ManualPick → SchedulePick順）
+ * プロンプト設定最上位、利用頻度順設定項目、アコーディオンUI
  */
 
 import React, { useState, useEffect } from 'react';
@@ -16,8 +16,8 @@ import {
   ScrollView,
   Switch,
   Alert,
+  Animated,
 } from 'react-native';
-// import Slider from '@react-native-community/slider';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSettings } from '../../context/SettingsContext';
@@ -38,6 +38,26 @@ interface SettingItemProps {
   onToggleChange?: (value: boolean) => void;
   rightText?: string;
   disabled?: boolean;
+}
+
+interface SummaryItem {
+  icon: string;
+  label: string;
+  value: string;
+}
+
+interface AccordionSectionProps {
+  id: string;
+  title: string;
+  icon: string;
+  isActive: boolean;
+  isExpanded: boolean;
+  enabled: boolean;
+  summaryItems: SummaryItem[];
+  onToggleExpansion: (id: string) => void;
+  onSetActive: (id: string) => void;
+  onToggleEnabled: (id: string, enabled: boolean) => void;
+  children: React.ReactNode;
 }
 
 function SettingItem({ 
@@ -103,9 +123,132 @@ function SettingItem({
   );
 }
 
+// アコーディオンセクションコンポーネント
+function AccordionSection({ 
+  id, title, icon, isActive, isExpanded, enabled, summaryItems, onToggleExpansion, onSetActive, onToggleEnabled, children 
+}: AccordionSectionProps) {
+  const [animation] = useState(new Animated.Value(isExpanded ? 1 : 0));
+
+  useEffect(() => {
+    Animated.timing(animation, {
+      toValue: isExpanded ? 1 : 0,
+      duration: 300,
+      useNativeDriver: false,
+    }).start();
+  }, [isExpanded, animation]);
+
+  const rotateInterpolate = animation.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '90deg'],
+  });
+
+  const heightInterpolate = animation.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, 1],
+  });
+
+  return (
+    <View style={[
+      styles.accordionSection, 
+      isActive && styles.activeSection
+    ]}>
+      {/* ヘッダー */}
+      <View style={styles.accordionHeader}>
+        <TouchableOpacity
+          style={styles.accordionHeaderMain}
+          onPress={() => {
+            onToggleExpansion(id);
+            onSetActive(id);
+          }}
+          activeOpacity={0.7}
+        >
+          <View style={styles.accordionHeaderLeft}>
+            <FontAwesome name={icon as any} size={18} color={isActive ? '#007bff' : '#666666'} />
+            <Text style={[
+              styles.accordionTitle, 
+              isActive && styles.activeAccordionTitle
+            ]}>{title}</Text>
+          </View>
+          <Animated.View style={{ transform: [{ rotate: rotateInterpolate }] }}>
+            <FontAwesome name="chevron-right" size={14} color={isActive ? '#007bff' : '#666666'} />
+          </Animated.View>
+        </TouchableOpacity>
+        
+        <View style={styles.accordionToggleContainer}>
+          <Switch
+            value={enabled}
+            onValueChange={(value) => onToggleEnabled(id, value)}
+            trackColor={{ false: '#333333', true: '#007bff' }}
+            thumbColor={enabled ? '#ffffff' : '#cccccc'}
+          />
+        </View>
+      </View>
+
+      {/* 簡易表示サマリー（折りたたみ時） */}
+      {!isExpanded && enabled && summaryItems.length > 0 && (
+        <View style={styles.summaryContainer}>
+          {summaryItems.map((item, index) => (
+            <View key={index} style={styles.summaryItem}>
+              <FontAwesome name={item.icon as any} size={12} color="#888888" />
+              <Text style={styles.summaryLabel}>{item.label}</Text>
+              <Text style={styles.summaryValue}>{item.value}</Text>
+            </View>
+          ))}
+        </View>
+      )}
+
+      {/* 展開コンテンツ */}
+      <Animated.View style={[
+        styles.accordionContent,
+        {
+          opacity: heightInterpolate,
+          maxHeight: animation.interpolate({
+            inputRange: [0, 1],
+            outputRange: [0, 1000],
+          }),
+        }
+      ]}>
+        {isExpanded && (
+          <View style={styles.accordionContentInner}>
+            {children}
+          </View>
+        )}
+      </Animated.View>
+    </View>
+  );
+}
+
 export default function ContentPlaybackScreen({ visible, onClose }: ContentPlaybackScreenProps) {
   // SettingsContextを使用
   const { settings, updateSettings } = useSettings();
+  
+  // アコーディオン展開状態管理
+  const [expandedSection, setExpandedSection] = useState<string | null>('autopick');
+  const [currentActiveMode, setCurrentActiveMode] = useState<string>('autopick');
+
+  // 各モードの有効化ハンドラー
+  const handleToggleEnabled = (modeId: string, enabled: boolean) => {
+    switch (modeId) {
+      case 'autopick':
+        handleAutoPickToggle(enabled);
+        break;
+      case 'manualpick':
+        handleManualPickToggle(enabled);
+        break;
+      case 'schedulepick':
+        handleSchedulePickToggle(enabled);
+        break;
+    }
+  };
+
+  // アコーディオン制御ハンドラー
+  const handleToggleExpansion = (sectionId: string) => {
+    setExpandedSection(expandedSection === sectionId ? null : sectionId);
+  };
+
+  const handleSetActive = (sectionId: string) => {
+    setCurrentActiveMode(sectionId);
+  };
 
   // ハンドラー関数 - SettingsContextを使用
   const handleAutoPickToggle = async (value: boolean) => {
@@ -225,50 +368,68 @@ export default function ContentPlaybackScreen({ visible, onClose }: ContentPlayb
         </View>
 
         <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-          {/* コンテンツ生成方式セクション */}
-          <View style={styles.section}>
-            <Text style={styles.sectionHeader}>コンテンツ生成方式</Text>
-            
+
+          {/* AutoPick アコーディオンセクション */}
+          <AccordionSection
+            id="autopick"
+            title="Auto-Pick"
+            icon="magic"
+            isActive={currentActiveMode === 'autopick'}
+            isExpanded={expandedSection === 'autopick'}
+            enabled={settings.isAutoPickEnabled}
+            summaryItems={[
+              {
+                icon: 'tags',
+                label: '優先ジャンル',
+                value: '全て' // TODO: 実装後に動的化
+              },
+              {
+                icon: 'list-ol',
+                label: '記事数',
+                value: `${settings.autoPickMaxArticles}件`
+              }
+            ]}
+            onToggleExpansion={handleToggleExpansion}
+            onSetActive={handleSetActive}
+            onToggleEnabled={handleToggleEnabled}
+          >
+            {/* プロンプト設定（最優先） */}
             <SettingItem
-              title="Auto-Pick"
-              description="AIが自動的に記事を選択して音声生成"
-              icon="magic"
+              title="プロンプト設定"
+              description="AIが記事を要約する際の指示プロンプト"
+              icon="edit"
+              rightText="標準"
+              onPress={() => Alert.alert('実装予定', 'プロンプトカスタム機能は実装予定です')}
+              disabled={currentActiveMode !== 'autopick'}
+            />
+            
+            {/* 有効化切り替え */}
+            <SettingItem
+              title="Auto-Pick有効化"
+              description="AIによる自動記事選択機能を有効にする"
+              icon="power-off"
               toggle={true}
               toggleValue={settings.isAutoPickEnabled}
               onToggleChange={handleAutoPickToggle}
             />
 
-            <SettingItem
-              title="Manual-Pick"
-              description="手動で記事を選択して音声生成"
-              icon="hand-paper-o"
-              toggle={true}
-              toggleValue={settings.isManualPickEnabled}
-              onToggleChange={handleManualPickToggle}
-            />
-
-            <SettingItem
-              title="Schedule-Pick"
-              description="スケジュールに基づく自動生成"
-              icon="calendar"
-              toggle={true}
-              toggleValue={settings.isSchedulePickEnabled}
-              onToggleChange={handleSchedulePickToggle}
-              disabled={true}
-            />
-          </View>
-
-          {/* Auto-Pick詳細設定セクション */}
-          <View style={styles.section}>
-            <Text style={styles.sectionHeader}>Auto-Pick設定</Text>
-            
+            {/* 使用頻度順設定項目 */}
             <SettingItem
               title="記事数設定"
               description="1回の生成で選択する記事数"
               icon="list-ol"
               rightText={`${settings.autoPickMaxArticles}記事`}
               onPress={handleMaxArticlesPress}
-              disabled={!settings.isAutoPickEnabled}
+              disabled={currentActiveMode !== 'autopick' || !settings.isAutoPickEnabled}
+            />
+
+            <SettingItem
+              title="音声の種類"
+              description="音声生成に使用する音声モデル"
+              icon="microphone"
+              rightText={settings.voiceType === 'alloy' ? 'Alloy' : settings.voiceType === 'echo' ? 'Echo' : settings.voiceType === 'fable' ? 'Fable' : 'Nova'}
+              onPress={handleVoiceTypePress}
+              disabled={currentActiveMode !== 'autopick'}
             />
 
             <SettingItem
@@ -277,7 +438,16 @@ export default function ContentPlaybackScreen({ visible, onClose }: ContentPlayb
               icon="tags"
               rightText="全て"
               onPress={() => Alert.alert('実装予定', '優先ジャンル設定は実装予定です')}
-              disabled={!settings.isAutoPickEnabled}
+              disabled={currentActiveMode !== 'autopick' || !settings.isAutoPickEnabled}
+            />
+
+            <SettingItem
+              title="音声品質"
+              description="音質とファイルサイズのバランス"
+              icon="volume-up"
+              rightText={settings.audioQuality}
+              onPress={handleQualityPress}
+              disabled={currentActiveMode !== 'autopick'}
             />
 
             <SettingItem
@@ -288,15 +458,175 @@ export default function ContentPlaybackScreen({ visible, onClose }: ContentPlayb
               onPress={() => Alert.alert('実装予定', '生成スケジュール設定は実装予定です')}
               disabled={true}
             />
-          </View>
+          </AccordionSection>
 
-          {/* 音声再生設定セクション */}
+          {/* ManualPick アコーディオンセクション */}
+          <AccordionSection
+            id="manualpick"
+            title="Manual-Pick"
+            icon="hand-paper-o"
+            isActive={currentActiveMode === 'manualpick'}
+            isExpanded={expandedSection === 'manualpick'}
+            enabled={settings.isManualPickEnabled}
+            summaryItems={[
+              {
+                icon: 'eye',
+                label: 'プレビュー',
+                value: '有効' // TODO: 実装後に動的化
+              },
+              {
+                icon: 'check-square-o',
+                label: '複数選択',
+                value: '有効' // TODO: 実装後に動的化
+              }
+            ]}
+            onToggleExpansion={handleToggleExpansion}
+            onSetActive={handleSetActive}
+            onToggleEnabled={handleToggleEnabled}
+          >
+            {/* プロンプト設定（最優先） */}
+            <SettingItem
+              title="プロンプト設定"
+              description="手動選択記事の要約プロンプト"
+              icon="edit"
+              rightText="標準"
+              onPress={() => Alert.alert('実装予定', 'プロンプトカスタム機能は実装予定です')}
+              disabled={currentActiveMode !== 'manualpick'}
+            />
+
+            {/* 有効化切り替え */}
+            <SettingItem
+              title="Manual-Pick有効化"
+              description="手動記事選択機能を有効にする"
+              icon="power-off"
+              toggle={true}
+              toggleValue={settings.isManualPickEnabled}
+              onToggleChange={handleManualPickToggle}
+            />
+
+            {/* 使用頻度順設定項目 */}
+            <SettingItem
+              title="音声の種類"
+              description="音声生成に使用する音声モデル"
+              icon="microphone"
+              rightText={settings.voiceType === 'alloy' ? 'Alloy' : settings.voiceType === 'echo' ? 'Echo' : settings.voiceType === 'fable' ? 'Fable' : 'Nova'}
+              onPress={handleVoiceTypePress}
+              disabled={currentActiveMode !== 'manualpick'}
+            />
+
+            <SettingItem
+              title="音声品質"
+              description="音質とファイルサイズのバランス"
+              icon="volume-up"
+              rightText={settings.audioQuality}
+              onPress={handleQualityPress}
+              disabled={currentActiveMode !== 'manualpick'}
+            />
+
+            <SettingItem
+              title="記事プレビュー"
+              description="選択前に記事内容をプレビュー表示"
+              icon="eye"
+              toggle={true}
+              toggleValue={true}
+              onToggleChange={() => Alert.alert('実装予定', '記事プレビュー設定は実装予定です')}
+              disabled={currentActiveMode !== 'manualpick'}
+            />
+
+            <SettingItem
+              title="複数選択モード"
+              description="一度に複数記事を選択可能にする"
+              icon="check-square-o"
+              toggle={true}
+              toggleValue={true}
+              onToggleChange={() => Alert.alert('実装予定', '複数選択モード設定は実装予定です')}
+              disabled={currentActiveMode !== 'manualpick'}
+            />
+          </AccordionSection>
+
+          {/* SchedulePick アコーディオンセクション */}
+          <AccordionSection
+            id="schedulepick"
+            title="Schedule-Pick"
+            icon="calendar"
+            isActive={currentActiveMode === 'schedulepick'}
+            isExpanded={expandedSection === 'schedulepick'}
+            enabled={settings.isSchedulePickEnabled}
+            summaryItems={[
+              {
+                icon: 'tags',
+                label: '優先ジャンル',
+                value: '全て' // TODO: 実装後に動的化
+              },
+              {
+                icon: 'clock-o',
+                label: '配信スケジュール',
+                value: '未設定' // TODO: 実装後に動的化
+              }
+            ]}
+            onToggleExpansion={handleToggleExpansion}
+            onSetActive={handleSetActive}
+            onToggleEnabled={handleToggleEnabled}
+          >
+            {/* プロンプト設定（最優先） */}
+            <SettingItem
+              title="プロンプト設定"
+              description="スケジュール配信用プロンプト"
+              icon="edit"
+              rightText="標準"
+              onPress={() => Alert.alert('実装予定', 'プロンプトカスタム機能は実装予定です')}
+              disabled={true}
+            />
+
+            {/* 有効化切り替え */}
+            <SettingItem
+              title="Schedule-Pick有効化"
+              description="スケジュール配信機能を有効にする（実装予定）"
+              icon="power-off"
+              toggle={true}
+              toggleValue={settings.isSchedulePickEnabled}
+              onToggleChange={handleSchedulePickToggle}
+              disabled={true}
+            />
+
+            {/* 使用頻度順設定項目 */}
+            <SettingItem
+              title="配信スケジュール"
+              description="定期配信の時間とパターンを設定"
+              icon="clock-o"
+              rightText="未設定"
+              onPress={() => Alert.alert('実装予定', '配信スケジュール設定は実装予定です')}
+              disabled={true}
+            />
+
+            <SettingItem
+              title="プッシュ通知設定"
+              description="配信時の通知設定（通知項目と連動）"
+              icon="bell"
+              toggle={true}
+              toggleValue={false}
+              onToggleChange={() => Alert.alert('実装予定', '通知設定との連動機能は実装予定です')}
+              disabled={true}
+            />
+
+            <SettingItem
+              title="音声の種類"
+              description="スケジュール配信用音声モデル"
+              icon="microphone"
+              rightText={settings.voiceType === 'alloy' ? 'Alloy' : settings.voiceType === 'echo' ? 'Echo' : settings.voiceType === 'fable' ? 'Fable' : 'Nova'}
+              onPress={handleVoiceTypePress}
+              disabled={true}
+            />
+
+          </AccordionSection>
+
+          {/* 共通音声再生設定 */}
           <View style={styles.section}>
-            <Text style={styles.sectionHeader}>音声再生設定</Text>
+            <Text style={styles.sectionHeader}>共通再生設定</Text>
             
             <SettingItem
               title="再生速度"
-              description="音声の再生スピードを調整"
+              description="全モード共通の音声再生スピード"
               icon="tachometer"
               rightText={`${settings.playbackSpeed.toFixed(1)}x`}
               onPress={() => {
@@ -317,22 +647,6 @@ export default function ContentPlaybackScreen({ visible, onClose }: ContentPlayb
             />
 
             <SettingItem
-              title="音声の種類"
-              description="音声生成に使用する音声モデル"
-              icon="microphone"
-              rightText={settings.voiceType === 'alloy' ? 'Alloy' : settings.voiceType === 'echo' ? 'Echo' : settings.voiceType === 'fable' ? 'Fable' : 'Nova'}
-              onPress={handleVoiceTypePress}
-            />
-
-            <SettingItem
-              title="音声品質"
-              description="音質とファイルサイズのバランス"
-              icon="volume-up"
-              rightText={settings.audioQuality}
-              onPress={handleQualityPress}
-            />
-
-            <SettingItem
               title="自動再生"
               description="音声生成完了時に自動的に再生開始"
               icon="play-circle"
@@ -340,58 +654,6 @@ export default function ContentPlaybackScreen({ visible, onClose }: ContentPlayb
               toggleValue={settings.autoPlay}
               onToggleChange={handleAutoPlayToggle}
             />
-          </View>
-
-          {/* RSSフィード管理セクション */}
-          <View style={styles.section}>
-            <Text style={styles.sectionHeader}>RSSフィード管理</Text>
-            
-            <SettingItem
-              title="フィード一覧管理"
-              description="購読中のRSSフィードを管理"
-              icon="rss"
-              onPress={() => Alert.alert('実装予定', 'RSSフィード管理画面は実装予定です')}
-            />
-
-            <SettingItem
-              title="自動更新設定"
-              description="フィードの自動更新間隔"
-              icon="refresh"
-              rightText="1時間毎"
-              onPress={() => Alert.alert('実装予定', '自動更新設定は実装予定です')}
-            />
-
-            <SettingItem
-              title="記事フィルター"
-              description="キーワード・言語による記事フィルタ"
-              icon="filter"
-              onPress={() => Alert.alert('実装予定', '記事フィルター設定は実装予定です')}
-            />
-          </View>
-
-          {/* 現在の設定状況表示 */}
-          <View style={styles.section}>
-            <Text style={styles.sectionHeader}>現在の設定</Text>
-            
-            <View style={styles.statusCard}>
-              <View style={styles.statusItem}>
-                <FontAwesome name="magic" size={16} color="#4CAF50" />
-                <Text style={styles.statusLabel}>Auto-Pick</Text>
-                <Text style={styles.statusValue}>{settings.isAutoPickEnabled ? '有効' : '無効'}</Text>
-              </View>
-              
-              <View style={styles.statusItem}>
-                <FontAwesome name="tachometer" size={16} color="#007bff" />
-                <Text style={styles.statusLabel}>再生速度</Text>
-                <Text style={styles.statusValue}>{settings.playbackSpeed.toFixed(1)}x</Text>
-              </View>
-              
-              <View style={styles.statusItem}>
-                <FontAwesome name="microphone" size={16} color="#FF9800" />
-                <Text style={styles.statusLabel}>音声</Text>
-                <Text style={styles.statusValue}>{settings.voiceType}</Text>
-              </View>
-            </View>
           </View>
 
           {/* 下部の余白 */}
@@ -518,5 +780,77 @@ const styles = StyleSheet.create({
   },
   bottomSpacer: {
     height: 32,
+  },
+  // アコーディオンスタイル
+  accordionSection: {
+    backgroundColor: '#0a0a0a',
+    marginHorizontal: 16,
+    marginTop: 16,
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  activeSection: {
+    borderWidth: 2,
+    borderColor: '#007bff',
+  },
+  accordionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#111111',
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+  },
+  accordionHeaderMain: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  accordionToggleContainer: {
+    marginLeft: 12,
+  },
+  accordionHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  accordionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#ffffff',
+    marginLeft: 12,
+  },
+  activeAccordionTitle: {
+    color: '#007bff',
+  },
+  accordionContent: {
+    overflow: 'hidden',
+  },
+  accordionContentInner: {
+    backgroundColor: '#0a0a0a',
+  },
+  // 簡易表示サマリースタイル
+  summaryContainer: {
+    backgroundColor: '#0a0a0a',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.05)',
+  },
+  summaryItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  summaryLabel: {
+    fontSize: 12,
+    color: '#888888',
+    marginLeft: 8,
+    flex: 1,
+  },
+  summaryValue: {
+    fontSize: 12,
+    color: '#ffffff',
+    fontWeight: '500',
   },
 });
