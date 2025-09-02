@@ -209,7 +209,7 @@ export default function QuickSettingsScreen() {
     },
     {
       id: 'content-playback',
-      title: 'コンテンツと再生',
+      title: '✅ コンテンツと再生',
       subtitle: '音声作成方式別設定と再生オプション',
       icon: 'play-circle-outline',
       type: 'navigation',
@@ -242,14 +242,6 @@ export default function QuickSettingsScreen() {
   ];
 
   const accountSettings: QuickSettingItem[] = [
-    {
-      id: 'account-details',
-      title: 'アカウント詳細設定',
-      subtitle: '詳細なプロフィール設定・プライバシー・通知設定',
-      icon: 'settings-outline',
-      type: 'navigation',
-      onPress: () => router.push('/profile')
-    },
     {
       id: 'subscription',
       title: 'Subscription Limits',
