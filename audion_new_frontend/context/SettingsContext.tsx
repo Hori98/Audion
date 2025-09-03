@@ -1,89 +1,181 @@
 /**
- * Settings Context - アプリ全体の設定管理
- * Pick機能のON/OFF制御とUI連動を一元化
+ * Settings Context - アプリ全体の設定管理 (MECE Refactored)
+ * 設定を階層化し、関心事を分離
  */
 
 import React, { createContext, useState, useEffect, useContext, ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Alert } from 'react-native';
 
-// 設定項目の型定義
-export interface AppSettings {
-  // Pick機能の有効/無効制御
-  isAutoPickEnabled: boolean;
-  isManualPickEnabled: boolean;
-  isSchedulePickEnabled: boolean;
-  
-  // AutoPick詳細設定
-  autoPickMaxArticles: number;
-  autoPickPreferredGenres: string[];
-  
-  // 再生設定
-  playbackSpeed: number;
-  voiceType: string;
-  audioQuality: string;
-  autoPlay: boolean;
-  
-  // 外観設定
-  isDarkMode: boolean;
-  fontSize: string;
-  language: string;
-  
-  // データ設定
-  wifiOnlyDownload: boolean;
-  autoDeleteOld: boolean;
-  backgroundSync: boolean;
-  lowDataMode: boolean;
-  
-  // 通知設定
-  pushNotificationsEnabled: boolean;
-  autoPickCompleteNotification: boolean;
-  manualPickCompleteNotification: boolean;
-  schedulePickCompleteNotification: boolean;
+// --- UTILITY FUNCTIONS ---
+
+/**
+ * オブジェクトのすべてのプロパティを再帰的にPartialにする型
+ */
+type DeepPartial<T> = {
+  [P in keyof T]?: T[P] extends object ? DeepPartial<T[P]> : T[P];
+};
+
+const isObject = (item: any): item is object => {
+  return (item && typeof item === 'object' && !Array.isArray(item));
+};
+
+/**
+ * 2つのオブジェクトをディープマージする。
+ * 元のオブジェクトは変更せず、新しいオブジェクトを返す。
+ */
+const deepMerge = <T extends object>(target: T, source: DeepPartial<T>): T => {
+  const output = { ...target };
+
+  if (isObject(target) && isObject(source)) {
+    Object.keys(source).forEach(key => {
+      const sourceKey = key as keyof typeof source;
+      if (isObject(source[sourceKey])) {
+        if (!(key in target)) {
+          Object.assign(output, { [key]: source[sourceKey] });
+        } else {
+          const targetKey = key as keyof T;
+          (output[targetKey] as object) = deepMerge(target[targetKey] as object, source[sourceKey] as object);
+        }
+      } else {
+        Object.assign(output, { [key]: source[sourceKey] });
+      }
+    });
+  }
+
+  return output;
+};
+
+// --- NEW MECE STRUCTURE ---
+
+// 1. Schedule Profile
+export interface ScheduleProfile {
+  id: string;
+  enabled: boolean;
+  name: string;
+  frequency: 'daily' | 'weekly' | 'custom';
+  days?: number[]; // 0=Sun, 1=Mon... 6=Sat
+  time: string; // "HH:MM" format
+  genres: string[];
+  sources: string[];
+  maxArticles: number;
+  promptTemplate?: string; // Optional: overrides content.promptTemplate
 }
 
-// Contextが提供する値の型定義
+// 2. Main AppSettings Interface
+export interface AppSettings {
+  general: {
+    language: string;
+    backgroundSync: boolean;
+  };
+  appearance: {
+    isDarkMode: boolean;
+    fontSize: string;
+  };
+  content: {
+    promptTemplate: string; // Default prompt for all modes
+    voiceType: string;
+    audioQuality: string;
+  };
+  pickModes: {
+    auto: {
+      enabled: boolean;
+      maxArticles: number;
+      preferredGenres: string[];
+      overridePromptTemplate?: string;
+    };
+    manual: {
+      enabled: boolean;
+      previewEnabled: boolean;
+      multiSelectEnabled: boolean;
+      overridePromptTemplate?: string;
+    };
+    schedule: {
+      enabled: boolean;
+      profiles: ScheduleProfile[];
+      freemium: {
+        maxDailySchedules: number;
+        maxWeeklySchedules: number;
+      };
+    };
+  };
+  playback: {
+    playbackSpeed: number;
+    autoPlay: boolean;
+  };
+  data: {
+    wifiOnlyDownload: boolean;
+    autoDeleteOldItems: boolean;
+    lowDataMode: boolean;
+  };
+  notifications: {
+    pushEnabled: boolean;
+    onAutoPickComplete: boolean;
+    onManualPickComplete: boolean;
+    onSchedulePickComplete: boolean;
+  };
+}
+
+// 3. Default Settings
+const defaultSettings: AppSettings = {
+  general: {
+    language: '日本語',
+    backgroundSync: true,
+  },
+  appearance: {
+    isDarkMode: true,
+    fontSize: '標準',
+  },
+  content: {
+    promptTemplate: '標準',
+    voiceType: 'alloy',
+    audioQuality: '標準',
+  },
+  pickModes: {
+    auto: {
+      enabled: true,
+      maxArticles: 5,
+      preferredGenres: [],
+    },
+    manual: {
+      enabled: true,
+      previewEnabled: true,
+      multiSelectEnabled: true,
+    },
+    schedule: {
+      enabled: false,
+      profiles: [],
+      freemium: {
+        maxDailySchedules: 2,
+        maxWeeklySchedules: 10,
+      },
+    },
+  },
+  playback: {
+    playbackSpeed: 1.0,
+    autoPlay: false,
+  },
+  data: {
+    wifiOnlyDownload: true,
+    autoDeleteOldItems: false,
+    lowDataMode: false,
+  },
+  notifications: {
+    pushEnabled: true,
+    onAutoPickComplete: true,
+    onManualPickComplete: true,
+    onSchedulePickComplete: true,
+  },
+};
+
+// --- CONTEXT AND PROVIDER ---
+
 interface SettingsContextType {
   settings: AppSettings;
   isLoading: boolean;
-  updateSettings: (newSettings: Partial<AppSettings>) => Promise<void>;
+  updateSettings: (newSettings: DeepPartial<AppSettings>) => Promise<void>;
   resetToDefaults: () => Promise<void>;
 }
-
-// デフォルト設定
-const defaultSettings: AppSettings = {
-  // Pick機能（初期は全て有効）
-  isAutoPickEnabled: true,
-  isManualPickEnabled: true,
-  isSchedulePickEnabled: false, // 実装予定のため初期無効
-  
-  // AutoPick設定
-  autoPickMaxArticles: 5,
-  autoPickPreferredGenres: [],
-  
-  // 再生設定
-  playbackSpeed: 1.0,
-  voiceType: 'alloy',
-  audioQuality: '標準',
-  autoPlay: false,
-  
-  // 外観設定
-  isDarkMode: true,
-  fontSize: '標準',
-  language: '日本語',
-  
-  // データ設定
-  wifiOnlyDownload: true,
-  autoDeleteOld: false,
-  backgroundSync: true,
-  lowDataMode: false,
-  
-  // 通知設定
-  pushNotificationsEnabled: true,
-  autoPickCompleteNotification: true,
-  manualPickCompleteNotification: true,
-  schedulePickCompleteNotification: true,
-};
 
 // Contextの作成
 const SettingsContext = createContext<SettingsContextType | undefined>(undefined);
@@ -103,95 +195,82 @@ export const SettingsProvider = ({ children }: { children: ReactNode }) => {
       const storedSettings = await AsyncStorage.getItem('@app_settings');
       if (storedSettings) {
         const parsedSettings = JSON.parse(storedSettings);
-        // デフォルト設定とマージして、新しい設定項目も含める
-        setSettings({ ...defaultSettings, ...parsedSettings });
+        // Deep merge stored settings with defaults to include any new properties
+        setSettings(deepMerge(defaultSettings, parsedSettings));
+      } else {
+        setSettings(defaultSettings);
       }
     } catch (error) {
-      console.error('設定の読み込みに失敗しました:', error);
+      console.error('Failed to load settings:', error);
+      setSettings(defaultSettings); // Load defaults on error
     } finally {
       setIsLoading(false);
     }
   };
 
-  // 設定を更新し、AsyncStorageに保存する関数
-  const updateSettings = async (newSettings: Partial<AppSettings>) => {
+  const updateSettings = async (newSettings: DeepPartial<AppSettings>) => {
     try {
-      const updatedSettings = { ...settings, ...newSettings };
+      // Perform a deep merge to update nested properties
+      const updatedSettings = deepMerge(settings, newSettings);
       setSettings(updatedSettings);
       await AsyncStorage.setItem('@app_settings', JSON.stringify(updatedSettings));
-      
-      // 特殊な設定変更時の処理
       await handleSpecialSettingChanges(newSettings, updatedSettings);
-      
     } catch (error) {
-      console.error('設定の保存に失敗しました:', error);
-      Alert.alert('エラー', '設定の保存に失敗しました');
+      console.error('Failed to save settings:', error);
+      Alert.alert('Error', 'Failed to save settings');
     }
   };
 
-  // 特殊な設定変更時の処理
   const handleSpecialSettingChanges = async (
-    newSettings: Partial<AppSettings>, 
+    newSettings: DeepPartial<AppSettings>,
     updatedSettings: AppSettings
   ) => {
-    let additionalUpdates: Partial<AppSettings> = {};
+    let additionalUpdates: DeepPartial<AppSettings> = {};
     let alertMessage = '';
 
-    // SchedulePick無効化時の処理
-    if (newSettings.isSchedulePickEnabled === false) {
-      // TODO: スケジュール済み通知をすべてキャンセル
-      // await cancelAllScheduledNotifications();
-      console.log('SchedulePick関連の通知をすべてキャンセルしました');
-      
-      // スケジュール完了通知も無効化
-      additionalUpdates.schedulePickCompleteNotification = false;
-      alertMessage = 'スケジュール配信を停止し、関連通知もすべて無効化しました';
+    if (newSettings.pickModes?.schedule?.enabled === false) {
+      console.log('Cancelling all schedule-related notifications');
+      additionalUpdates = deepMerge(additionalUpdates, { notifications: { onSchedulePickComplete: false } });
+      alertMessage = 'Scheduled delivery has been stopped and related notifications have been disabled.';
     }
 
-    // AutoPick無効化時の処理
-    if (newSettings.isAutoPickEnabled === false) {
-      // AutoPick完了通知も無効化
-      if (updatedSettings.autoPickCompleteNotification) {
-        additionalUpdates.autoPickCompleteNotification = false;
-      }
-      if (!alertMessage) {
-        alertMessage = 'AutoPick機能を無効化しました。関連する通知も停止されます。';
-      }
+    if (newSettings.pickModes?.auto?.enabled === false) {
+        if (updatedSettings.notifications.onAutoPickComplete) {
+            additionalUpdates = deepMerge(additionalUpdates, { notifications: { onAutoPickComplete: false } });
+        }
+        if (!alertMessage) {
+            alertMessage = 'AutoPick has been disabled. Related notifications will also be stopped.';
+        }
+    }
+    
+    if (newSettings.pickModes?.manual?.enabled === false) {
+        if (updatedSettings.notifications.onManualPickComplete) {
+            additionalUpdates = deepMerge(additionalUpdates, { notifications: { onManualPickComplete: false } });
+        }
+        if (!alertMessage) {
+            alertMessage = 'ManualPick has been disabled. Related notifications will also be stopped.';
+        }
     }
 
-    // ManualPick無効化時の処理
-    if (newSettings.isManualPickEnabled === false) {
-      // ManualPick完了通知も無効化
-      if (updatedSettings.manualPickCompleteNotification) {
-        additionalUpdates.manualPickCompleteNotification = false;
-      }
-      if (!alertMessage) {
-        alertMessage = 'ManualPick機能を無効化しました。関連する通知も停止されます。';
-      }
+    if (newSettings.notifications?.pushEnabled === false) {
+      additionalUpdates = deepMerge(additionalUpdates, {
+        notifications: {
+          onAutoPickComplete: false,
+          onManualPickComplete: false,
+          onSchedulePickComplete: false,
+        },
+      });
+      alertMessage = 'Push notifications have been disabled. All notifications will be stopped.';
     }
 
-    // プッシュ通知無効化時の処理
-    if (newSettings.pushNotificationsEnabled === false) {
-      // 全ての通知を無効化
-      additionalUpdates = {
-        ...additionalUpdates,
-        autoPickCompleteNotification: false,
-        manualPickCompleteNotification: false,
-        schedulePickCompleteNotification: false,
-      };
-      alertMessage = 'プッシュ通知を無効化しました。すべての通知が停止されます。';
-    }
-
-    // 追加の更新がある場合は一度に適用
     if (Object.keys(additionalUpdates).length > 0) {
-      const finalSettings = { ...updatedSettings, ...additionalUpdates };
+      const finalSettings = deepMerge(updatedSettings, additionalUpdates);
       setSettings(finalSettings);
       await AsyncStorage.setItem('@app_settings', JSON.stringify(finalSettings));
     }
 
-    // アラートメッセージがある場合は表示
     if (alertMessage) {
-      Alert.alert('設定更新', alertMessage);
+      Alert.alert('Settings Updated', alertMessage);
     }
   };
 
@@ -200,10 +279,10 @@ export const SettingsProvider = ({ children }: { children: ReactNode }) => {
     try {
       setSettings(defaultSettings);
       await AsyncStorage.setItem('@app_settings', JSON.stringify(defaultSettings));
-      Alert.alert('完了', '設定をデフォルト値に戻しました');
+      Alert.alert('Complete', 'Settings have been reset to default values.');
     } catch (error) {
-      console.error('設定のリセットに失敗しました:', error);
-      Alert.alert('エラー', '設定のリセットに失敗しました');
+      console.error('Failed to reset settings:', error);
+      Alert.alert('Error', 'Failed to reset settings.');
     }
   };
 
@@ -221,7 +300,8 @@ export const SettingsProvider = ({ children }: { children: ReactNode }) => {
   );
 };
 
-// 設定を簡単に利用するためのカスタムフック
+// --- REFACTORED CUSTOM HOOKS ---
+
 export const useSettings = () => {
   const context = useContext(SettingsContext);
   if (context === undefined) {
@@ -230,49 +310,124 @@ export const useSettings = () => {
   return context;
 };
 
-// 特定の設定値のみを監視するカスタムフック（パフォーマンス最適化）
-export const usePickSettings = () => {
+// Hook for general app settings
+export const useGeneralSettings = () => {
   const { settings, updateSettings } = useSettings();
   return {
-    isAutoPickEnabled: settings.isAutoPickEnabled,
-    isManualPickEnabled: settings.isManualPickEnabled,
-    isSchedulePickEnabled: settings.isSchedulePickEnabled,
-    updatePickSettings: (pickSettings: {
-      isAutoPickEnabled?: boolean;
-      isManualPickEnabled?: boolean;
-      isSchedulePickEnabled?: boolean;
-    }) => updateSettings(pickSettings),
+    general: settings.general,
+    updateGeneral: (generalSettings: DeepPartial<AppSettings['general']>) =>
+      updateSettings({ general: generalSettings }),
   };
 };
 
-// 外観設定のみを監視するカスタムフック
+// Hook for Appearance settings
 export const useAppearanceSettings = () => {
   const { settings, updateSettings } = useSettings();
   return {
-    isDarkMode: settings.isDarkMode,
-    fontSize: settings.fontSize,
-    language: settings.language,
-    updateAppearanceSettings: (appearanceSettings: {
-      isDarkMode?: boolean;
-      fontSize?: string;
-      language?: string;
-    }) => updateSettings(appearanceSettings),
+    appearance: settings.appearance,
+    updateAppearance: (appearanceSettings: DeepPartial<AppSettings['appearance']>) =>
+      updateSettings({ appearance: appearanceSettings }),
   };
 };
 
-// 通知設定のみを監視するカスタムフック
+// Hook for Content & AI settings
+export const useContentSettings = () => {
+    const { settings, updateSettings } = useSettings();
+    return {
+        content: settings.content,
+        updateContent: (contentSettings: DeepPartial<AppSettings['content']>) =>
+            updateSettings({ content: contentSettings }),
+    };
+};
+
+// Hook for Pick Mode settings
+export const usePickModes = () => {
+  const { settings, updateSettings } = useSettings();
+  return {
+    pickModes: settings.pickModes,
+    updatePickModes: (pickSettings: DeepPartial<AppSettings['pickModes']>) => 
+      updateSettings({ pickModes: pickSettings }),
+  };
+};
+
+// Hook for Playback settings
+export const usePlaybackSettings = () => {
+    const { settings, updateSettings } = useSettings();
+    return {
+        playback: settings.playback,
+        updatePlayback: (playbackSettings: DeepPartial<AppSettings['playback']>) =>
+            updateSettings({ playback: playbackSettings }),
+    };
+};
+
+// Hook for Data & Storage settings
+export const useDataSettings = () => {
+    const { settings, updateSettings } = useSettings();
+    return {
+        data: settings.data,
+        updateData: (dataSettings: DeepPartial<AppSettings['data']>) =>
+            updateSettings({ data: dataSettings }),
+    };
+};
+
+// Hook for Notification settings
 export const useNotificationSettings = () => {
   const { settings, updateSettings } = useSettings();
   return {
-    pushNotificationsEnabled: settings.pushNotificationsEnabled,
-    autoPickCompleteNotification: settings.autoPickCompleteNotification,
-    manualPickCompleteNotification: settings.manualPickCompleteNotification,
-    schedulePickCompleteNotification: settings.schedulePickCompleteNotification,
-    updateNotificationSettings: (notificationSettings: {
-      pushNotificationsEnabled?: boolean;
-      autoPickCompleteNotification?: boolean;
-      manualPickCompleteNotification?: boolean;
-      schedulePickCompleteNotification?: boolean;
-    }) => updateSettings(notificationSettings),
+    notifications: settings.notifications,
+    updateNotifications: (notificationSettings: DeepPartial<AppSettings['notifications']>) =>
+      updateSettings({ notifications: notificationSettings }),
+  };
+};
+
+// Hook for SchedulePick settings
+export const useSchedulePickSettings = () => {
+  const { settings, updateSettings } = useSettings();
+  
+  // 安全なschedule取得（初期化チェック）
+  const schedule = settings?.pickModes?.schedule || {
+    enabled: false,
+    profiles: [],
+    freemium: {
+      maxDailySchedules: 2,
+      maxWeeklySchedules: 10,
+    }
+  };
+
+  const addScheduleProfile = (profile: Omit<ScheduleProfile, 'id'>) => {
+    const newProfile: ScheduleProfile = {
+      ...profile,
+      id: `schedule_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+    };
+    const updatedProfiles = [...(schedule.profiles || []), newProfile];
+    updateSettings({ pickModes: { schedule: { profiles: updatedProfiles } } });
+    return newProfile.id;
+  };
+
+  const updateScheduleProfile = (id: string, updates: Partial<ScheduleProfile>) => {
+    const updatedProfiles = (schedule.profiles || []).map(p =>
+      p.id === id ? { ...p, ...updates } : p
+    );
+    updateSettings({ pickModes: { schedule: { profiles: updatedProfiles } } });
+  };
+
+  const deleteScheduleProfile = (id: string) => {
+    const updatedProfiles = (schedule.profiles || []).filter(p => p.id !== id);
+    updateSettings({ pickModes: { schedule: { profiles: updatedProfiles } } });
+  };
+
+  const canAddMoreSchedules = () => {
+    const activeSchedules = (schedule.profiles || []).filter(p => p.enabled);
+    return activeSchedules.length < (schedule.freemium?.maxWeeklySchedules || 10);
+  };
+
+  return {
+    schedule,
+    addScheduleProfile,
+    updateScheduleProfile,
+    deleteScheduleProfile,
+    canAddMoreSchedules,
+    updateScheduleSettings: (scheduleSettings: DeepPartial<AppSettings['pickModes']['schedule']>) =>
+      updateSettings({ pickModes: { schedule: scheduleSettings } }),
   };
 };

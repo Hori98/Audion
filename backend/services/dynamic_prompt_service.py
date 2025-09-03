@@ -271,10 +271,10 @@ class DynamicPromptService:
             "voice_language": voice_language
         }
         
-        logging.info(f"🚀 ENHANCED PROMPT: Using {optimal_preset} preset for {article_count} articles")
-        logging.info(f"🚀 ENHANCED PROMPT: Expected output {preset_info['range']} ({preset_info['target_per_article']}*{article_count})")
-        # 🔥 PROMPT STYLE DEBUG
-        logging.info(f"🔥 STYLE DEBUG: base_prompt_style='{base_prompt_style}', custom_prompt='{custom_prompt}'")
+        # プロンプト生成ログ
+        logging.info(f"🎯 PROMPT: '{base_prompt_style}' → {optimal_preset} preset ({preset_info['range']}, {article_count} articles)")
+        if custom_prompt:
+            logging.info(f"📝 CUSTOM PROMPT: {len(custom_prompt)} chars")
         
         return enhanced_prompt, metadata
     
