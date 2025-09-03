@@ -11,6 +11,15 @@ class PromptService:
     
     def __init__(self):
         self.config = prompt_config
+        
+        # 後方互換性のためのプリセット名マッピング
+        self.preset_mapping = {
+            "速報": "ニュース",
+            "解説": "学習", 
+            "物語": "エンタメ",
+            "分析": "レポート",
+            "論説": "意見"
+        }
     
     def get_system_message(
         self,
@@ -31,9 +40,12 @@ class PromptService:
         Returns:
             System message string for OpenAI API
         """
+        # プリセット名を新方式にマッピング（後方互換性）
+        mapped_style = self.preset_mapping.get(prompt_style, prompt_style)
+        
         template = self.config.get_template(
             voice_language=voice_language,
-            prompt_style=prompt_style,
+            prompt_style=mapped_style,
             custom_prompt=custom_prompt
         )
         

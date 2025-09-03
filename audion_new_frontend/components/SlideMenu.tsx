@@ -26,6 +26,8 @@ import AppearanceScreen from './settings/AppearanceScreen';
 import NotificationsScreen from './NotificationsScreen';
 import DataStorageScreen from './settings/DataStorageScreen';
 import SupportInfoScreen from './settings/SupportInfoScreen';
+import PromptScreen from './settings/PromptScreen';
+import PromptSettingsModal from './settings/PromptSettingsModal';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const MENU_WIDTH = SCREEN_WIDTH * 0.7; // 70% of screen width
@@ -49,6 +51,8 @@ export default function SlideMenu({ visible, onClose }: SlideMenuProps) {
   const slideAnim = useRef(new Animated.Value(-MENU_WIDTH)).current;
   const opacityAnim = useRef(new Animated.Value(0)).current;
   const [activeSettingsScreen, setActiveSettingsScreen] = useState<string | null>(null);
+  const [showPromptSettingsModal, setShowPromptSettingsModal] = useState(false);
+  const [promptSettingsMode, setPromptSettingsMode] = useState<'auto' | 'manual' | 'schedule'>('auto');
 
   useEffect(() => {
     if (visible) {
@@ -104,6 +108,16 @@ export default function SlideMenu({ visible, onClose }: SlideMenuProps) {
       title: 'コンテンツと再生',
       icon: 'play-circle',
       onPress: () => setActiveSettingsScreen('content-playback'),
+      showArrow: true,
+    },
+    {
+      id: 'prompt-settings',
+      title: 'プロンプト設定',
+      icon: 'magic',
+      onPress: () => {
+        setPromptSettingsMode('auto');
+        setShowPromptSettingsModal(true);
+      },
       showArrow: true,
     },
     {
@@ -295,6 +309,13 @@ export default function SlideMenu({ visible, onClose }: SlideMenuProps) {
           onClose={() => setActiveSettingsScreen(null)}
         />
       )}
+      
+      {/* プロンプト設定モーダル */}
+      <PromptSettingsModal
+        visible={showPromptSettingsModal}
+        onClose={() => setShowPromptSettingsModal(false)}
+        mode={promptSettingsMode}
+      />
     </Modal>
   );
 }
