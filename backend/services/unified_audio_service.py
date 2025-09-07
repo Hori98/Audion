@@ -315,48 +315,29 @@ Articles to transform into audio script:
             return fallback_script
 
     async def _generate_audio_file(self, script: str, request: AudioGenerationRequest) -> Dict:
-        """音声ファイル生成 - 統一実装"""
+        """音声ファイル生成 - 統一実装（新しい独立TTSサービス使用）"""
         
         try:
-            # Use existing TTS functions from server.py - will be imported dynamically
-            # This is a temporary solution until TTS is properly extracted
-            import sys
-            import os
+            # 独立したTTSサービスを使用
+            from services.tts_service import tts_service
             
-            # Add backend directory to path to import server functions
-            backend_path = os.path.dirname(os.path.dirname(__file__))
-            if backend_path not in sys.path:
-                sys.path.append(backend_path)
+            tts_result = await tts_service.convert_text_to_speech(
+                text=script,
+                voice_name=getattr(request, 'voice_name', 'alloy'),
+                voice_language=getattr(request, 'voice_language', None),
+                model="tts-1"
+            )
             
-            # Import TTS function from server module
-            try:
-                from server import convert_text_to_speech_fast
-                
-                tts_result = await convert_text_to_speech_fast(
-                    script,
-                    voice_language=request.voice_language,
-                    voice_name=request.voice_name
-                )
-                
-                self.logger.info(f"🔊 TTS: Generated audio file via existing TTS service")
-                return tts_result
-                
-            except ImportError as e:
-                self.logger.warning(f"Could not import TTS function: {e}, using mock data")
-                # Fallback to mock data  
-                return {
-                    'url': f"http://localhost:8003/audio/generated_{uuid.uuid4()}.mp3",
-                    'duration': max(30, len(script) // 20),  # Rough estimate: 20 chars per second
-                    'file_size': len(script) * 100  # Rough estimate
-                }
+            self.logger.info(f"🔊 TTS: Generated audio file via independent TTS service")
+            return tts_result
                 
         except Exception as e:
             self.logger.error(f"TTS generation failed: {e}")
-            # Fallback to mock data
+            # TTSサービスが利用できない場合のフォールバック
             return {
                 'url': f"http://localhost:8003/audio/generated_{uuid.uuid4()}.mp3",
-                'duration': max(30, len(script) // 20),
-                'file_size': len(script) * 100
+                'duration': max(30, len(script) // 20),  # 推定: 1秒あたり20文字
+                'filename': f"generated_{uuid.uuid4()}.mp3"
             }
 
     async def _generate_title(self, articles: List[Dict], request: AudioGenerationRequest) -> str:

@@ -7,15 +7,31 @@ import {
   RefreshControl,
   Alert,
   View,
-  Text
+  Text,
+  Modal,
+  Linking
 } from 'react-native';
+import { WebView } from 'react-native-webview';
 import { useAuth } from '../../context/AuthContext';
 import { useSettings } from '../../context/SettingsContext';
+import { useGlobalAudio } from '../../context/GlobalAudioContext';
 import { API_CONFIG } from '../../config/api';
+import { extractScriptFromAudionXml } from '../../utils/textUtils';
 import HorizontalTabs from '../../components/HorizontalTabs';
 import UnifiedHeader from '../../components/UnifiedHeader';
 import SearchModal from '../../components/SearchModal';
 import SchedulePickManager from '../../components/SchedulePickManager';
+
+interface Chapter {
+  id: string;
+  title: string;
+  startTime: number;
+  endTime: number;
+  start_time: number;
+  end_time: number;
+  original_url: string;
+  originalUrl: string;
+}
 
 interface AudioContent {
   id: string;
@@ -29,6 +45,7 @@ interface AudioContent {
   play_count: number;
   created_at: string;
   updated_at: string;
+  chapters?: Chapter[];
 }
 
 interface Playlist {
@@ -45,6 +62,7 @@ interface Playlist {
 export default function LibraryScreen() {
   const { user, token } = useAuth();
   const { settings } = useSettings();
+  const { playSound, isCurrentTrack } = useGlobalAudio();
   const [activeTab, setActiveTab] = useState<'playlists' | 'mylist'>('playlists');
   
   const libraryTabs = [
@@ -56,8 +74,37 @@ export default function LibraryScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [showCreatePlaylistModal, setShowCreatePlaylistModal] = useState(false);
+  
   const [showSearchModal, setShowSearchModal] = useState(false);
   const [showSchedulePickManager, setShowSchedulePickManager] = useState(false);
+  
+  // 音声詳細表示用のstate
+  const [selectedAudio, setSelectedAudio] = useState<AudioContent | null>(null);
+  const [showAudioDetailModal, setShowAudioDetailModal] = useState(false);
+  
+  // WebView表示用のstate
+  const [showWebView, setShowWebView] = useState(false);
+  const [selectedUrl, setSelectedUrl] = useState<string>('');
+
+  // グローバル音声再生関数
+  const handlePlayAudio = async (audioItem: AudioContent) => {
+    try {
+      if (!audioItem.audio_url) {
+        Alert.alert('エラー', '音声ファイルのURLが見つかりません');
+        return;
+      }
+
+      await playSound({
+        id: audioItem.id,
+        uri: audioItem.audio_url,
+        title: audioItem.title
+      });
+
+    } catch (error) {
+      console.error('Error playing audio:', error);
+      Alert.alert('再生エラー', '音声の再生に失敗しました');
+    }
+  };
 
   const fetchAudioLibrary = async () => {
     if (!token) {
@@ -69,7 +116,7 @@ export default function LibraryScreen() {
 
     try {
       // 実際のAPI呼び出し（downloaded_audioから取得）
-      const response = await fetch(`${API_CONFIG.BASE_URL}/audio/downloaded`, {
+      const response = await fetch(`${API_CONFIG.BASE_URL}/audio/library`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -82,11 +129,12 @@ export default function LibraryScreen() {
       }
 
       const data = await response.json();
-      console.log('📚 [LIBRARY] Fetched audio library:', data);
 
-      // downloaded_audioのレスポンスを AudioContent 形式に変換
-      const audioContents: AudioContent[] = (data.audio_files || []).map((item: any) => ({
-        id: item.audio_id,
+      // audio library APIのレスポンスを AudioContent 形式に変換
+      // APIは直接配列を返すので、data.audio_filesではなくdataを使用
+      const audioArray = Array.isArray(data) ? data : (data.audio_files || []);
+      const audioContents: AudioContent[] = audioArray.map((item: any) => ({
+        id: item.id || item.audio_id,
         title: item.title || 'Untitled Audio',
         script: item.script || '',
         audio_url: item.audio_url,
@@ -96,7 +144,8 @@ export default function LibraryScreen() {
         status: 'completed' as const,
         play_count: item.play_count || 0,
         created_at: item.created_at || new Date().toISOString(),
-        updated_at: item.updated_at || new Date().toISOString()
+        updated_at: item.updated_at || new Date().toISOString(),
+        chapters: item.chapters || []
       }));
 
       setAudioContent(audioContents);
@@ -115,14 +164,14 @@ export default function LibraryScreen() {
         }
       ]);
 
-      console.log('📚 [LIBRARY] Library updated with', audioContents.length, 'audio files');
+      // Library updated successfully
 
     } catch (error) {
       console.error('Error fetching audio library:', error);
       
       // エラー時はモックデータで代用（開発用）
       if (__DEV__) {
-        console.log('📚 [LIBRARY] Using fallback mock data in development');
+        // Using fallback mock data in development
         setAudioContent([
           {
             id: 'mock-1',
@@ -329,9 +378,26 @@ export default function LibraryScreen() {
                     </View>
                     
                     {audio.status === 'completed' && (
-                      <TouchableOpacity style={styles.playButton}>
-                        <Text style={styles.playButtonText}>▶️</Text>
-                      </TouchableOpacity>
+                      <View style={styles.audioActions}>
+                        <TouchableOpacity 
+                          style={styles.playButton}
+                          onPress={() => handlePlayAudio(audio)}
+                        >
+                          <Text style={styles.playButtonText}>
+                            {isCurrentTrack(audio.id) ? '⏸️' : '▶️'}
+                          </Text>
+                        </TouchableOpacity>
+                        
+                        <TouchableOpacity 
+                          style={styles.detailButton}
+                          onPress={() => {
+                            setSelectedAudio(audio);
+                            setShowAudioDetailModal(true);
+                          }}
+                        >
+                          <Text style={styles.detailButtonText}>⋯</Text>
+                        </TouchableOpacity>
+                      </View>
                     )}
                   </View>
                   
@@ -363,6 +429,126 @@ export default function LibraryScreen() {
           onClose={() => setShowSchedulePickManager(false)}
         />
       )}
+
+      {/* Audio Detail Modal - 音声詳細表示 */}
+      <Modal
+        visible={showAudioDetailModal}
+        animationType="slide"
+        presentationStyle="pageSheet"
+      >
+        <View style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>音声詳細</Text>
+            <TouchableOpacity 
+              onPress={() => setShowAudioDetailModal(false)}
+              style={styles.closeButton}
+            >
+              <Text style={styles.closeButtonText}>✕</Text>
+            </TouchableOpacity>
+          </View>
+
+          {selectedAudio && (
+            <ScrollView style={styles.modalContent}>
+              <View style={styles.detailSection}>
+                <Text style={styles.detailTitle}>タイトル</Text>
+                <Text style={styles.detailText}>{selectedAudio.title}</Text>
+              </View>
+
+              <View style={styles.detailSection}>
+                <Text style={styles.detailTitle}>脚本</Text>
+                <ScrollView style={styles.scriptContainer}>
+                  <Text style={styles.scriptText}>
+                    {selectedAudio.script ? extractScriptFromAudionXml(selectedAudio.script) : '脚本が利用できません'}
+                  </Text>
+                </ScrollView>
+              </View>
+
+              {/* 元記事リンク表示 */}
+              {selectedAudio.chapters && selectedAudio.chapters.length > 0 && (
+                <View style={styles.detailSection}>
+                  <Text style={styles.detailTitle}>元記事リンク</Text>
+                  {selectedAudio.chapters.map((chapter, index) => (
+                    <TouchableOpacity
+                      key={chapter.id || index}
+                      style={styles.linkItem}
+                      onPress={() => {
+                        // URL取得の優先順位を調整
+                        const url = chapter.originalUrl || chapter.original_url || chapter.url || chapter.link;
+                        console.log('WebView URL:', { chapter, url }); // デバッグ用
+                        if (url && url.length > 0) {
+                          setSelectedUrl(url);
+                          setShowWebView(true);
+                        } else {
+                          console.error('No URL found in chapter:', chapter);
+                          Alert.alert('エラー', 'リンクが見つかりません');
+                        }
+                      }}
+                    >
+                      <View style={styles.linkContent}>
+                        <Text style={styles.linkTitle} numberOfLines={2}>
+                          {chapter.title || `記事 ${index + 1}`}
+                        </Text>
+                        <Text style={styles.linkUrl} numberOfLines={1}>
+                          {(chapter.originalUrl || chapter.original_url || chapter.url || chapter.link || '').replace(/^https?:\/\//, '')}
+                        </Text>
+                      </View>
+                      <Text style={styles.linkArrow}>→</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+
+              <View style={styles.detailSection}>
+                <Text style={styles.detailTitle}>音声情報</Text>
+                <Text style={styles.detailText}>
+                  時間: {formatDuration(selectedAudio.duration)}{'\n'}
+                  音声: {selectedAudio.voice_type}{'\n'}
+                  言語: {selectedAudio.language.toUpperCase()}{'\n'}
+                  再生回数: {selectedAudio.play_count}回
+                </Text>
+              </View>
+            </ScrollView>
+          )}
+        </View>
+      </Modal>
+
+      {/* WebView Modal - 元記事表示 */}
+      <Modal
+        visible={showWebView}
+        animationType="slide"
+        presentationStyle="pageSheet"
+      >
+        <View style={styles.webViewContainer}>
+          <View style={styles.webViewHeader}>
+            <TouchableOpacity
+              onPress={() => setShowWebView(false)}
+              style={styles.webViewCloseButton}
+            >
+              <Text style={styles.webViewCloseButtonText}>← 戻る</Text>
+            </TouchableOpacity>
+            <Text style={styles.webViewTitle} numberOfLines={1}>記事を表示中</Text>
+            <View style={styles.webViewSpacer} />
+          </View>
+          
+          {selectedUrl ? (
+            <WebView
+              source={{ uri: selectedUrl }}
+              style={styles.webView}
+              startInLoadingState={true}
+              renderLoading={() => (
+                <View style={styles.webViewLoading}>
+                  <ActivityIndicator size="large" color="#007bff" />
+                  <Text style={styles.webViewLoadingText}>読み込み中...</Text>
+                </View>
+              )}
+            />
+          ) : (
+            <View style={styles.webViewError}>
+              <Text style={styles.webViewErrorText}>URLが見つかりません</Text>
+            </View>
+          )}
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -605,6 +791,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#888888',
   },
+  audioActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   playButton: {
     width: 48,
     height: 48,
@@ -615,6 +806,18 @@ const styles = StyleSheet.create({
   },
   playButtonText: {
     fontSize: 20,
+  },
+  detailButton: {
+    width: 36,
+    height: 36,
+    backgroundColor: '#666666',
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  detailButtonText: {
+    fontSize: 16,
+    color: '#ffffff',
   },
   audioFooter: {
     flexDirection: 'row',
@@ -650,5 +853,165 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 16,
     fontWeight: '600',
+  },
+
+  // Modal Styles
+  modalContainer: {
+    flex: 1,
+    backgroundColor: '#121212',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingTop: 60,
+    paddingBottom: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#333',
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#ffffff',
+  },
+  closeButton: {
+    padding: 8,
+  },
+  closeButtonText: {
+    fontSize: 24,
+    color: '#ffffff',
+    fontWeight: 'bold',
+  },
+  modalContent: {
+    padding: 20,
+  },
+  detailSection: {
+    marginBottom: 24,
+  },
+  detailTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#888888',
+    marginBottom: 8,
+  },
+  detailText: {
+    fontSize: 16,
+    color: '#dddddd',
+    lineHeight: 24,
+  },
+  scriptContainer: {
+    backgroundColor: '#1e1e1e',
+    borderRadius: 8,
+    padding: 16,
+    maxHeight: 300,
+  },
+  scriptText: {
+    fontSize: 15,
+    color: '#dddddd',
+    lineHeight: 22,
+  },
+  linkButton: {
+    backgroundColor: '#007bff',
+    padding: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  linkButtonText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+
+  // Link Item Styles
+  linkItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#2a2a2a',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 8,
+  },
+  linkContent: {
+    flex: 1,
+    marginRight: 12,
+  },
+  linkTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#ffffff',
+    marginBottom: 4,
+  },
+  linkUrl: {
+    fontSize: 12,
+    color: '#888888',
+  },
+  linkArrow: {
+    fontSize: 16,
+    color: '#007bff',
+    fontWeight: 'bold',
+  },
+
+  // WebView Modal Styles
+  webViewContainer: {
+    flex: 1,
+    backgroundColor: '#000000',
+  },
+  webViewHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingTop: 60,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#333333',
+  },
+  webViewCloseButton: {
+    padding: 8,
+  },
+  webViewCloseButtonText: {
+    fontSize: 16,
+    color: '#007bff',
+    fontWeight: '600',
+  },
+  webViewTitle: {
+    fontSize: 16,
+    color: '#ffffff',
+    fontWeight: '600',
+    flex: 1,
+    textAlign: 'center',
+  },
+  webViewSpacer: {
+    width: 64, // 左側の戻るボタンとバランスを取るため
+  },
+  webView: {
+    flex: 1,
+  },
+  webViewLoading: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#121212',
+  },
+  webViewLoadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: '#888888',
+  },
+  webViewError: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#121212',
+  },
+  webViewErrorText: {
+    fontSize: 16,
+    color: '#ff4444',
   },
 });

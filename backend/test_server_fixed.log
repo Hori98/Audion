@@ -1,8 +1,0 @@
-INFO:     Started server process [42379]
-INFO:     Waiting for application startup.
-INFO:     Application startup complete.
-INFO:     Uvicorn running on http://0.0.0.0:8003 (Press CTRL+C to quit)
-2025-08-07 21:12:21,224 - INFO - Auto-registered and logged in user: test@example.com
-INFO:     127.0.0.1:62314 - "POST /api/auth/login HTTP/1.1" 200 OK
-2025-08-07 21:12:55,060 - INFO - Retrieved 0 sources for user test@example.com
-INFO:     127.0.0.1:62337 - "GET /api/rss-sources HTTP/1.1" 200 OK

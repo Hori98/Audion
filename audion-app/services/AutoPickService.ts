@@ -38,8 +38,8 @@ class AutoPickService {
   private readonly API: string;
 
   constructor() {
-    this.API = process.env.EXPO_PUBLIC_BACKEND_URL 
-      ? `${process.env.EXPO_PUBLIC_BACKEND_URL}/api` 
+    this.API = process.env.EXPO_PUBLIC_API_BASE_URL 
+      ? process.env.EXPO_PUBLIC_API_BASE_URL 
       : 'http://localhost:8003/api';
   }
 

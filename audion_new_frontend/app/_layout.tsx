@@ -13,6 +13,7 @@ import { AuthProvider } from '../context/AuthContext';
 import { SettingsProvider } from '../context/SettingsContext';
 import { AudioMetadataProvider } from '../context/AudioMetadataProvider';
 import { AutoPickProvider } from '../context/AutoPickContext';
+import { GlobalAudioProvider } from '../context/GlobalAudioContext';
 import ProgressBarLayout from '../components/ProgressBarLayout';
 
 export {
@@ -54,7 +55,9 @@ export default function RootLayout() {
       <SettingsProvider>
         <AudioMetadataProvider>
           <AutoPickProvider>
-            <RootLayoutNav />
+            <GlobalAudioProvider>
+              <RootLayoutNav />
+            </GlobalAudioProvider>
           </AutoPickProvider>
         </AudioMetadataProvider>
       </SettingsProvider>

@@ -10,7 +10,7 @@ from typing import List, Dict, Any, Optional
 from config.database import get_database, is_database_connected
 from models.audio import AudioCreation, Playlist, Album, DownloadedAudio
 from models.article import Article
-from services.ai_service import generate_audio_title_with_openai, summarize_articles_with_openai, convert_text_to_speech
+from services.ai_service import generate_audio_title_with_openai, summarize_articles_with_openai
 from services.storage_service import delete_from_s3
 from utils.errors import handle_database_error, handle_generic_error
 from utils.database import find_many_by_user, find_one_by_id, insert_document, update_document, delete_document
@@ -53,8 +53,13 @@ async def create_audio_from_articles(user_id: str,
         # Generate script using AI
         script = await summarize_articles_with_openai(articles_content)
         
-        # Convert script to speech
-        tts_result = await convert_text_to_speech(script)
+        # Generate clean script text for display (XMLタグ除去版)
+        from utils.text_utils import extract_clean_script_text
+        clean_script = extract_clean_script_text(script)
+        
+        # Convert script to speech using the new independent TTS service
+        from services.tts_service import tts_service
+        tts_result = await tts_service.convert_text_to_speech(script)
         audio_url = tts_result["url"]
         duration = tts_result["duration"]
         
@@ -77,7 +82,8 @@ async def create_audio_from_articles(user_id: str,
             "article_titles": article_titles,
             "audio_url": audio_url,
             "duration": duration,
-            "script": script,
+            "script": script,  # 構造化XMLスクリプト（プロンプトエンジニアリング用）
+            "clean_script": clean_script,  # 表示・TTS用のクリーンテキスト
             "chapters": chapters,
             "created_at": datetime.utcnow()
         }
@@ -121,6 +127,17 @@ async def get_user_audio_library(user_id: str, include_deleted: bool = False) ->
             sort_direction=-1
         )
         
+        # 後方互換性のため、clean_scriptが存在しない場合は自動生成
+        from utils.text_utils import extract_clean_script_text
+        
+        for audio in audio_data:
+            if audio.get("script") and not audio.get("clean_script"):
+                try:
+                    audio["clean_script"] = extract_clean_script_text(audio["script"])
+                except Exception as e:
+                    logging.warning(f"Failed to generate clean_script for audio {audio.get('_id', 'unknown')}: {e}")
+                    audio["clean_script"] = audio.get("script", "")  # フォールバック
+        
         return [AudioCreation(**audio) for audio in audio_data]
         
     except Exception as e:
@@ -142,6 +159,15 @@ async def get_audio_by_id(user_id: str, audio_id: str) -> Optional[AudioCreation
         audio_data = await find_one_by_id("audio_creations", audio_id, user_id)
         
         if audio_data:
+            # 後方互換性のため、clean_scriptが存在しない場合は自動生成
+            if audio_data.get("script") and not audio_data.get("clean_script"):
+                from utils.text_utils import extract_clean_script_text
+                try:
+                    audio_data["clean_script"] = extract_clean_script_text(audio_data["script"])
+                except Exception as e:
+                    logging.warning(f"Failed to generate clean_script for audio {audio_id}: {e}")
+                    audio_data["clean_script"] = audio_data.get("script", "")  # フォールバック
+            
             return AudioCreation(**audio_data)
         return None
         

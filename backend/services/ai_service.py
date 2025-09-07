@@ -113,29 +113,37 @@ async def summarize_articles_with_openai(articles_content: List[str]) -> str:
             "working to resolve the issue. Please try again shortly for the latest news updates."
         )
 
-async def convert_text_to_speech(text: str) -> Dict[str, Any]:
+async def convert_text_to_speech_legacy(text: str) -> Dict[str, Any]:
     """
     Convert text to speech using OpenAI TTS and store the audio file.
     
     Args:
-        text: Text to convert to speech
+        text: Text to convert to speech (may contain XML tags)
         
     Returns:
         Dict: Contains 'url' and 'duration' keys, or raises exception
     """
     try:
-        logging.info(f"Starting TTS conversion for text length: {len(text)}")
+        from utils.text_utils import extract_clean_script_text
+        
+        # XMLタグを含む可能性のあるテキストから自然言語のみを抽出
+        clean_text = extract_clean_script_text(text)
+        
+        logging.info(f"Starting TTS conversion - Original length: {len(text)}, Clean length: {len(clean_text)}")
+        
+        if not clean_text.strip():
+            raise ValueError("No valid text content found after XML processing")
         
         if not OPENAI_API_KEY or OPENAI_API_KEY == "your-openai-key":
             raise ValueError("OpenAI API key not configured")
         
         client = openai.AsyncOpenAI(api_key=OPENAI_API_KEY)
         
-        # Generate speech
+        # Generate speech using clean text (no XML tags)
         response = await client.audio.speech.create(
             model="tts-1",
             voice="alloy",
-            input=text,
+            input=clean_text,
         )
         
         logging.info("OpenAI TTS request completed successfully")
@@ -209,6 +217,16 @@ async def save_audio_locally(audio_content: bytes, filename: str) -> str:
     except Exception as e:
         logging.error(f"Error saving audio locally: {e}")
         raise
+
+
+# 新しい統一TTSサービスを使用する関数
+async def convert_text_to_speech(text: str) -> Dict[str, Any]:
+    """
+    新しい統一TTSサービスを使用したテキスト音声変換
+    後方互換性を提供しつつ、新しいTTSサービスにリダイレクト
+    """
+    from services.tts_service import tts_service
+    return await tts_service.convert_text_to_speech(text)
 
 def create_mock_audio_file() -> tuple[str, int]:
     """

@@ -33,7 +33,7 @@ from services.prompt_service import prompt_service
 from services.dynamic_prompt_service import dynamic_prompt_service
 
 # Import RSS service for consolidated RSS operations
-from services.rss_service import get_articles_for_user, parse_rss_feed, extract_articles_from_feed, clear_rss_cache
+from services.rss_service import get_articles_for_user, parse_rss_feed, extract_articles_from_feed, clear_rss_cache, get_user_rss_sources
 from services.article_service import classify_article_genre
 
 # Import SchedulePick services
@@ -1327,33 +1327,33 @@ async def auto_pick_articles(
     time_based_filtering: bool = True
 ) -> List[Article]:
     """Enhanced Auto-pick with progressive selection for optimal diversity"""
-    logging.info(f"🔍 AUTO-PICK DEBUG: Starting with {len(all_articles)} articles, requesting {max_articles}")
+    logging.info(f"Starting with {len(all_articles)} articles, requesting {max_articles}")
     user_profile = await get_or_create_user_profile(user_id)
     
     # Apply filters based on user settings
     filtered_articles = all_articles.copy()
-    logging.info(f"🔍 AUTO-PICK DEBUG: Initial articles: {len(filtered_articles)}")
+    logging.info(f"Initial articles: {len(filtered_articles)}")
     
     # Filter by preferred genres if specified
     if preferred_genres:
         before_genre_filter = len(filtered_articles)
         filtered_articles = [a for a in filtered_articles if a.genre in preferred_genres]
-        logging.info(f"🔍 AUTO-PICK DEBUG: After preferred genre filter ({preferred_genres}): {len(filtered_articles)} (was {before_genre_filter})")
+        logging.info(f"After preferred genre filter ({preferred_genres}): {len(filtered_articles)} (was {before_genre_filter})")
     
     # Filter out excluded genres
     if excluded_genres:
         before_exclude_filter = len(filtered_articles)
         filtered_articles = [a for a in filtered_articles if a.genre not in excluded_genres]
-        logging.info(f"🔍 AUTO-PICK DEBUG: After excluded genre filter ({excluded_genres}): {len(filtered_articles)} (was {before_exclude_filter})")
+        logging.info(f"After excluded genre filter ({excluded_genres}): {len(filtered_articles)} (was {before_exclude_filter})")
     
     # Apply time-based filtering if enabled (simple recency filter)
     if time_based_filtering:
         # Sort by published date and take more recent articles for selection
         filtered_articles = sorted(filtered_articles, key=lambda x: x.published or '', reverse=True)
-        logging.info(f"🔍 AUTO-PICK DEBUG: After time-based filtering: {len(filtered_articles)} articles")
+        logging.info(f"After time-based filtering: {len(filtered_articles)} articles")
     
     if not filtered_articles:
-        logging.warning(f"🔍 AUTO-PICK DEBUG: No articles after filtering!")
+        # No articles found after filtering
         return []
     
     selected_articles = []
@@ -1370,7 +1370,7 @@ async def auto_pick_articles(
     
     # Progressive selection for diversity
     max_to_select = min(max_articles, len(remaining_articles))
-    logging.info(f"🔍 AUTO-PICK DEBUG: Will select {max_to_select} articles from {len(remaining_articles)} filtered articles")
+    logging.info(f"Will select {max_to_select} articles from {len(remaining_articles)} filtered articles")
     
     for i in range(max_to_select):
         if not remaining_articles:
@@ -1388,12 +1388,12 @@ async def auto_pick_articles(
         if scored_articles:
             selected_article = scored_articles[0][0]
             selected_articles.append(selected_article)
-            logging.info(f"🔍 AUTO-PICK DEBUG: Selected article {i+1}: {selected_article.title[:50]}... (score: {scored_articles[0][1]:.3f})")
+            # Selected article for AutoPick
             
             # Remove from remaining articles for next iteration
             remaining_articles = [a for a in remaining_articles if a != selected_article]
     
-    logging.info(f"🔍 AUTO-PICK DEBUG: Final selection: {len(selected_articles)} articles")
+    logging.info(f"Final selection: {len(selected_articles)} articles")
     return selected_articles
 
 # ===== NOTIFICATION SERVICE HELPERS =====
@@ -3425,23 +3425,23 @@ async def get_auto_picked_articles(request: AutoPickRequest, http_request: Reque
         
         # Fetch all articles from user's sources
         all_articles = []
-        logging.info(f"🔍 AUTO-PICK DEBUG: Processing {len(sources)} RSS sources")
+        logging.info(f"Processing {len(sources)} RSS sources")
         
         for i, source in enumerate(sources):
             try:
                 # 🆕 Use consolidated RSS service with enhanced error handling
                 feed = parse_rss_feed(source["url"], use_cache=True)
                 if not feed or not hasattr(feed, 'entries') or not feed.entries:
-                    logging.warning(f"🔍 AUTO-PICK DEBUG: Source {i+1} '{source.get('name', 'Unknown')}' failed to parse or has no entries. URL: {source.get('url', 'Unknown')}")
+                    logging.warning(f"Source {i+1} '{source.get('name', 'Unknown')}' failed to parse or has no entries. URL: {source.get('url', 'Unknown')}")
                     # Try to clear cache and retry once
                     clear_rss_cache()
                     feed = parse_rss_feed(source["url"], use_cache=False)
                     if not feed or not hasattr(feed, 'entries') or not feed.entries:
-                        logging.error(f"🔍 AUTO-PICK DEBUG: Source {i+1} '{source.get('name', 'Unknown')}' completely failed even after cache clear")
+                        logging.error(f"Source {i+1} '{source.get('name', 'Unknown')}' completely failed even after cache clear")
                         continue
                 
                 feed_articles_count = len(feed.entries[:30])  # Updated to match new limit
-                logging.info(f"🔍 AUTO-PICK DEBUG: Source {i+1} '{source.get('name', 'Unknown')}': {feed_articles_count} articles (total available: {len(feed.entries)})")
+                logging.info(f"Source {i+1} '{source.get('name', 'Unknown')}': {feed_articles_count} articles (total available: {len(feed.entries)})")
 
                 for entry in feed.entries[:30]:  # Increase article pool for better selection
                     article_title = getattr(entry, 'title', "No Title")
@@ -3489,10 +3489,10 @@ async def get_auto_picked_articles(request: AutoPickRequest, http_request: Reque
                         upsert=True
                     )
             except Exception as e:
-                logging.warning(f"Error parsing RSS feed {source['url']}: {e}")
+                # RSS feed parsing failed, skip source
                 continue
         
-        logging.info(f"🔍 AUTO-PICK DEBUG: Total articles collected from all sources: {len(all_articles)}")
+        logging.info(f"Total articles collected from all sources: {len(all_articles)}")
         
         # Debug: Show genre distribution before filtering
         if all_articles:
@@ -3500,9 +3500,9 @@ async def get_auto_picked_articles(request: AutoPickRequest, http_request: Reque
             for article in all_articles:
                 genre = article.genre or "Unknown"
                 genre_counts[genre] = genre_counts.get(genre, 0) + 1
-            logging.info(f"🔍 AUTO-PICK DEBUG: Genre distribution: {genre_counts}")
+            logging.info(f"Genre distribution: {genre_counts}")
         else:
-            logging.error(f"🔍 AUTO-PICK DEBUG: NO ARTICLES FOUND - all sources failed to provide articles")
+            logging.error(f"NO ARTICLES FOUND - all sources failed to provide articles")
             raise HTTPException(status_code=404, detail="No articles found from your RSS sources")
         
         # Get user's subscription to determine max articles limit
@@ -3861,19 +3861,224 @@ async def test_genre_classification(
         raise HTTPException(status_code=500, detail=str(e))
 
 async def process_auto_pick_background(task_id: str, request: AutoPickRequest, user: User):
-    """Background task for AutoPick processing with progress updates"""
-    task_manager = get_task_manager()
+    """AutoPick background processing with full audio generation"""
+    # AutoPick processing started (minimal logging)
     
     try:
+        global db
+        task_manager = get_task_manager()
+        
         await task_manager.update_task(
             task_id,
-            status=TaskStatus.IN_PROGRESS,
+            progress=10,
+            message="RSS フィードから記事を取得中..."
+        )
+        
+        # Get user's RSS sources directly from database
+        sources_cursor = db.rss_sources.find({"user_id": user.id, "is_active": True})
+        sources = await sources_cursor.to_list(length=None)
+        if not sources:
+            await task_manager.fail_task(task_id, "No RSS sources configured")
+            return
+            
+        all_articles = []
+        for i, source in enumerate(sources):
+            try:
+                feed = parse_rss_feed(source["url"], use_cache=True)
+                if not feed:
+                    continue
+                feed_articles = extract_articles_from_feed(feed, source["name"])
+                for article in feed_articles:
+                    # article is already an Article object from extract_articles_from_feed
+                    if not article.title or not article.title.strip():
+                        continue
+                        
+                    article_genre = classify_article_genre(article.title, article.content or article.summary or "")
+                    article.genre = article_genre
+                    all_articles.append(article)
+                    
+                    await db.articles.update_one(
+                        {"title": article.title, "source_name": source["name"]},
+                        {"$set": article.dict()},
+                        upsert=True
+                    )
+                    
+            except Exception as e:
+                # RSS feed parsing failed, skip source
+                continue
+            
+            # Progress update for each source processed
+            progress = min(15 + (i + 1) * 15 // len(sources), 30)
+            await task_manager.update_task(task_id, progress=progress)
+        
+        await task_manager.update_task(
+            task_id,
+            progress=35,
+            message="記事を選択中..."
+        )
+        
+        # Get user's subscription and auto-pick articles
+        subscription = await get_or_create_subscription(user.id)
+        user_max_articles = subscription['max_audio_articles']
+        effective_max_articles = min(request.max_articles or user_max_articles, user_max_articles)
+        
+        picked_articles = await auto_pick_articles(
+            user_id=user.id,
+            all_articles=all_articles,
+            max_articles=effective_max_articles,
+            preferred_genres=request.preferred_genres,
+            excluded_genres=request.excluded_genres,
+            source_priority=request.source_priority or "balanced",
+            time_based_filtering=request.time_based_filtering if request.time_based_filtering is not None else True
+        )
+        
+        if not picked_articles:
+            await task_manager.fail_task(task_id, "No suitable articles found")
+            return
+            
+        await task_manager.update_task(
+            task_id,
+            progress=50,
+            message="コンテンツを生成中..."
+        )
+        
+        # Create audio from picked articles
+        articles_content = [f"Title: {article.title}\nSummary: {article.summary}\nSource: {article.source_name}" for article in picked_articles]
+        subscription = await db.subscriptions.find_one({"user_id": user.id})
+        user_plan = subscription.get("plan", "free") if subscription else "free"
+        
+        optimal_script_length = await calculate_unified_script_length(
+            articles_content, 
+            user_plan, 
+            len(articles_content),
+            voice_language="en-US",
+            prompt_style="recommended"
+        )
+        
+        await task_manager.update_task(
+            task_id,
+            progress=65,
+            message="AI がスクリプトを作成中..."
+        )
+        
+        script = await summarize_articles_with_openai(
+            articles_content, 
+            prompt_style="recommended",
+            custom_prompt=None,
+            voice_language="ja-JP",
+            target_length=optimal_script_length
+        )
+        
+        generated_title = await generate_audio_title_with_openai(articles_content)
+        
+        await task_manager.update_task(
+            task_id,
+            progress=80,
+            message="音声を合成中..."
+        )
+        
+        audio_data = await convert_text_to_speech(script)
+        audio_url = audio_data['url']
+        duration = audio_data['duration']
+        
+        await task_manager.update_task(
+            task_id,
+            progress=90,
+            message="音声を保存中..."
+        )
+        
+        # Generate chapters and create audio creation record
+        chapters = []
+        article_titles = [article.title for article in picked_articles]
+        if len(article_titles) > 1:
+            chapter_duration = duration // len(article_titles)
+            for i, (article, article_title) in enumerate(zip(picked_articles, article_titles)):
+                start_time = i * chapter_duration * 1000
+                end_time = ((i + 1) * chapter_duration if i < len(article_titles) - 1 else duration) * 1000
+                chapters.append({
+                    "title": article_title,
+                    "start_time": start_time,
+                    "end_time": end_time,
+                    "original_url": article.link
+                })
+        
+        audio_creation = AudioCreation(
+            user_id=user.id,
+            title=generated_title,
+            article_ids=[article.id for article in picked_articles],
+            article_titles=article_titles,
+            audio_url=audio_url,
+            duration=duration,
+            script=script,
+            chapters=chapters,
+            prompt_style="recommended",
+            custom_prompt=None
+        )
+        
+        await db.audio_creations.insert_one(audio_creation.dict())
+        
+        # Record interactions for picked articles
+        for article in picked_articles:
+            interaction = UserInteraction(
+                article_id=article.id,
+                interaction_type="created_audio",
+                genre=article.genre
+            )
+            await update_user_preferences(user.id, interaction)
+        
+        # Prepare debug info
+        debug_info = {
+            "total_articles_fetched": len(all_articles),
+            "articles_selected": len(picked_articles),
+            "selected_articles": [{"title": a.title, "source": a.source_name, "genre": a.genre} for a in picked_articles],
+            "script_length": len(script),
+            "user_plan": user_plan,
+            "duration_seconds": duration,
+            "chapters_count": len(chapters),
+        }
+        
+        await task_manager.complete_task(
+            task_id,
+            result=audio_creation.dict(),
+            debug_info=debug_info
+        )
+        
+        # Send push notification for audio completion
+        try:
+            await send_audio_completion_notification(
+                user_id=user.id,
+                article_title=generated_title,
+                audio_id=audio_creation.id
+            )
+            logging.info(f"📱 [NOTIFICATIONS] Sent AutoPick audio completion notification for user {user.id}")
+        except Exception as e:
+            logging.error(f"📱 [NOTIFICATIONS] Failed to send AutoPick audio completion notification: {e}")
+            
+    except Exception as e:
+        logging.error(f"AutoPick background task error: {e}")
+        await task_manager.fail_task(task_id, str(e), {"error_details": str(e)})
+        
+        await task_manager.update_task(
+            task_id,
             progress=5,
             message="RSS フィードを取得中..."
         )
         
-        # Get auto-picked articles
-        sources = await db.rss_sources.find({"user_id": user.id}).to_list(100)
+        # Get auto-picked articles with timeout
+        try:
+            sources = await asyncio.wait_for(
+                db.rss_sources.find({"user_id": user.id}).to_list(100),
+                timeout=15.0
+            )
+            logging.info(f"🎯 [AUTOPICK] Found {len(sources)} RSS sources for user {user.id}")
+        except asyncio.TimeoutError:
+            logging.error(f"🎯 [AUTOPICK] Database query timeout for task {task_id}")
+            await task_manager.fail_task(task_id, "データベース接続がタイムアウトしました", {"error": "DB_TIMEOUT"})
+            return
+        except Exception as db_error:
+            logging.error(f"🎯 [AUTOPICK] Database error for task {task_id}: {db_error}")
+            await task_manager.fail_task(task_id, f"データベースエラー: {str(db_error)}", {"error": "DB_ERROR", "details": str(db_error)})
+            return
         if not sources:
             await task_manager.fail_task(task_id, "RSS sources not found")
             return
@@ -3931,7 +4136,7 @@ async def process_auto_pick_background(task_id: str, request: AutoPickRequest, u
                     )
                     
             except Exception as e:
-                logging.warning(f"Error parsing RSS feed {source['url']}: {e}")
+                # RSS feed parsing failed, skip source
                 continue
             
             # Progress update for each source processed
@@ -4097,13 +4302,17 @@ async def process_auto_pick_background(task_id: str, request: AutoPickRequest, u
 @app.post("/api/auto-pick/create-audio", response_model=TaskStartResponse, tags=["Auto-Pick"])
 async def create_auto_picked_audio(request: AutoPickRequest, background_tasks: BackgroundTasks, current_user: User = Depends(get_current_user)):
     """Start AutoPick audio creation and return task ID for progress monitoring"""
+    logging.info(f"🎯 [AUTOPICK] CREATE_AUTO_PICKED_AUDIO CALLED - user_id={current_user.id}")
     try:
         # Create task and return task ID immediately
         task_manager = get_task_manager()
         task_id = task_manager.create_task("autopick", current_user.id)
+        logging.info(f"🎯 [AUTOPICK] Task created with ID: {task_id}")
         
-        # Start background processing
-        background_tasks.add_task(process_auto_pick_background, task_id, request, current_user)
+        # 🚨 EMERGENCY TEST: Direct asyncio.create_task only
+        logging.info(f"🎯 [AUTOPICK] SKIPPING BackgroundTasks, using asyncio.create_task directly")
+        asyncio.create_task(process_auto_pick_background(task_id, request, current_user))
+        logging.info(f"🎯 [AUTOPICK] Background task started via asyncio.create_task")
         
         logging.info(f"🎯 [AUTOPICK] Started task {task_id} for user {current_user.id}")
         
@@ -4146,11 +4355,14 @@ async def stream_autopick_progress(task_id: str, token: Optional[str] = None, cu
         
         return StreamingResponse(
             task_manager.stream_task_progress(task_id),
-            media_type="text/plain",
+            media_type="text/event-stream",
             headers={
                 "Cache-Control": "no-cache",
                 "Connection": "keep-alive",
-                "Content-Type": "text/event-stream",
+                "X-Accel-Buffering": "no",  # Disable Nginx buffering for SSE
+                "Access-Control-Allow-Origin": "*",  # CORS for ngrok
+                "Access-Control-Allow-Methods": "GET, OPTIONS",
+                "Access-Control-Allow-Headers": "Content-Type, Authorization",
             }
         )
         
@@ -4158,6 +4370,43 @@ async def stream_autopick_progress(task_id: str, token: Optional[str] = None, cu
         raise
     except Exception as e:
         logging.error(f"SSE streaming error for task {task_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/auto-pick/task-status/{task_id}")
+async def get_autopick_task_status(task_id: str, token: Optional[str] = None, current_user: User = Depends(get_current_user_from_token_param)):
+    """Get AutoPick task status as JSON (React Native compatible alternative to SSE)"""
+    try:
+        task_manager = get_task_manager()
+        task = task_manager.get_task(task_id)
+        
+        # Verify task belongs to current user
+        if task.get("user_id") != current_user.id:
+            raise HTTPException(status_code=403, detail="Access denied to this task")
+        
+        # Return task data as JSON
+        response_data = {
+            "task_id": task_id,
+            "status": task["status"],
+            "progress": task["progress"],
+            "message": task["message"],
+            "updated_at": task["updated_at"]
+        }
+        
+        # Include result and debug info when completed
+        if task["status"] == TaskStatus.COMPLETED:
+            response_data["result"] = task["result"]
+            response_data["debug_info"] = task["debug_info"]
+        elif task["status"] == TaskStatus.FAILED:
+            response_data["error"] = task["error"]
+            response_data["debug_info"] = task["debug_info"]
+        
+        print(f"🔄 [TASK_STATUS] Returning task status for {task_id}: {task['status']} ({task['progress']}%)")
+        return response_data
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Task status error for task {task_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 async def initialize_preset_categories():
