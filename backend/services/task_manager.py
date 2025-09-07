@@ -12,6 +12,13 @@ from fastapi.responses import StreamingResponse
 import uuid
 import logging
 
+# Custom JSON encoder to handle datetime objects
+class CustomJSONEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        return super().default(obj)
+
 class TaskStatus:
     PENDING = "pending"
     IN_PROGRESS = "in_progress"
@@ -99,11 +106,18 @@ class TaskManager:
     
     async def stream_task_progress(self, task_id: str) -> AsyncGenerator[str, None]:
         """Generator for SSE streaming of task progress"""
+        print(f"🌊 [SSE] Starting stream for task {task_id}")
+        
         if task_id not in self._tasks:
-            yield f"data: {json.dumps({'error': 'Task not found'})}\n\n"
+            print(f"🚨 [SSE] Task {task_id} not found in _tasks")
+            yield f"data: {json.dumps({'error': 'Task not found'}, cls=CustomJSONEncoder)}\n\n"
             return
         
         last_update_time = None
+        heartbeat_counter = 0
+        
+        # Send initial connection confirmation
+        yield f": SSE connection established for task {task_id}\n\n"
         
         while True:
             task = self.get_task(task_id)
@@ -128,12 +142,21 @@ class TaskManager:
                     sse_data["error"] = task["error"]
                     sse_data["debug_info"] = task["debug_info"]
                 
-                yield f"data: {json.dumps(sse_data)}\n\n"
+                print(f"🌊 [SSE] Sending data for task {task_id}: status={task['status']}, progress={task['progress']}")
+                yield f"data: {json.dumps(sse_data, cls=CustomJSONEncoder)}\n\n"
                 last_update_time = current_update_time
                 
                 # Break the stream when task is completed or failed
                 if task["status"] in [TaskStatus.COMPLETED, TaskStatus.FAILED]:
+                    print(f"🌊 [SSE] Task {task_id} finished with status: {task['status']}, ending stream")
                     break
+            else:
+                # Send heartbeat every 10 intervals (5 seconds) to keep connection alive
+                heartbeat_counter += 1
+                if heartbeat_counter >= 10:
+                    print(f"🌊 [SSE] Sending heartbeat for task {task_id}")
+                    yield f": heartbeat\n\n"
+                    heartbeat_counter = 0
             
             # Polling interval
             await asyncio.sleep(0.5)  # 500ms intervals for responsive updates

@@ -19,9 +19,103 @@ export interface AutoPickProgressData {
 
 export class AutoPickProgressService {
   private eventSource: EventSource | null = null;
+  private fetchController: AbortController | null = null;
   private onProgressCallback: ((data: AutoPickProgressData) => void) | null = null;
   private onCompleteCallback: ((data: AutoPickProgressData) => void) | null = null;
   private onErrorCallback: ((error: string) => void) | null = null;
+
+  /**
+   * Start monitoring progress for a task using polling (React Native compatible)
+   */
+  private async startPollingBasedMonitoring(
+    taskId: string,
+    token: string,
+    callbacks: {
+      onProgress?: (data: AutoPickProgressData) => void;
+      onComplete?: (data: AutoPickProgressData) => void;
+      onError?: (error: string) => void;
+    }
+  ): Promise<void> {
+    // Create a simple polling endpoint (non-SSE)
+    const url = `${API_CONFIG.BASE_URL}/auto-pick/task-status/${taskId}?token=${encodeURIComponent(token)}`;
+    console.log(`[POLLING] Starting polling-based monitoring for task ${taskId}`);
+    console.log(`[POLLING] URL: ${url}`);
+
+    this.fetchController = new AbortController();
+    let lastUpdateTime: string | null = null;
+    let pollCount = 0;
+    
+    try {
+      while (!this.fetchController.signal.aborted) {
+        pollCount++;
+        // Polling attempt (reduced logging)
+        
+        try {
+          const response = await fetch(url, {
+            method: 'GET',
+            headers: {
+              'Accept': 'application/json',
+              'Cache-Control': 'no-cache',
+            },
+            signal: this.fetchController.signal,
+          });
+
+          // Response received
+
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+          }
+
+          const data: AutoPickProgressData = await response.json();
+          // Data received from server
+
+          // Only trigger callbacks if data has actually changed
+          if (data.updated_at !== lastUpdateTime) {
+            // Progress updated - triggering callbacks
+            lastUpdateTime = data.updated_at;
+            
+            if (callbacks.onProgress) {
+              callbacks.onProgress(data);
+            }
+
+            if (data.status === 'completed' || data.status === 'failed') {
+              if (callbacks.onComplete) {
+                callbacks.onComplete(data);
+              }
+              console.log(`[POLLING] Task completed with status: ${data.status}`);
+              return; // End monitoring
+            }
+          } else {
+            // No change detected - skip logging to reduce noise
+          }
+
+        } catch (fetchError) {
+          if (fetchError.name === 'AbortError') {
+            console.log('[POLLING] Monitoring aborted');
+            return;
+          } else {
+            console.error(`[POLLING] Fetch error on attempt #${pollCount}:`, fetchError);
+            // Continue polling despite individual fetch errors
+          }
+        }
+
+        // Wait 2000ms before next poll (reduced frequency)
+        await new Promise(resolve => {
+          const timeoutId = setTimeout(resolve, 2000);
+          // Allow abortion during wait
+          this.fetchController.signal.addEventListener('abort', () => {
+            clearTimeout(timeoutId);
+            resolve(undefined);
+          });
+        });
+      }
+    } catch (error) {
+      console.error('[POLLING] Polling error:', error);
+      if (callbacks.onError) {
+        callbacks.onError(`Polling error: ${error.message}`);
+      }
+    }
+  }
 
   /**
    * Start monitoring progress for a task
@@ -42,36 +136,89 @@ export class AutoPickProgressService {
     this.onCompleteCallback = callbacks.onComplete || null;
     this.onErrorCallback = callbacks.onError || null;
 
+    // 🚀 Use polling-based monitoring for React Native compatibility
+    console.log(`[SSE] Using polling-based monitoring for React Native compatibility`);
+    this.startPollingBasedMonitoring(taskId, token, callbacks).catch((error) => {
+      console.error('[SSE] Polling-based monitoring failed:', error);
+      if (callbacks.onError) {
+        callbacks.onError(`Monitoring failed: ${error.message}`);
+      }
+    });
+    
+    return; // Skip EventSource implementation for now
+    
     try {
       // Note: EventSource doesn't support custom headers directly
       // We'll need to pass the token as a query parameter for authentication
       const url = `${API_CONFIG.BASE_URL}/auto-pick/status/${taskId}?token=${encodeURIComponent(token)}`;
       
+      // --- ★ 追加ログ 1: 接続先URLの確認 ---
+      console.log(`[SSE DEBUG] Attempting to connect to: ${url}`);
+      console.log(`[SSE DEBUG] API_CONFIG.BASE_URL: ${API_CONFIG.BASE_URL}`);
+      console.log(`[SSE DEBUG] Task ID: ${taskId}`);
+      console.log(`[SSE DEBUG] Token length: ${token ? token.length : 0}`);
+
       this.eventSource = new EventSource(url);
+      
+      console.log(`[SSE DEBUG] EventSource created, readyState: ${this.eventSource.readyState}`);
+      console.log(`[SSE DEBUG] EventSource constants: CONNECTING=${EventSource.CONNECTING}, OPEN=${EventSource.OPEN}, CLOSED=${EventSource.CLOSED}`);
+      
+      // React Native EventSource state monitoring with timeout
+      let connectionTimeout = setTimeout(() => {
+        console.error('[SSE DEBUG] Connection timeout - no onopen event received within 10 seconds');
+        if (this.eventSource && this.eventSource.readyState !== EventSource.OPEN) {
+          console.error('[SSE DEBUG] Forcing connection close due to timeout');
+          this.eventSource.close();
+          if (this.onErrorCallback) {
+            this.onErrorCallback('Connection timeout - please try again');
+          }
+        }
+      }, 10000); // 10 second timeout
 
       this.eventSource.onopen = () => {
+        clearTimeout(connectionTimeout);
         console.log(`📡 [SSE] Connected to AutoPick progress stream for task ${taskId}`);
+        console.log(`[SSE DEBUG] Connection opened, readyState: ${this.eventSource?.readyState}`);
       };
 
       this.eventSource.onmessage = (event) => {
+        // --- ★ 追加ログ 2: 生データの確認 ---
+        console.log(`[SSE DEBUG] Raw data received:`, event.data);
+        console.log(`[SSE DEBUG] Event type:`, event.type);
+        console.log(`[SSE DEBUG] Event lastEventId:`, event.lastEventId);
+
         try {
+          // バックエンドからのkeep-aliveメッセージなどを考慮
+          if (!event.data || event.data.startsWith(':')) {
+            console.log('[SSE DEBUG] Keep-alive or empty message received. Skipping parse.');
+            return;
+          }
+
           const data: AutoPickProgressData = JSON.parse(event.data);
           console.log(`📊 [SSE] Progress update:`, data);
 
           if (this.onProgressCallback) {
+            console.log(`[SSE DEBUG] Calling onProgressCallback with data:`, data);
             this.onProgressCallback(data);
+          } else {
+            console.log(`[SSE DEBUG] No onProgressCallback set!`);
           }
 
           // Check if task is completed or failed
           if (data.status === 'completed' || data.status === 'failed') {
+            console.log(`[SSE DEBUG] Task finished with status: ${data.status}`);
             if (this.onCompleteCallback) {
+              console.log(`[SSE DEBUG] Calling onCompleteCallback with data:`, data);
               this.onCompleteCallback(data);
+            } else {
+              console.log(`[SSE DEBUG] No onCompleteCallback set!`);
             }
             // Auto-close connection on completion
             this.stopMonitoring();
           }
         } catch (error) {
           console.error('📊 [SSE] Error parsing progress data:', error);
+          console.error('[SSE DEBUG] Raw data that failed to parse:', event.data);
           if (this.onErrorCallback) {
             this.onErrorCallback('Failed to parse progress data');
           }
@@ -79,7 +226,10 @@ export class AutoPickProgressService {
       };
 
       this.eventSource.onerror = (error) => {
-        console.error('📊 [SSE] EventSource error:', error);
+        // --- ★ 修正ログ 3: 詳細なエラー情報の確認 ---
+        console.error('📊 [SSE] EventSource error. Full error object:', JSON.stringify(error, null, 2));
+        console.error('[SSE DEBUG] EventSource readyState:', this.eventSource?.readyState);
+        console.error('[SSE DEBUG] Error details:', error);
         if (this.onErrorCallback) {
           this.onErrorCallback('Connection error occurred');
         }
@@ -88,6 +238,7 @@ export class AutoPickProgressService {
 
     } catch (error) {
       console.error('📊 [SSE] Failed to create EventSource:', error);
+      console.error('[SSE DEBUG] Exception during EventSource creation:', error);
       if (this.onErrorCallback) {
         this.onErrorCallback('Failed to start monitoring');
       }
@@ -102,6 +253,12 @@ export class AutoPickProgressService {
       console.log('📡 [SSE] Closing AutoPick progress stream');
       this.eventSource.close();
       this.eventSource = null;
+    }
+    
+    if (this.fetchController) {
+      console.log('📡 [SSE FETCH] Aborting fetch-based monitoring');
+      this.fetchController.abort();
+      this.fetchController = null;
     }
     
     this.onProgressCallback = null;

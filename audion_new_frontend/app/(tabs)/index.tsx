@@ -32,6 +32,7 @@ import FloatingAutoPickButton from '../../components/FloatingAutoPickButton';
 import ArticleDetailModal from '../../components/ArticleDetailModal';
 import { Article } from '../../services/ArticleService';
 import { API_CONFIG } from '../../config/api';
+import { useGlobalAudio } from '../../context/GlobalAudioContext';
 
 const { width: screenWidth } = Dimensions.get('window');
 
@@ -50,6 +51,7 @@ export default function HomeScreen() {
   const { user, token } = useAuth();
   const { settings } = useSettings();
   const { startTask, updateTask, completeTask, failTask, clearTask } = useAutoPick();
+  const { playSound } = useGlobalAudio();
   const router = useRouter();
   
   // デバッグ: 設定状態をログ出力（初期化時のみ）
@@ -139,6 +141,8 @@ export default function HomeScreen() {
           preferred_genres: genre !== 'all' ? [genre] : undefined,
           source_priority: "balanced",
           time_based_filtering: true,
+          language: "ja", // 日本語音声を明示的に指定
+          voice_language: "ja",
         }),
       });
 
@@ -235,14 +239,15 @@ export default function HomeScreen() {
         return;
       }
 
-      // ライブラリ画面に遷移して再生
-      router.push('/(tabs)/two');
-      
-      // 少し遅延してから再生を試行（画面遷移後）
-      setTimeout(() => {
-        console.log('🎵 [PLAY] Ready to play on library screen');
-        // TODO: 実際の再生機能はUnifiedAudioPlayerまたは統合音声システムで実装
-      }, 500);
+      // グローバル音声管理システムを使用
+      await playSound({
+        id: audioId,
+        uri: audioUrl,
+        title: 'AUTOPICK生成音声'
+      });
+
+      // 成功メッセージ
+      Alert.alert('再生開始', '音声の再生を開始しました');
       
     } catch (error) {
       console.error('🎵 [PLAY] Play error:', error);

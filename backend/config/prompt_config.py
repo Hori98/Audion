@@ -633,13 +633,13 @@ Please output in the following XML format.
         if prompt_style not in language_templates:
             # Map old style names to new ones
             style_mapping = {
-                "standard": "解説",
-                "recommended": "解説", 
-                "friendly": "物語",
-                "insightful": "解説",
-                "strict": "分析"
+                "standard": "学習",
+                "recommended": "学習", 
+                "friendly": "エンタメ",
+                "insightful": "学習",
+                "strict": "レポート"
             }
-            prompt_style = style_mapping.get(prompt_style, "解説" if voice_language == "ja-JP" else "deep")  # Default fallback
+            prompt_style = style_mapping.get(prompt_style, "学習" if voice_language == "ja-JP" else "deep")  # Default fallback
         
         # Get base template
         template = language_templates[prompt_style]["default"]
