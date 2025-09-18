@@ -16,19 +16,18 @@ fi
 
 echo "🌐 Detected Local IP: $CURRENT_IP"
 
-# フロントエンドの.env.developmentファイルを更新
-FRONTEND_ENV="audion_new_frontend/.env.development"
+# フロントエンドの.env.developmentファイルを更新（audion-app に統一）
+FRONTEND_ENV="audion-app/.env.development"
 if [ -f "$FRONTEND_ENV" ]; then
     echo "📝 Updating frontend environment configuration..."
     
     # 現在の設定をバックアップ
     cp "$FRONTEND_ENV" "$FRONTEND_ENV.backup.$(date +%Y%m%d_%H%M%S)"
     
-    # IP アドレスを更新（ngrok URLは保持）
-    sed -i.tmp "s|# Backup local URL: http://.*:8003/api|# Backup local URL: http://$CURRENT_IP:8003/api|g" "$FRONTEND_ENV"
-    rm "$FRONTEND_ENV.tmp"
-    
-    echo "   ✅ Updated API backup URL to: http://$CURRENT_IP:8003/api"
+    # API ベースURLを更新（末尾に /api は付けない）
+    sed -i.tmp "s|^EXPO_PUBLIC_API_BASE_URL=.*|EXPO_PUBLIC_API_BASE_URL=http://$CURRENT_IP:8003|" "$FRONTEND_ENV" || true
+    rm -f "$FRONTEND_ENV.tmp"
+    echo "   ✅ Updated EXPO_PUBLIC_API_BASE_URL to: http://$CURRENT_IP:8003"
 else
     echo "❌ Frontend environment file not found: $FRONTEND_ENV"
     exit 1

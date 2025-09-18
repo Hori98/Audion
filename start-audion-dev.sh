@@ -7,9 +7,10 @@ CURRENT_IP=$(ifconfig | grep "inet " | grep -v "127.0.0.1" | awk '{print $2}' | 
 echo "   Detected IP: $CURRENT_IP"
 
 # .env.developmentのIPアドレス自動更新
-if [ -f "audion_new_frontend/.env.development" ]; then
-    sed -i '' "s/EXPO_PUBLIC_API_BASE_URL=http:\/\/[0-9.]*:8003\/api/EXPO_PUBLIC_API_BASE_URL=http:\/\/$CURRENT_IP:8003\/api/" audion_new_frontend/.env.development
-    echo "   Updated .env.development with IP: $CURRENT_IP ✅"
+if [ -f "audion-app/.env.development" ]; then
+    # Normalize to base URL without trailing /api (frontend adds /api in endpoints)
+    sed -i '' "s#^EXPO_PUBLIC_API_BASE_URL=.*#EXPO_PUBLIC_API_BASE_URL=http://$CURRENT_IP:8003#" audion-app/.env.development
+    echo "   Updated audion-app/.env.development with IP: $CURRENT_IP ✅"
 fi
 
 # MongoDB確認・起動
@@ -35,7 +36,7 @@ sleep 5
 
 # フロントエンド起動
 echo "-> Starting Frontend (Expo)..."
-cd audion_new_frontend
+cd audion-app
 npx expo start --clear &
 FRONTEND_PID=$!
 cd ..

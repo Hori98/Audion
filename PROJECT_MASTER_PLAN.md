@@ -19,38 +19,36 @@ RSS記事やWebコンテンツを高品質な音声コンテンツに変換し�
 
 ## 🏗️ Current Architecture Status (January 2025)
 
-### **Frontend Structure - Dual System Configuration**
-プロジェクトには現在2つのフロントエンド構造が存在：
+### **Frontend Structure**
+現在のアクティブなフロントエンドは `audion-app/` に統一されています（過去の `audion_new_frontend/` 記述は同フォルダへ集約済み）。
 
-#### **1. Main Frontend: `audion-app/`** 
-- **Technology**: React Native 0.79.5, Expo 53.0.20
-- **Features**: 包括的機能セット（認証、プッシュ通知、スケジューリング、デバッグシステム）
-- **Components**: 70+ components, 複雑な状態管理システム
-- **Status**: ⚠️ 25+ TODO items, 高度だが未完成機能が多数存在
+#### **Active Frontend: `audion-app/`** 
+- **Technology**: React Native 0.79.5, Expo 53.x
+- **Features**: 認証、RSS、Unified Audio（AutoPick/Manual）、ライブラリ再生
+- **Status**: 一部高度機能にTODOあり（優先度順に解消中）
 
-#### **2. Modified Frontend: `audion_new_frontend/`** 
-- **Technology**: React Native 0.79.6, Expo ~53.0.22  
-- **Features**: シンプル構造、フォーカスした実装
-- **Components**: 40+ components, 統合されたAutoPickプログレス監視
-- **Status**: ✅ 最新の開発作業が実装済み、動作確認済み
-
-### **Backend Architecture - Stable & Operational**
+### **Backend Architecture - Unified & Operational**
 
 #### **Current Backend: `backend/server.py`**
 - **Technology**: FastAPI + MongoDB + Motor async driver
 - **Status**: ✅ Full operational (192.168.11.30:8003)
-- **API Endpoints**: 70+ endpoints, 5,653 lines (リファクタリング対象)
-- **Features**: 
+- **API Endpoints**: 70+ endpoints, 5,653 lines
+- **Recent Integration**: ✅ **Unified TTS Service** (2025/01/30)
+  - **新規サービス**: `backend/services/tts_service.py` - 統合された音声生成サービス
+  - **XML処理強化**: `backend/utils/text_utils.py` - サーバーサイドXML→自然言語テキスト変換
+  - **レガシー互換性**: `backend/services/ai_service.py` の段階的アップデート完了
+- **Core Features**: 
   - ✅ JWT認証システム
   - ✅ RSS記事取得・管理 (6ソース、65記事確認済み)
-  - ✅ AI音声生成 (OpenAI GPT + OpenAI TTS)
+  - ✅ **統合音声生成パイプライン** (OpenAI GPT + OpenAI TTS + XML処理)
   - ✅ AutoPick進捗監視システム (SSE実装)
   - ✅ プレイリスト・ライブラリ機能
 
-#### **New Backend: `audion_new_backend/`** (Future Architecture)
-- **Technology**: FastAPI + PostgreSQL + Clean Architecture
-- **Status**: 🚧 設計完了、段階的移行予定
-- **Structure**: Modular router system (auth.py, articles.py, audio.py)
+#### **Architecture Improvements Completed (January 2025)**
+- **🎯 Audio Service Unification**: 重複していたAutoPickとManual Pick音声生成ロジックを`UnifiedAudioService`に統合
+- **📝 XML Text Processing**: フロントエンドとバックエンド間でXMLタグ処理の完全な一貫性を実現
+- **⚡ Performance Optimization**: sys.path操作を排除し、クリーンな依存関係注入に移行
+- **🔧 Backward Compatibility**: 既存APIエンドポイントとの完全な互換性を維持
 
 ### **Database & Storage**
 - **Database**: MongoDB (現在) → PostgreSQL (将来)
@@ -74,10 +72,13 @@ RSS記事やWebコンテンツを高品質な音声コンテンツに変換し�
 - **Genre/Source filtering** with server-side optimization
 - **Real-time article updates** with caching strategy
 
-#### **3. Audio Generation & Playback**
-- **OpenAI TTS integration** with tts-1 model (corrected from previous Google TTS reference)
-- **Multiple generation modes**: AutoPick, Manual Selection, Instant Multi
-- **Background audio processing** with progress tracking
+#### **3. Unified Audio Generation & Playback System** ✅ **統合完了 (2025/01/30)**
+- **統合TTS Service**: `backend/services/tts_service.py` - OpenAI TTS API統合
+- **XML処理パイプライン**: 構造化XMLスクリプト→自然言語テキスト自動変換
+- **Multiple generation modes**: AutoPick, Manual Selection, Instant Multi (全てが統一サービスを使用)
+- **Background processing**: 進捗監視付きバックグラウンド音声処理
+- **Storage Strategy**: AWS S3 + ローカルフォールバック対応
+- **Audio Metadata**: 音声長自動取得（MP3解析）
 
 #### **4. User Experience Enhancements**
 - **Advanced search system** with fuzzy matching algorithm
@@ -115,19 +116,24 @@ RSS記事やWebコンテンツを高品質な音声コンテンツに変換し�
    - Debug menus and developer tools
    ```
 
-#### **Priority 2: Backend Architecture Cleanup**
-**Goal**: server.pyの5,653行をクリーンなモジュール構造に分離
+#### **Priority 2: Backend Architecture Modernization**
+**Goal**: server.pyの段階的リファクタリングと安定性向上
 
-1. **Modular Router Implementation**
-   - `/api/auth/*` - Authentication endpoints
-   - `/api/articles/*` - RSS and article management
-   - `/api/audio/*` - Audio generation and playback
-   - `/api/user/*` - User profile and preferences
+1. **✅ Audio Service Integration (Completed)**
+   - ✅ **Unified TTS Service**: 音声生成ロジックの完全統合
+   - ✅ **Clean Dependencies**: sys.path操作排除、安全な依存関係注入
+   - ✅ **XML Processing**: バックエンド・フロントエンド間の一貫したテキスト処理
 
-2. **Database Migration Planning**
-   - MongoDB → PostgreSQL migration strategy
-   - Data preservation and migration scripts
-   - Performance optimization
+2. **📋 Next Phase: Modular Router Implementation**
+   - `/api/auth/*` - Authentication endpoints（既存機能の分離）
+   - `/api/articles/*` - RSS and article management（既存機能の分離）
+   - `/api/audio/*` - Audio generation and playback（統合サービス利用）
+   - `/api/user/*` - User profile and preferences（既存機能の分離）
+
+3. **📋 Future: Database Evolution Planning**
+   - Current MongoDB optimization and indexing
+   - Performance monitoring and bottleneck analysis
+   - PostgreSQL migration feasibility study（非優先）
 
 #### **Priority 3: Production Readiness**
 1. **Testing & Quality Assurance**
@@ -141,6 +147,12 @@ RSS記事やWebコンテンツを高品質な音声コンテンツに変換し�
    - CI/CD pipeline setup
 
 ### **🌟 Full Launch Version (Phase 2: Next 6-12 months)**
+
+#### **✅ Recent Technical Achievements (January 2025)**
+- **Audio Architecture Unification**: 全音声生成機能の統合とリファクタリング完了
+- **XML→TTS Processing**: 構造化コンテンツの自然な音声変換パイプライン構築
+- **Code Quality Improvement**: 危険なsys.path操作の排除、クリーンアーキテクチャ実現
+- **Development Efficiency**: 重複実装の排除により保守性が大幅向上
 
 #### **Advanced Features (Post-Beta)**
 1. **Social & Community Features** ⭐ **必須機能**

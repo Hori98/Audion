@@ -11,7 +11,12 @@ class User(BaseModel):
     """User model for authenticated users."""
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     email: str
+    username: Optional[str] = None
+    display_name: Optional[str] = None
+    profile_image: Optional[str] = None
+    subscription_tier: str = "free"
     created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
 
 class UserCreate(BaseModel):
     """Model for user registration requests."""
@@ -57,3 +62,10 @@ class ProfileImageUpload(BaseModel):
     user_id: str
     image_data: str  # base64 encoded image data
     filename: str
+
+class UserProfileUpdate(BaseModel):
+    """Model for user profile update requests."""
+    username: Optional[str] = None
+    email: Optional[str] = None
+    display_name: Optional[str] = None
+    profile_image: Optional[str] = None

@@ -1,109 +1,149 @@
+import FontAwesome from '@expo/vector-icons/FontAwesome';
+import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
+import { useFonts } from 'expo-font';
+import { Stack } from 'expo-router';
+import * as SplashScreen from 'expo-splash-screen';
+import { useEffect, useRef } from 'react';
+import * as Notifications from 'expo-notifications';
+import { router } from 'expo-router';
+import 'react-native-reanimated';
 
-import React, { useEffect } from 'react';
-import { AuthProvider, useAuth } from '../context/AuthContext';
-import { UnifiedAudioProvider } from '../context/UnifiedAudioContext';
-import { ThemeProvider } from '../context/ThemeContext';
-import { LanguageProvider } from '../context/LanguageContext';
-import { Slot, useRouter, useSegments } from 'expo-router';
-import { ActivityIndicator, View, Alert } from 'react-native';
-import AudioPlayerManager from '../components/audio/core/AudioPlayerManager';
-import NotificationService from '../services/NotificationService';
-import { useSiriShortcuts } from '../hooks/useSiriShortcuts';
-import { useAppIconShortcuts } from '../hooks/useAppIconShortcuts';
-import '../i18n'; // Initialize i18n
+import { useColorScheme } from '@/components/useColorScheme';
+import { AuthProvider } from '../context/AuthContext';
+import { SettingsProvider } from '../context/SettingsContext';
+import { AudioMetadataProvider } from '../context/AudioMetadataProvider';
+import { AutoPickProvider } from '../context/AutoPickContext';
+import { GlobalAudioProvider } from '../context/GlobalAudioContext';
+import ProgressBarLayout from '../components/ProgressBarLayout';
 
-const InitialLayout = () => {
-  const { user, loading, isNewUser } = useAuth();
-  const segments = useSegments();
-  const router = useRouter();
-  
-  // Initialize Siri shortcuts and app icon shortcuts
-  useSiriShortcuts();
-  useAppIconShortcuts();
+export {
+  // Catch any errors thrown by the Layout component.
+  ErrorBoundary,
+} from 'expo-router';
 
-  // Initialize services on app startup
+export const unstable_settings = {
+  // Ensure that reloading on `/modal` keeps a back button present.
+  initialRouteName: '(tabs)',
+};
+
+// Prevent the splash screen from auto-hiding before asset loading is complete.
+SplashScreen.preventAutoHideAsync();
+
+export default function RootLayout() {
+  const [loaded, error] = useFonts({
+    SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
+    // ...FontAwesome.font, // コメントアウト - 引数エラー回避
+  });
+
+  // Expo Router uses Error Boundaries to catch errors in the navigation tree.
   useEffect(() => {
-    const initServices = async () => {
-      try {
-        // Initialize Debug Service first (loads settings)
-        const { default: DebugService } = await import('../services/DebugService');
-        await DebugService.loadDebugSettings();
-        console.log('✅ App: DebugService initialized');
-        
-        // Initialize NotificationService
-        await NotificationService.getInstance().initialize();
-        console.log('✅ App: NotificationService initialized');
-      } catch (error) {
-        console.error('❌ App: Failed to initialize services:', error);
-      }
-    };
-    
-    initServices();
-  }, []);
+    if (error) throw error;
+  }, [error]);
 
   useEffect(() => {
-    if (loading) return;
+    if (loaded) {
+      SplashScreen.hideAsync();
+    }
+  }, [loaded]);
 
-    const checkAuthAndRoute = async () => {
-      const inTabsGroup = segments[0] === '(tabs)';
-      const inOnboard = segments[0] === 'onboard';
-      
-      // Check if debug mode allows auth bypass
-      try {
-        const { default: DebugService } = await import('../services/DebugService');
-        const shouldBypassAuth = DebugService.isDebugModeEnabled() && DebugService.getCurrentSettings().skipOnboardingRequirements;
-        
-        if (shouldBypassAuth && !inTabsGroup) {
-          console.log('🔓 Debug Mode: Bypassing authentication, going to main app');
-          router.replace('/(tabs)/');
-          return;
-        }
-      } catch (error) {
-        console.warn('Failed to check debug mode for auth bypass:', error);
-      }
-
-      // Normal auth flow
-      if (user && isNewUser && !inOnboard) {
-        // New user should go to onboarding
-        router.replace('/onboard');
-      } else if (user && !isNewUser && !inTabsGroup && segments[0] !== 'settings' && segments[0] !== 'sources' && segments[0] !== 'account-settings' && segments[0] !== 'audio-quality-settings' && segments[0] !== 'notification-settings' && segments[0] !== 'terms-of-service' && segments[0] !== 'privacy-policy' && segments[0] !== 'audio-player' && segments[0] !== 'auto-pick-settings' && segments[0] !== 'genre-preferences' && segments[0] !== 'download-settings' && segments[0] !== 'storage-usage' && segments[0] !== 'data-collection-settings' && segments[0] !== 'feed-autopick-settings' && segments[0] !== 'playback-controls' && segments[0] !== 'text-font-settings' && segments[0] !== 'export-backup' && segments[0] !== 'content-filters' && segments[0] !== 'schedule-content-settings' && segments[0] !== 'prompt-settings') {
-        // Existing user should go to main app (Home tab is default)
-        router.replace('/(tabs)/');
-      } else if (!user && (inTabsGroup || inOnboard)) {
-        // Not logged in should go to login
-        router.replace('/');
-      }
-    };
-
-    checkAuthAndRoute();
-  }, [user, loading, isNewUser, segments, router]);
-
-  if (loading) {
-    return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" />
-      </View>
-    );
+  if (!loaded) {
+    return null;
   }
 
   return (
-    <View style={{ flex: 1 }}>
-      <Slot />
-      <AudioPlayerManager />
-    </View>
+    <AuthProvider>
+      <SettingsProvider>
+        <AudioMetadataProvider>
+          <AutoPickProvider>
+            <GlobalAudioProvider>
+              <RootLayoutNav />
+            </GlobalAudioProvider>
+          </AutoPickProvider>
+        </AudioMetadataProvider>
+      </SettingsProvider>
+    </AuthProvider>
   );
-};
+}
 
-export default function RootLayout() {
+function RootLayoutNav() {
+  const colorScheme = useColorScheme();
+  const notificationListener = useRef<Notifications.Subscription | undefined>(undefined);
+  const responseListener = useRef<Notifications.Subscription | undefined>(undefined);
+
+  // 通知ハンドリングのセットアップ
+  useEffect(() => {
+    // アプリがフォアグラウンドのときに通知を受信した際のリスナー
+    notificationListener.current = Notifications.addNotificationReceivedListener(notification => {
+      console.log('[Notifications] Received:', notification);
+      // フォアグラウンドでの通知処理をここに実装
+    });
+
+    // ユーザーが通知をタップした際のリスナー
+    responseListener.current = Notifications.addNotificationResponseReceivedListener(response => {
+      console.log('[Notifications] Response:', response);
+      const data = response.notification.request.content.data;
+
+      // dataオブジェクトを使ってディープリンク（画面遷移）を実装
+      handleNotificationNavigation(data);
+    });
+
+    return () => {
+      if (notificationListener.current) {
+        notificationListener.current.remove();
+      }
+      if (responseListener.current) {
+        responseListener.current.remove();
+      }
+    };
+  }, []);
+
+  /**
+   * 通知タップ時のナビゲーション処理
+   */
+  const handleNotificationNavigation = (data: any) => {
+    if (!data) return;
+
+    try {
+      switch (data.screen) {
+        case 'ArticleDetail':
+          if (data.articleId) {
+            router.push(`/article/${data.articleId}` as any);
+          }
+          break;
+        case 'AudioPlayer':
+          if (data.audioId) {
+            router.push(`/audio/${data.audioId}` as any);
+          }
+          break;
+        case 'Feed':
+          router.push('/(tabs)/' as any);
+          break;
+        case 'Library':
+          router.push('/(tabs)/two');
+          break;
+        case 'Settings':
+          router.push('/settings/' as any);
+          break;
+        default:
+          console.log('[Notifications] Unknown screen:', data.screen);
+      }
+    } catch (error) {
+      console.error('[Notifications] Navigation error:', error);
+    }
+  };
+
   return (
-    <LanguageProvider>
-      <ThemeProvider>
-        <AuthProvider>
-          <UnifiedAudioProvider>
-            <InitialLayout />
-          </UnifiedAudioProvider>
-        </AuthProvider>
-      </ThemeProvider>
-    </LanguageProvider>
+    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+      <ProgressBarLayout>
+        <Stack>
+          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+          <Stack.Screen name="auth/login" options={{ headerShown: false }} />
+          <Stack.Screen name="auth/register" options={{ headerShown: false }} />
+          <Stack.Screen name="settings/index" options={{ headerShown: false }} />
+          <Stack.Screen name="settings/rss-sources" options={{ headerShown: false }} />
+          <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
+        </Stack>
+      </ProgressBarLayout>
+    </ThemeProvider>
   );
 }

@@ -109,8 +109,16 @@ async def update_rss_source(user_id: str, source_id: str, is_active: bool) -> bo
         
         db = get_database()
         
+        from bson import ObjectId
+        # Cast source_id to ObjectId for proper matching
+        try:
+            source_obj_id = ObjectId(source_id)
+        except Exception:
+            # If invalid ObjectId string, attempt direct string match as fallback
+            source_obj_id = source_id
+
         result = await db.rss_sources.update_one(
-            {"_id": source_id, "user_id": user_id},
+            {"_id": source_obj_id, "user_id": user_id},
             {"$set": {"is_active": is_active}}
         )
         
@@ -137,7 +145,13 @@ async def delete_rss_source(user_id: str, source_id: str) -> bool:
         
         db = get_database()
         
-        result = await db.rss_sources.delete_one({"_id": source_id, "user_id": user_id})
+        from bson import ObjectId
+        try:
+            source_obj_id = ObjectId(source_id)
+        except Exception:
+            source_obj_id = source_id
+
+        result = await db.rss_sources.delete_one({"_id": source_obj_id, "user_id": user_id})
         return result.deleted_count > 0
         
     except Exception as e:
