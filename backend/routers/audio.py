@@ -5,9 +5,13 @@ Audio router for managing audio creation, playback, and library operations.
 import logging
 from typing import List, Dict, Any, Optional
 from fastapi import APIRouter, HTTPException, status, Depends, Query
+from pydantic import BaseModel
 
 from models.user import User
 from models.audio import AudioCreation, AudioCreationRequest, RenameRequest
+from models.audio import DownloadedAudio  # for type reuse if needed
+from models.audio import Playlist, Album  # not used here but kept for clarity
+from models.rss import PresetCategory  # for consistency across modules
 from models.common import StandardResponse
 from services.auth_service import get_current_user
 from services.audio_service import (
@@ -15,10 +19,46 @@ from services.audio_service import (
     rename_audio, soft_delete_audio, restore_audio, permanently_delete_audio,
     get_deleted_audio, clear_all_deleted_audio, get_audio_statistics
 )
+from services.tts_service import tts_service
+from config.database import get_database
+from bson import ObjectId
 from services.user_service import record_audio_interaction
 from utils.errors import handle_database_error, handle_generic_error, handle_not_found_error
 
 router = APIRouter(prefix="/api", tags=["Audio"])
+
+class AudioStatusResponse(BaseModel):
+    audio_id: str
+    status: str  # 'processing' | 'completed' | 'failed'
+    progress_percent: int = 100
+    message: str = ""
+
+class DirectTTSRequest(BaseModel):
+    article_id: str
+    title: str
+    content: str
+    voice_language: Optional[str] = None
+    voice_name: Optional[str] = "alloy"
+
+class DirectTTSResponse(BaseModel):
+    id: str
+    title: str
+    audio_url: str
+    duration: int
+    article_id: str
+    created_at: datetime
+
+class SimpleGenerateRequest(BaseModel):
+    article_id: str
+    title: Optional[str] = None
+    language: Optional[str] = None
+    voice_type: Optional[str] = None
+    
+class SimpleGenerationResponse(BaseModel):
+    id: str
+    status: str
+    message: str
+    estimated_duration: int
 
 @router.post("/audio/create", response_model=AudioCreation)
 async def create_audio(request: AudioCreationRequest, current_user: User = Depends(get_current_user)):
@@ -112,6 +152,164 @@ async def get_audio_by_id_endpoint(audio_id: str, current_user: User = Depends(g
     except Exception as e:
         logging.error(f"Error getting audio by ID: {e}")
         raise handle_database_error(e, "get audio")
+
+@router.get("/audio/status/{audio_id}", response_model=AudioStatusResponse)
+async def get_audio_status_endpoint(audio_id: str, current_user: User = Depends(get_current_user)):
+    """Lightweight status endpoint to support client polling."""
+    try:
+        audio = await get_audio_by_id(current_user.id, audio_id)
+        if audio:
+            return AudioStatusResponse(
+                audio_id=audio_id,
+                status='completed',
+                progress_percent=100,
+                message='Audio is ready'
+            )
+        # If not found, treat as processing for backward compatibility
+        return AudioStatusResponse(
+            audio_id=audio_id,
+            status='processing',
+            progress_percent=50,
+            message='Audio generation in progress'
+        )
+    except Exception as e:
+        logging.error(f"Error getting audio status: {e}")
+        # On error, surface as failed to client
+        return AudioStatusResponse(
+            audio_id=audio_id,
+            status='failed',
+            progress_percent=0,
+            message='Failed to retrieve status'
+        )
+
+@router.post("/audio/direct-tts", response_model=DirectTTSResponse)
+async def create_direct_tts_endpoint(request: DirectTTSRequest, current_user: User = Depends(get_current_user)):
+    """Create audio directly from provided content via TTS (no summarization)."""
+    try:
+        full_text = f"{request.title}. {request.content}"
+        tts = await tts_service.convert_text_to_speech(
+            text=full_text,
+            voice_name=request.voice_name or "alloy",
+            voice_language=request.voice_language
+        )
+        audio_url = tts.get("url")
+        duration = int(tts.get("duration", 0))
+        rec_id = str(uuid.uuid4())
+        db = get_database()
+        await db.direct_tts.insert_one({
+            "id": rec_id,
+            "user_id": current_user.id,
+            "title": request.title,
+            "audio_url": audio_url,
+            "duration": duration,
+            "article_id": request.article_id,
+            "created_at": datetime.utcnow(),
+            "type": "direct_tts"
+        })
+        return DirectTTSResponse(
+            id=rec_id,
+            title=request.title,
+            audio_url=audio_url,
+            duration=duration,
+            article_id=request.article_id,
+            created_at=datetime.utcnow()
+        )
+    except Exception as e:
+        logging.error(f"Error creating direct TTS: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to create direct TTS: {str(e)}")
+
+@router.post("/audio/generate", response_model=SimpleGenerationResponse)
+async def generate_audio_simple(request: SimpleGenerateRequest, current_user: User = Depends(get_current_user)):
+    """Generate audio from a single article ID (compat endpoint)."""
+    try:
+        if not request.article_id:
+            raise HTTPException(status_code=422, detail="article_id is required")
+        title = request.title or "Untitled"
+        # Use unified path: one-article creation via service
+        audio = await create_audio_from_articles(
+            user_id=current_user.id,
+            article_ids=[request.article_id],
+            article_titles=[title],
+            custom_title=title,
+            article_urls=None
+        )
+        return SimpleGenerationResponse(
+            id=audio.id,
+            status="completed" if audio.audio_url else "processing",
+            message=f"Audio generation completed for: {title}",
+            estimated_duration=audio.duration or 30
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"[AUDIO GENERATE ERROR] {e}")
+        return SimpleGenerationResponse(
+            id=str(uuid.uuid4()),
+            status="failed",
+            message=f"Audio generation failed: {str(e)}",
+            estimated_duration=0
+        )
+
+@router.post("/audio/{audio_id}/play")
+async def record_audio_play(audio_id: str, current_user: User = Depends(get_current_user)):
+    """Record a play event (analytics)."""
+    try:
+        db = get_database()
+        try:
+            oid = ObjectId(audio_id)
+        except Exception:
+            oid = audio_id
+        result = await db.audio_creations.update_one(
+            {"_id": oid, "user_id": current_user.id},
+            {"$inc": {"play_count": 1}, "$set": {"last_played_at": datetime.utcnow()}}
+        )
+        return {"message": "Play recorded", "play_count": 1 if result.modified_count else 0}
+    except Exception as e:
+        logging.error(f"Error recording play: {e}")
+        raise HTTPException(status_code=500, detail="Failed to record play")
+
+# Feedback (misreading) under audio domain for consolidation
+from pydantic import BaseModel
+
+class MisreadingFeedbackRequest(BaseModel):
+    audio_id: str
+    timestamp: int
+    reported_text: str | None = None
+
+@router.post("/feedback/misreading")
+async def report_misreading(request: MisreadingFeedbackRequest, current_user: User = Depends(get_current_user)):
+    db = get_database()
+    # Verify audio exists
+    audio = await db.audio_creations.find_one({"id": request.audio_id, "user_id": current_user.id})
+    if not audio:
+        raise HTTPException(status_code=404, detail="Audio not found")
+    feedback = {
+        "user_id": current_user.id,
+        "audio_id": request.audio_id,
+        "timestamp": request.timestamp,
+        "reported_text": request.reported_text,
+        "created_at": datetime.utcnow(),
+    }
+    await db.misreading_feedback.insert_one(feedback)
+    return {"message": "Feedback recorded successfully"}
+
+@router.post("/audio/instant-multi", response_model=AudioCreation)
+async def create_instant_multi_audio_endpoint(request: AudioCreationRequest, current_user: User = Depends(get_current_user)):
+    """Compatibility endpoint: create audio from multiple articles quickly.
+    For now, uses the standard creation service to keep behavior consistent.
+    """
+    try:
+        audio = await create_audio_from_articles(
+            user_id=current_user.id,
+            article_ids=request.article_ids,
+            article_titles=request.article_titles,
+            custom_title=request.custom_title,
+            article_urls=request.article_urls,
+        )
+        return audio
+    except Exception as e:
+        logging.error(f"Error in instant-multi: {e}")
+        raise HTTPException(status_code=500, detail="Failed to create instant audio")
 
 @router.put("/audio/{audio_id}/rename")
 async def rename_audio_endpoint(

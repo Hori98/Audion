@@ -9,23 +9,9 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from models.user import User
 from models.subscription import SubscriptionInfo
 from services.subscription_service import get_user_subscription_info
+from services.auth_service import get_current_user
 from utils.errors import handle_database_error, handle_generic_error
 security = HTTPBearer()
-
-async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    """
-    Simplified authentication - just return user object with token as ID.
-    The actual database connection handling is done in the service layer.
-    """
-    token = credentials.credentials
-    
-    # Simple validation - create User object with token as ID
-    # Real validation happens in the service layer
-    return User(
-        id=token,
-        email=f"{token}@temp.com",  # Placeholder email
-        created_at="2025-01-01T00:00:00"  # Placeholder date
-    )
 
 router = APIRouter(prefix="/api", tags=["Subscription Management"])
 

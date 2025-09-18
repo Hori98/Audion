@@ -15,11 +15,14 @@ With:
 - /api/v2/audio/schedule (future schedule)
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
-from datetime import datetime
+from datetime import datetime, time, timedelta
+from zoneinfo import ZoneInfo
 import logging
+import uuid
 
 from services.unified_audio_service import (
     UnifiedAudioService, 
@@ -28,6 +31,8 @@ from services.unified_audio_service import (
     AudioGenerationResponse,
     create_unified_audio_service
 )
+from services.auth_service import get_current_user
+from models.user import User
 from models.schedule import (
     Schedule,
     ScheduleCreateRequest,
@@ -39,13 +44,6 @@ from models.schedule import (
     DayOfWeek,
     ScheduleStatus
 )
-
-# Import global database and security directly from FastAPI context
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from fastapi import Depends, HTTPException, status
-from pydantic import BaseModel, Field
-import uuid
-from datetime import datetime
 
 # Use the security instance and database from the main application
 security = HTTPBearer()
@@ -70,35 +68,7 @@ async def get_database():
             detail="Database service unavailable"
         )
 
-# User model for unified audio service
-class User(BaseModel):
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    email: str
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-
-async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    """Get current user using authentication credentials"""
-    # Import here to avoid circular import
-    try:
-        from server import db, db_connected
-        
-        if not db_connected:
-            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Database not connected")
-        
-        token = credentials.credentials
-        user = await db.users.find_one({"id": token})
-        
-        if not user:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid authentication credentials")
-        
-        return User(**user)
-        
-    except ImportError:
-        logging.error("Failed to import database for authentication")
-        raise HTTPException(
-            status_code=503,
-            detail="Authentication service unavailable"
-        )
+# Authentication is handled by services.auth_service
 
 router = APIRouter(prefix="/api/v2/audio", tags=["Unified Audio Generation"])
 logger = logging.getLogger(__name__)
@@ -181,6 +151,60 @@ async def get_user_subscription_plan(
         return "free"
 
 # === UNIFIED ENDPOINTS ===
+
+def _weekday_to_int(day: DayOfWeek) -> int:
+    mapping = {
+        DayOfWeek.MONDAY: 0,
+        DayOfWeek.TUESDAY: 1,
+        DayOfWeek.WEDNESDAY: 2,
+        DayOfWeek.THURSDAY: 3,
+        DayOfWeek.FRIDAY: 4,
+        DayOfWeek.SATURDAY: 5,
+        DayOfWeek.SUNDAY: 6,
+    }
+    return mapping[day]
+
+def _safe_zoneinfo(tz_name: str) -> ZoneInfo:
+    try:
+        return ZoneInfo(tz_name)
+    except Exception:
+        return ZoneInfo("UTC")
+
+def _calculate_next_generation_at(
+    generation_time: str,
+    generation_days: list[DayOfWeek],
+    timezone_name: str,
+    now_utc: datetime | None = None,
+) -> datetime | None:
+    """Calculate the next scheduled run datetime in UTC (naive) given time/days/timezone.
+
+    - Picks the closest future datetime strictly after now.
+    - Returns UTC naive datetime for consistency with existing storage.
+    """
+    try:
+        tz = _safe_zoneinfo(timezone_name or "UTC")
+        now_utc = now_utc or datetime.utcnow()
+        now_local = now_utc.replace(tzinfo=ZoneInfo("UTC")).astimezone(tz)
+
+        hour, minute = map(int, generation_time.split(":"))
+        target_tod = time(hour=hour, minute=minute)
+        allowed_weekdays = {_weekday_to_int(d) for d in generation_days}
+        
+        # Search up to 14 days ahead for the next valid slot
+        for offset in range(0, 14):
+            candidate_date = (now_local.date() + timedelta(days=offset))
+            if candidate_date.weekday() not in allowed_weekdays:
+                continue
+            candidate_local = datetime.combine(candidate_date, target_tod, tz)
+            if candidate_local > now_local:
+                # Convert to UTC naive for storage consistency
+                candidate_utc = candidate_local.astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
+                return candidate_utc
+        return None
+    except Exception as e:
+        logger.error(f"Failed to calculate next_generation_at: {e}
+generation_time={generation_time}, days={generation_days}, tz={timezone_name}")
+        return None
 
 @router.post("/autopick", response_model=UnifiedAudioResponse)
 async def generate_autopick_audio(
@@ -360,8 +384,14 @@ async def create_schedule(
             preferences=request.preferences or SchedulePreferences()
         )
         
-        # TODO: Calculate next_generation_at based on time and days
-        
+        # Calculate next_generation_at based on provided time/days/timezone
+        next_at = _calculate_next_generation_at(
+            schedule.generation_time,
+            schedule.generation_days,
+            schedule.timezone
+        )
+        schedule.next_generation_at = next_at
+
         # Save to database
         schedule_dict = schedule.dict()
         await db.schedules.insert_one(schedule_dict)
@@ -457,8 +487,30 @@ async def update_schedule(
         
         update_dict["updated_at"] = datetime.utcnow()
         
-        # TODO: Recalculate next_generation_at if time/days changed
-        
+        # Recalculate next_generation_at if time/days/timezone changed or if explicitly requested via relevant field changes
+        recalc_needed = any(k in update_dict for k in [
+            "generation_time", "generation_days", "timezone", "status"
+        ])
+
+        if recalc_needed:
+            # Build a temporary merged view of the schedule for calculation
+            merged_time = update_dict.get("generation_time", existing_schedule.get("generation_time"))
+            merged_days = update_dict.get("generation_days", existing_schedule.get("generation_days", []))
+            merged_tz = update_dict.get("timezone", existing_schedule.get("timezone", "UTC"))
+
+            # Convert raw strings to DayOfWeek if necessary
+            try:
+                normalized_days = [DayOfWeek(d) if not isinstance(d, DayOfWeek) else d for d in merged_days]
+            except Exception:
+                normalized_days = merged_days  # Fallback
+
+            next_at = _calculate_next_generation_at(
+                merged_time,
+                normalized_days,
+                merged_tz
+            )
+            update_dict["next_generation_at"] = next_at
+
         # Update in database
         await db.schedules.update_one(
             {"id": schedule_id, "user_id": current_user.id},

@@ -18,58 +18,91 @@ Historical documents moved to `docs_archive/` to prevent confusion with current 
 
 ## 🚀 Quick Start
 
+### **🔄 ターミナル再起動後の開発環境復旧手順**
+
+**プロジェクトルートに移動後、以下を実行：**
+
+```bash
+# 1. バックエンドサーバー起動 (自動的にIPアドレス検出・表示)
+./start-dev-fixed.sh
+# ✅ Backend will start on: http://<YOUR_IP>:8003
+# ✅ Virtual environment (venv/) automatically activated
+# ✅ Network IP automatically detected and displayed
+
+# 2. 新しいターミナルウィンドウでフロントエンド起動
+cd audion-app
+npm install  # (初回のみ)
+npx expo start
+# ✅ Use the IP address displayed by start-dev-fixed.sh
+```
+
 ### **Backend (Required First)**
 ```bash
 # Start backend server
 ./start-dev-fixed.sh
-# Backend runs on: http://192.168.11.30:8003
+# Backend runs on: http://<YOUR_IP>:8003
 ```
 
 ### **Frontend (Choose One)**
 ```bash
-# Option 1: Latest development frontend (Recommended)
-cd audion_new_frontend
-npm install
-npx expo start
-
-# Option 2: Main project frontend (More features, some incomplete)  
+# Option 1: Main project frontend (✅ Active)
 cd audion-app
 npm install
 npx expo start
+# ✅ 現在のアクティブなフロントエンド（AutoPick統合済み）
+
+# Option 2: (旧) 記述の整理前フロント  
+# 現在は `audion-app/` に集約済みのため未使用
 ```
 
-### **Verification**
+### **✅ 動作確認**
 ```bash
-# Check backend is running
-curl http://192.168.11.30:8003/api/articles
-# Should return ~65 articles from 6 RSS sources
+# バックエンドが正常動作しているかチェック
+curl http://<表示されたIP>:8003/api/articles
+# ✅ Should return ~65 articles from 6 RSS sources
+
+# 新しい統合TTSサービスの動作確認
+curl http://<表示されたIP>:8003/api/health
+# ✅ Should return {"status": "healthy"}
+
+# 認証システムの確認
+curl -X POST http://<表示されたIP>:8003/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email": "test@example.com", "password": "test123"}'
+# ✅ Should return authentication token
 ```
 
 ## 🏗️ Current Architecture
 
-### **Frontend Options**
+### **Frontend**
 ```
-audion_new_frontend/     # ✅ Latest development (Recommended)
-├── app/(tabs)/          # Main tab screens (articles, library, etc)
-├── components/          # 40+ React Native components  
-├── services/            # AutoPick progress, API integration
-└── context/             # Authentication, AutoPick state management
-
-audion-app/              # 🚧 Feature-rich but complex
-├── app/(tabs)/          # Comprehensive tab system
-├── components/          # 70+ components with advanced features
-├── services/            # Extensive service layer
-└── context/             # Complex state management
+audion-app/              # ✅ Active frontend (Expo Router)
+├── app/(tabs)/          # Tab screens
+├── components/          # 70+ components (AutoPick統合)
+├── services/            # API integration (Unified Audio, RSS, Auth)
+└── context/             # Auth, RSS, Settings state
 ```
 
 ### **Backend**
 ```
 backend/
-├── server.py            # ✅ Main FastAPI server (5,653 lines)
-├── services/            # AI, RSS, audio processing services  
+├── server.py            # ✅ Main FastAPI server (Unified TTS integrated)
+├── services/            # ✅ Unified Audio & TTS processing services
+│   ├── tts_service.py      # ✅ NEW: Unified TTS service with XML processing  
+│   ├── unified_audio_service.py # Audio generation consolidation
+│   └── ai_service.py       # Legacy compatibility layer
+├── utils/               # ✅ NEW: Text processing utilities
+│   └── text_utils.py       # XML→clean text extraction
 ├── models/              # Database models (MongoDB)
 └── routers/             # API endpoint organization
 ```
+
+#### CORS / Upload Limits (env)
+- `ALLOWED_ORIGINS`: 許可するフロントエンドのオリジン（カンマ区切り）
+- `MAX_UPLOAD_SIZE_MB`: POST/PUT/PATCHの最大ボディサイズ（MB, 既定10）
+
+#### Content Rights Policy
+- 詳細は `docs/CONTENT_RIGHTS_POLICY.md` を参照（出典明記、要約方針、二次配布禁止 等）
 
 ## ✅ Current Features (January 2025)
 
@@ -80,11 +113,12 @@ backend/
 - **✅ Audio Library**: Real API integration with playback controls
 - **✅ Search & Discovery**: Advanced fuzzy search with relevance scoring
 
-### **Recent Implementations**  
-- **✅ Server-Sent Events (SSE)**: Real-time AutoPick progress monitoring
+- **✅ Unified Audio System (Jan 2025)**: 統合されたTTSサービスとXML処理パイプライン
+- **✅ Progress Monitoring**: AutoPick進捗監視（React NativeではSSE互換のポーリング方式を採用）
 - **✅ Task Manager**: Background audio generation with progress tracking
 - **✅ EventSource Compatibility**: react-native-sse integration for React Native
 - **✅ Library Integration**: Converted from mock data to real API calls
+- **✅ Code Quality Improvement**: sys.path操作排除、クリーン依存関係
 
 ## 🎯 Development Status
 

@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 from fastapi import HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials
+from bson import ObjectId
 
 from config.settings import JWT_SECRET_KEY, JWT_ALGORITHM
 from config.database import get_database, is_database_connected
@@ -83,23 +84,48 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials) -> User:
     Raises:
         HTTPException: If authentication fails
     """
+    # Check if database is available
     if not is_database_connected():
         raise handle_database_error(Exception("Database not connected"), "authentication")
     
+    db = get_database()
+    
     try:
-        # Verify token
-        payload = verify_jwt_token(credentials.credentials)
-        user_id = payload.get("sub")
+        token = credentials.credentials
+        user_id = None
         
+        logging.info(f"[AUTH] Processing token: {token}")
+        
+        # Try JWT token first
+        try:
+            payload = verify_jwt_token(token)
+            user_id = payload.get("sub")
+            logging.info(f"[AUTH] JWT decoded, user_id: {user_id}")
+        except Exception as e:
+            # If JWT fails, treat token as direct user_id (UUID format)
+            user_id = token
+            logging.info(f"[AUTH] JWT failed ({e}), using token as user_id: {user_id}")
+            
         if not user_id:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid token payload"
             )
         
-        # Get user from database
-        db = get_database()
-        user_data = await db.users.find_one({"_id": user_id})
+        # Use database instance from above
+        
+        # Try as ObjectId first, then as string
+        user_data = None
+        try:
+            user_data = await db.users.find_one({"_id": ObjectId(user_id)})
+            if user_data:
+                logging.info(f"[AUTH] User found by ObjectId: {user_id}")
+        except Exception as e:
+            # If ObjectId fails, search by string ID
+            logging.info(f"[AUTH] ObjectId search failed ({e}), trying string ID")
+            user_data = await db.users.find_one({"_id": user_id})
+            if user_data:
+                logging.info(f"[AUTH] User found by string ID: {user_id}")
         
         if not user_data:
             raise HTTPException(
@@ -132,9 +158,10 @@ async def authenticate_user(email: str, password: str) -> Optional[User]:
     """
     if not is_database_connected():
         return None
+        
+    db = get_database()
     
     try:
-        db = get_database()
         user_data = await db.users.find_one({"email": email})
         
         if not user_data:
@@ -172,10 +199,10 @@ async def create_user(email: str, password: str) -> Optional[User]:
     """
     if not is_database_connected():
         raise handle_database_error(Exception("Database not connected"), "user creation")
+        
+    db = get_database()
     
     try:
-        db = get_database()
-        
         # Check if user already exists
         existing_user = await db.users.find_one({"email": email})
         if existing_user:
@@ -223,12 +250,12 @@ async def delete_user(user_id: str) -> bool:
     """
     if not is_database_connected():
         raise handle_database_error(Exception("Database not connected"), "user deletion")
+        
+    db = get_database()
     
     try:
-        db = get_database()
-        
         # Delete user and all associated data
-        await db.users.delete_one({"_id": user_id})
+        await db.users.delete_one({"_id": ObjectId(user_id)})
         await db.rss_sources.delete_many({"user_id": user_id})
         await db.audio_creations.delete_many({"user_id": user_id})
         await db.user_profiles.delete_many({"user_id": user_id})

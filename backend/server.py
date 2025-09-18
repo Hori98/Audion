@@ -1,9 +1,10 @@
-from fastapi import FastAPI, HTTPException, Depends, status, Request, BackgroundTasks
+from fastapi import FastAPI, HTTPException, Depends, status, Request, BackgroundTasks, UploadFile, File
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse, ORJSONResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
+from starlette.middleware.gzip import GZipMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from contextlib import asynccontextmanager
 import os
@@ -28,7 +29,9 @@ import boto3
 from botocore.exceptions import ClientError
 import random
 import math
+from config.database import get_database, set_database_instance
 import httpx
+import shutil
 from services.prompt_service import prompt_service
 from services.dynamic_prompt_service import dynamic_prompt_service
 
@@ -43,6 +46,9 @@ from services.unified_audio_service import create_unified_audio_service
 # Import task manager for progress tracking
 from services.task_manager import get_task_manager, TaskStatus
 
+# Import authentication services
+from services.auth_service import authenticate_user, create_jwt_token, get_current_user as get_current_user_service, create_user
+
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
@@ -56,6 +62,10 @@ AWS_ACCESS_KEY_ID = os.environ.get('AWS_ACCESS_KEY_ID')
 AWS_SECRET_ACCESS_KEY = os.environ.get('AWS_SECRET_ACCESS_KEY')
 AWS_REGION = os.environ.get('AWS_REGION', 'us-east-1')
 S3_BUCKET_NAME = os.environ.get('S3_BUCKET_NAME', 'audion-audio-files')
+
+# Profile images directory
+PROFILE_IMAGE_DIR = ROOT_DIR / "profile_images"
+PROFILE_IMAGE_DIR.mkdir(exist_ok=True)
 
 # Global database connection variable
 db = None
@@ -73,10 +83,18 @@ async def lifespan(app: FastAPI):
         await asyncio.wait_for(db.command('ping'), timeout=5.0)
         db_connected = True
         logging.info("Connected to MongoDB successfully")
+        
+        # config/database.pyの状態も同期
+        set_database_instance(db, db_connected)
+        
     except Exception as e:
         logging.error(f"Failed to connect to MongoDB: {e}")
         db_connected = False
+        db = None
         logging.info("Server will run in limited mode without database")
+        
+        # config/database.pyの状態も同期
+        set_database_instance(db, db_connected)
     
     # Only run database operations if connected
     if db_connected:
@@ -101,6 +119,22 @@ async def lifespan(app: FastAPI):
             await db.archived_articles.create_index([("user_id", 1), ("is_favorite", -1)])
             await db.archived_articles.create_index([("user_id", 1), ("read_status", 1)])
             await db.archived_articles.create_index([("user_id", 1), ("folder", 1)])
+            # Schedules & notifications
+            try:
+                await db.schedules.create_index([("user_id", 1), ("status", 1)])
+                await db.schedules.create_index([("user_id", 1), ("next_generation_at", 1)])
+            except Exception:
+                pass
+            try:
+                await db.scheduled_playlists.create_index([("schedule_id", 1), ("generated_at", -1)])
+                await db.scheduled_playlists.create_index([("user_id", 1), ("generated_at", -1)])
+            except Exception:
+                pass
+            try:
+                await db.notifications.create_index([("user_id", 1), ("created_at", -1)])
+                await db.notifications.create_index([("user_id", 1), ("read", 1), ("created_at", -1)])
+            except Exception:
+                pass
             logging.info("Database indexes created successfully")
         except Exception as e:
             logging.error(f"Failed to create database indexes: {e}")
@@ -155,13 +189,16 @@ async def lifespan(app: FastAPI):
     logging.info("Disconnected from MongoDB")
 
 # Create the main app
-app = FastAPI(lifespan=lifespan)
+app = FastAPI(lifespan=lifespan, default_response_class=ORJSONResponse)
 
 # Mount static files for audio serving
 backend_dir = Path(__file__).parent
 audio_dir = backend_dir / "audio_files"
 audio_dir.mkdir(exist_ok=True)  # Ensure audio directory exists
 app.mount("/audio", StaticFiles(directory=str(audio_dir)), name="audio")
+
+# Mount static files for profile images
+app.mount("/static/profile_images", StaticFiles(directory=str(PROFILE_IMAGE_DIR)), name="profile_images")
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -198,18 +235,112 @@ async def health_check():
             "version": "1.0.0"
         }
 
-# Add CORS Middleware
+# Add CORS Middleware (environment-aware)
+allowed_origins_env = os.environ.get('ALLOWED_ORIGINS', '')
+if allowed_origins_env:
+    allowed_origins = [o.strip() for o in allowed_origins_env.split(',') if o.strip()]
+else:
+    # Default: allow all in development, restrict in production via env
+    allowed_origins = ["*"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins for debugging
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
+# Add GZip compression for responses over a minimal size
+app.add_middleware(GZipMiddleware, minimum_size=500)
+
+# Static content caching headers for audio files
+@app.middleware("http")
+async def add_static_cache_headers(request, call_next):
+    response = await call_next(request)
+    try:
+        path = request.url.path
+        if path.startswith('/audio/'):
+            response.headers.setdefault('Cache-Control', 'public, max-age=86400, immutable')
+        return response
+    except Exception:
+        return response
+
+# Simple request size limiter (protect uploads)
+MAX_UPLOAD_SIZE_MB = float(os.environ.get('MAX_UPLOAD_SIZE_MB', '10'))
+MAX_UPLOAD_SIZE_BYTES = int(MAX_UPLOAD_SIZE_MB * 1024 * 1024)
+
+@app.middleware("http")
+async def limit_request_size(request, call_next):
+    try:
+        if request.method in ("POST", "PUT", "PATCH"):
+            content_length = request.headers.get('content-length')
+            if content_length and content_length.isdigit():
+                if int(content_length) > MAX_UPLOAD_SIZE_BYTES:
+                    return ORJSONResponse(
+                        status_code=413,
+                        content={"detail": f"Payload too large. Max {MAX_UPLOAD_SIZE_MB} MB"}
+                    )
+    except Exception:
+        # Fail open; do not block requests on header parsing issues
+        pass
+    return await call_next(request)
+
+# Simple in-memory rate limiter for sensitive endpoints
+from collections import deque, defaultdict
+RATE_LIMIT_WINDOW_SECONDS = int(os.environ.get('RATE_LIMIT_WINDOW_SECONDS', '60'))
+RATE_LIMIT_MAX_REQUESTS = int(os.environ.get('RATE_LIMIT_MAX_REQUESTS', '30'))
+rate_buckets = defaultdict(lambda: deque())
+rate_paths = ('/api/v2/audio', '/api/auto-pick/create-audio', '/api/audio/generate')
+
+@app.middleware("http")
+async def simple_rate_limiter(request, call_next):
+    try:
+        path = request.url.path
+        if any(path.startswith(p) for p in rate_paths):
+            ip = request.client.host if request.client else 'unknown'
+            now = time.time()
+            q = rate_buckets[(ip, path)]
+            # purge old
+            while q and (now - q[0]) > RATE_LIMIT_WINDOW_SECONDS:
+                q.popleft()
+            if len(q) >= RATE_LIMIT_MAX_REQUESTS:
+                return ORJSONResponse(
+                    status_code=429,
+                    content={"detail": "Too many requests. Please slow down."}
+                )
+            q.append(now)
+    except Exception:
+        pass
+    return await call_next(request)
+
 # Import and register routers
 from routers.subscription import router as subscription_router
+from routers.auth import router as auth_router
+from routers.notifications import router as notifications_router
+from routers.audio import router as audio_router
+from routers.albums import router as albums_router
+from routers.downloads import router as downloads_router
+from routers.onboard import router as onboard_router
+from routers.bookmarks import router as bookmarks_router
+from routers.archive import router as archive_router
 app.include_router(subscription_router)
+app.include_router(auth_router)
+app.include_router(notifications_router)
+app.include_router(audio_router)
+app.include_router(albums_router)
+app.include_router(downloads_router)
+app.include_router(onboard_router)
+app.include_router(bookmarks_router)
+app.include_router(archive_router)
+
+# Import and register user router
+from routers.user import router as user_router
+app.include_router(user_router)
+
+# Import and register RSS router
+from routers.rss import router as rss_router
+app.include_router(rss_router)
 
 # 🚀 NEW: Import and register unified audio router
 try:
@@ -242,6 +373,14 @@ async def serve_audio_file(filename: str):
 # Security
 security = HTTPBearer()
 
+# Auth helpers - Using proper JWT authentication from services.auth_service
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    """
+    FastAPI dependency wrapper for auth service get_current_user.
+    Ensures proper JWT token validation.
+    """
+    return await get_current_user_service(credentials)
+
 # Pydantic Models
 class User(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -263,6 +402,10 @@ class UserPasswordChange(BaseModel):
 class UserEmailChange(BaseModel):
     new_email: str
     password: str  # Require password confirmation for security
+
+class BasicProfileUpdate(BaseModel):
+    username: Optional[str] = None
+    email: Optional[str] = None
 
 class UserSettingsUpdate(BaseModel):
     audio_quality: Optional[str] = None  # "standard", "high" 
@@ -332,6 +475,7 @@ class Article(BaseModel):
     link: str
     published: str
     source_name: str
+    source_id: Optional[str] = None  # Add source_id for better filtering matching
     content: Optional[str] = None
     genre: Optional[str] = None
     thumbnail_url: Optional[str] = None
@@ -602,58 +746,49 @@ class PresetSource(BaseModel):
     icon: str
     color: str
 
+class UserRSSSource(BaseModel):
+    id: str
+    user_id: str
+    preconfigured_source_id: Optional[str] = None
+    custom_name: Optional[str] = None
+    custom_url: Optional[str] = None
+    custom_alias: Optional[str] = None
+    is_active: bool = True
+    notification_enabled: bool = False
+    last_article_count: int = 0
+    fetch_error_count: int = 0
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    display_name: Optional[str] = None
+    display_url: Optional[str] = None
+
 # AI Helper Functions
 # Enhanced Genre Classification System with weighted keywords
+# 新しいMECEジャンル分類システム
 GENRE_KEYWORDS = {
-    "Technology": {
-        "high": ["ai", "artificial intelligence", "machine learning", "blockchain", "cryptocurrency", "bitcoin", "ethereum", "nft", "metaverse", "vr", "virtual reality", "ar", "augmented reality", "cloud computing", "cybersecurity", "data privacy", "algorithm", "neural network", "quantum computing", "5g", "internet of things", "iot", "robotics", "automation"],
-        "medium": ["tech", "technology", "software", "app", "platform", "digital", "online", "internet", "web", "mobile", "smartphone", "iphone", "android", "google", "apple", "microsoft", "amazon", "facebook", "meta", "twitter", "tesla", "spacex", "openai", "chatgpt"],
-        "low": ["startup", "innovation", "disruption", "silicon valley", "venture capital", "vc", "ipo", "saas", "fintech", "edtech", "medtech"]
+    "テクノロジー": {
+        "high": ["ai", "artificial intelligence", "machine learning", "blockchain", "cryptocurrency", "bitcoin", "ethereum", "nft", "metaverse", "vr", "virtual reality", "ar", "augmented reality", "cloud computing", "cybersecurity", "quantum computing", "5g", "iot", "robotics", "automation", "chatgpt", "openai"],
+        "medium": ["tech", "technology", "software", "app", "platform", "digital", "online", "internet", "web", "mobile", "smartphone", "google", "apple", "microsoft", "amazon", "facebook", "meta", "twitter", "tesla", "spacex"],
+        "low": ["startup", "innovation", "silicon valley", "venture capital", "ipo", "saas", "fintech", "edtech", "medtech"]
     },
-    "Finance": {
+    "経済・ビジネス": {
         "high": ["stock market", "nasdaq", "dow jones", "s&p 500", "federal reserve", "fed", "interest rate", "inflation", "recession", "gdp", "unemployment", "economic growth", "monetary policy", "fiscal policy", "central bank"],
-        "medium": ["finance", "financial", "economy", "economic", "market", "stock", "share", "investment", "investor", "trading", "bank", "banking", "credit", "loan", "mortgage", "insurance", "pension", "retirement"],
-        "low": ["business", "corporate", "earnings", "revenue", "profit", "loss", "merger", "acquisition", "dividend", "portfolio", "asset"]
+        "medium": ["finance", "financial", "economy", "economic", "market", "stock", "investment", "trading", "bank", "banking", "business", "corporate", "company", "earnings", "revenue", "profit"],
+        "low": ["credit", "loan", "mortgage", "insurance", "pension", "merger", "acquisition", "dividend", "portfolio", "asset"]
     },
-    "Sports": {
-        "high": ["olympic", "olympics", "world cup", "super bowl", "champions league", "nba finals", "world series", "masters tournament", "wimbledon", "uefa", "fifa"],
-        "medium": ["sport", "sports", "game", "match", "championship", "tournament", "league", "team", "player", "athlete", "coach", "victory", "defeat", "goal", "score"],
-        "low": ["football", "soccer", "basketball", "baseball", "tennis", "golf", "hockey", "boxing", "mma", "racing"]
+    "国際・社会": {
+        "high": ["president", "prime minister", "congress", "parliament", "senate", "election", "vote", "campaign", "democracy", "war", "conflict", "peace", "diplomatic", "international", "global", "world", "country"],
+        "medium": ["politics", "political", "government", "policy", "minister", "law", "legal", "court", "justice", "social", "society", "community", "human rights", "crisis", "emergency"],
+        "low": ["administration", "regulation", "governance", "civil", "public", "citizen", "protest", "reform"]
     },
-    "Politics": {
-        "high": ["president", "prime minister", "congress", "parliament", "senate", "supreme court", "election", "vote", "campaign", "democracy", "republican", "democrat", "conservative", "liberal", "legislation", "bill"],
-        "medium": ["politics", "political", "government", "policy", "minister", "senator", "congressman", "mayor", "governor", "diplomat", "embassy", "foreign policy", "domestic policy"],
-        "low": ["administration", "cabinet", "bureaucracy", "regulation", "governance", "public sector", "civil service", "law"]
+    "ライフスタイル": {
+        "high": ["health", "wellness", "fitness", "nutrition", "diet", "medical", "healthcare", "lifestyle", "food", "cooking", "recipe", "fashion", "beauty", "travel", "vacation", "holiday"],
+        "medium": ["exercise", "workout", "mental health", "stress", "relaxation", "home", "family", "parenting", "relationship", "culture", "art", "hobby", "leisure"],
+        "low": ["wellness", "self-care", "mindfulness", "balance", "quality of life", "personal", "daily"]
     },
-    "Health": {
-        "high": ["covid", "coronavirus", "pandemic", "vaccine", "vaccination", "hospital", "doctor", "physician", "surgeon", "medical", "medicine", "healthcare", "patient", "treatment", "therapy", "diagnosis", "symptom", "disease", "virus", "bacteria"],
-        "medium": ["health", "healthy", "wellness", "fitness", "nutrition", "diet", "mental health", "depression", "anxiety", "stress", "pharmaceutical", "drug", "medication", "clinical trial", "fda approval"],
-        "low": ["exercise", "workout", "lifestyle", "wellbeing", "prevention", "care", "medical device", "biotech", "healthcare system"]
-    },
-    "Entertainment": {
-        "high": ["movie", "film", "cinema", "hollywood", "oscar", "emmy", "grammy", "music", "album", "song", "concert", "celebrity", "actor", "actress", "singer", "musician", "director", "producer"],
-        "medium": ["entertainment", "show", "series", "tv", "television", "streaming", "netflix", "disney", "amazon prime", "hbo", "art", "artist", "gallery", "museum", "culture", "cultural"],
-        "low": ["theater", "theatre", "performance", "comedy", "drama", "documentary", "animation", "gaming", "video game"]
-    },
-    "Science": {
-        "high": ["research", "study", "scientific", "scientist", "discovery", "breakthrough", "experiment", "laboratory", "university research", "peer review", "journal", "publication"],
-        "medium": ["science", "physics", "chemistry", "biology", "astronomy", "space", "nasa", "mars", "rocket", "satellite", "telescope", "dna", "genetic", "genome"],
-        "low": ["innovation", "development", "analysis", "data", "evidence", "theory", "hypothesis"]
-    },
-    "Environment": {
-        "high": ["climate change", "global warming", "greenhouse gas", "carbon emission", "renewable energy", "solar power", "wind power", "electric vehicle", "ev", "sustainability", "conservation"],
-        "medium": ["environment", "environmental", "climate", "weather", "temperature", "pollution", "air quality", "water quality", "ecosystem", "biodiversity", "wildlife", "forest", "ocean"],
-        "low": ["nature", "natural", "green", "eco", "recycling", "waste", "energy", "resource"]
-    },
-    "Education": {
-        "high": ["education", "educational", "school", "university", "college", "student", "teacher", "professor", "learning", "curriculum", "degree", "graduation", "academic"],
-        "medium": ["classroom", "lesson", "course", "program", "study", "exam", "test", "scholarship", "tuition", "campus"],
-        "low": ["knowledge", "skill", "training", "development", "literacy"]
-    },
-    "Travel": {
-        "high": ["travel", "tourism", "tourist", "vacation", "holiday", "trip", "journey", "destination", "hotel", "resort", "airline", "flight", "airport", "cruise"],
-        "medium": ["visit", "explore", "adventure", "sightseeing", "attraction", "landmark", "culture", "local", "international", "domestic"],
-        "low": ["experience", "discovery", "leisure", "recreation", "hospitality", "service"]
+    "エンタメ・スポーツ": {
+        "high": ["movie", "film", "cinema", "hollywood", "oscar", "music", "album", "song", "concert", "celebrity", "sport", "sports", "olympic", "world cup", "championship", "game", "match"],
+        "medium": ["entertainment", "show", "tv", "streaming", "netflix", "disney", "gaming", "video game", "team", "player", "athlete", "tournament", "league"],
+        "low": ["theater", "performance", "comedy", "drama", "documentary", "animation", "competition", "victory", "defeat"]
     }
 }
 
@@ -721,13 +856,13 @@ def classify_genre(title: str, summary: str, confidence_threshold: float = 1.0) 
         genre_scores = calculate_genre_scores(title, summary)
         
         if not genre_scores:
-            return "General"
+            return "その他"
         
         # Sort genres by score (highest first)
         sorted_genres = sorted(genre_scores.items(), key=lambda x: x[1], reverse=True)
         
         if not sorted_genres:
-            return "General"
+            return "その他"
         
         top_genre, top_score = sorted_genres[0]
         
@@ -735,7 +870,7 @@ def classify_genre(title: str, summary: str, confidence_threshold: float = 1.0) 
         if top_score >= confidence_threshold:
             result_genre = top_genre
         else:
-            result_genre = "General"
+            result_genre = "その他"
         
         # Enhanced logging with top 3 scores
         score_summary = ", ".join([f"{genre}: {score:.1f}" for genre, score in sorted_genres[:3] if score > 0])
@@ -1587,25 +1722,6 @@ async def send_system_notification(user_ids: List[str], title: str, body: str, s
         }
     )
 
-# Auth helpers
-async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    """
-    Simple user authentication using the token as user ID.
-    This bypasses JWT verification for development simplicity.
-    """
-    global db_connected
-    if not db_connected:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Database not connected")
-    
-    token = credentials.credentials
-    
-    user = await db.users.find_one({"id": token})
-    
-    if not user:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid authentication credentials")
-    
-    return User(**user)
-
 # === API Endpoints ===
 
 @app.get("/api/health", tags=["System"])
@@ -1617,206 +1733,151 @@ async def health_check():
         "message": "Server is running" + (" with database" if db_connected else " in limited mode")
     }
 
-@app.post("/api/auth/register", tags=["Auth"])
-async def register(user_data: UserCreate):
-    if not db_connected:
-        raise HTTPException(status_code=503, detail="Database unavailable. Server is running in limited mode.")
-    
-    try:
-        # Check if user already exists with timeout
-        existing_user = await asyncio.wait_for(
-            db.users.find_one({"email": user_data.email}),
-            timeout=10.0
-        )
-        if existing_user:
-            raise HTTPException(status_code=400, detail="Email already registered")
-        
-        # Create and insert new user with timeout
-        user = User(email=user_data.email)
-        await asyncio.wait_for(
-            db.users.insert_one(user.dict()),
-            timeout=10.0
-        )
-        return {"access_token": user.id, "token_type": "bearer", "user": user}
-    
-    except asyncio.TimeoutError:
-        logging.error("Database timeout during user registration")
-        raise HTTPException(status_code=503, detail="Database temporarily unavailable. Please try again later.")
-    except Exception as e:
-        logging.error(f"Registration error: {e}")
-        if "ServerSelectionTimeoutError" in str(e):
-            raise HTTPException(status_code=503, detail="Database connection failed. Please check your internet connection and try again.")
-        raise HTTPException(status_code=500, detail="Registration failed")
 
-@app.post("/api/auth/login", tags=["Auth"])
-async def login(user_data: UserLogin):
-    if not db_connected:
-        raise HTTPException(status_code=503, detail="Database unavailable. Server is running in limited mode.")
-    
-    try:
-        # Find user with timeout
-        user = await asyncio.wait_for(
-            db.users.find_one({"email": user_data.email}),
-            timeout=10.0
-        )
-        if not user:
-            raise HTTPException(status_code=400, detail="Invalid credentials")
-        
-        user_obj = User(**user)
-        return {"access_token": user_obj.id, "token_type": "bearer", "user": user_obj}
-    
-    except asyncio.TimeoutError:
-        logging.error("Database timeout during user login")
-        raise HTTPException(status_code=503, detail="Database temporarily unavailable. Please try again later.")
-    except HTTPException:
-        # Re-raise HTTP exceptions (like invalid credentials)
-        raise
-    except Exception as e:
-        logging.error(f"Login error: {e}")
-        if "ServerSelectionTimeoutError" in str(e):
-            raise HTTPException(status_code=503, detail="Database connection failed. Please check your internet connection and try again.")
-        raise HTTPException(status_code=500, detail="Login failed")
+# Password change endpoint moved to after get_current_user definition
 
-@app.put("/api/auth/change-password", tags=["Auth"])
-async def change_password(password_data: UserPasswordChange, current_user: User = Depends(get_current_user)):
-    """Change user password"""
+# Email change endpoint moved to after get_current_user definition
+
+# @app.put("/api/user/profile", tags=["User Profile"])
+# async def update_user_profile(profile_data: BasicProfileUpdate, current_user: User = Depends(get_current_user)):
+    """Update basic user profile information (username, email)"""
     if not db_connected:
         raise HTTPException(status_code=503, detail="Database unavailable. Server is running in limited mode.")
     
     try:
-        # Find user to verify current password
-        user = await asyncio.wait_for(
-            db.users.find_one({"id": current_user.id}),
-            timeout=10.0
-        )
-        if not user:
-            raise HTTPException(status_code=404, detail="User not found")
+        # Prepare update data - only include non-None values
+        update_data = {}
         
-        # In a real app, you would hash and verify passwords
-        # For now, we'll just update (since original system doesn't store passwords)
+        if profile_data.username is not None:
+            username = profile_data.username.strip()
+            if username:  # Only update if not empty
+                update_data["username"] = username
         
-        # Update user record with new password hash (placeholder)
+        if profile_data.email is not None:
+            email = profile_data.email.strip()
+            if email:  # Only update if not empty
+                # Check if new email is already in use by another user
+                existing_user = await asyncio.wait_for(
+                    db.users.find_one({"email": email}),
+                    timeout=10.0
+                )
+                if existing_user and existing_user["id"] != current_user.id:
+                    raise HTTPException(status_code=400, detail="Email already in use")
+                
+                update_data["email"] = email
+        
+        if not update_data:
+            raise HTTPException(status_code=400, detail="No valid fields to update")
+        
+        # Add timestamp
+        update_data["updated_at"] = datetime.utcnow()
+        
+        # Update user in database
         await asyncio.wait_for(
             db.users.update_one(
                 {"id": current_user.id},
-                {"$set": {"password_updated_at": datetime.utcnow()}}
+                {"$set": update_data}
             ),
             timeout=10.0
         )
         
-        return {"message": "Password updated successfully"}
+        # Get updated user data
+        updated_user = await asyncio.wait_for(
+            db.users.find_one({"id": current_user.id}),
+            timeout=10.0
+        )
+        
+        if not updated_user:
+            raise HTTPException(status_code=404, detail="User not found after update")
+        
+        # Return updated user data
+        user_response = {
+            "id": updated_user["id"],
+            "email": updated_user["email"],
+            "username": updated_user.get("username"),
+            "created_at": updated_user["created_at"]
+        }
+        
+        return {"message": "Profile updated successfully", "user": user_response}
         
     except asyncio.TimeoutError:
-        logging.error("Database timeout during password change")
+        logging.error("Database timeout during profile update")
         raise HTTPException(status_code=503, detail="Database temporarily unavailable. Please try again later.")
+    except HTTPException:
+        raise  # Re-raise HTTP exceptions as-is
     except Exception as e:
-        logging.error(f"Password change error: {e}")
-        raise HTTPException(status_code=500, detail="Password change failed")
+        logging.error(f"Profile update error: {e}")
+        raise HTTPException(status_code=500, detail="Profile update failed")
 
-@app.put("/api/auth/change-email", tags=["Auth"])
-async def change_email(email_data: UserEmailChange, current_user: User = Depends(get_current_user)):
-    """Change user email address"""
+# @app.post("/api/user/profile/image", tags=["User Profile"])
+# async def upload_profile_image(
+#     file: UploadFile = File(...),
+#     current_user: User = Depends(get_current_user)
+# ):
+    """Upload profile image for authenticated user"""
     if not db_connected:
         raise HTTPException(status_code=503, detail="Database unavailable. Server is running in limited mode.")
     
     try:
-        # Check if new email is already in use
-        existing_user = await asyncio.wait_for(
-            db.users.find_one({"email": email_data.new_email}),
-            timeout=10.0
-        )
-        if existing_user and existing_user["id"] != current_user.id:
-            raise HTTPException(status_code=400, detail="Email already in use")
+        # File extension validation
+        allowed_extensions = {".jpg", ".jpeg", ".png"}
+        file_extension = Path(file.filename or "").suffix.lower()
+        if file_extension not in allowed_extensions:
+            raise HTTPException(
+                status_code=400, 
+                detail="Invalid image file type. Only JPG and PNG are allowed."
+            )
         
-        # Update user email
+        # Generate unique filename based on user ID
+        new_filename = f"user_{current_user.id}{file_extension}"
+        file_path = PROFILE_IMAGE_DIR / new_filename
+        
+        # Save file to server
+        with file_path.open("wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        
+        # Update user profile_image in database
+        profile_image_url = f"/static/profile_images/{new_filename}"
+        
         await asyncio.wait_for(
             db.users.update_one(
                 {"id": current_user.id},
                 {"$set": {
-                    "email": email_data.new_email,
-                    "email_updated_at": datetime.utcnow()
+                    "profile_image": profile_image_url,
+                    "updated_at": datetime.utcnow()
                 }}
             ),
             timeout=10.0
         )
         
-        # Update the current_user object
-        current_user.email = email_data.new_email
-        
-        return {"message": "Email updated successfully", "user": current_user}
+        return {
+            "message": "Profile image updated successfully",
+            "profile_image_url": profile_image_url
+        }
         
     except asyncio.TimeoutError:
-        logging.error("Database timeout during email change")
-        raise HTTPException(status_code=503, detail="Database temporarily unavailable. Please try again later.")
-    except Exception as e:
-        logging.error(f"Email change error: {e}")
-        raise HTTPException(status_code=500, detail="Email change failed")
-
-@app.get("/api/auth/me", tags=["Auth"])
-async def get_current_user_info(current_user: User = Depends(get_current_user)):
-    """Get current user information"""
-    if not db_connected:
-        raise HTTPException(status_code=503, detail="Database unavailable. Server is running in limited mode.")
-    
-    try:
-        # Get fresh user data from database with shorter timeout
-        user = await asyncio.wait_for(
-            db.users.find_one({"id": current_user.id}),
-            timeout=3.0  # 3秒に短縮
+        logging.error("Database timeout during profile image upload")
+        raise HTTPException(
+            status_code=503, 
+            detail="Database temporarily unavailable. Please try again later."
         )
-        if not user:
-            raise HTTPException(status_code=404, detail="User not found")
-        
-        # Convert ObjectId fields to strings for JSON serialization
-        if user and '_id' in user:
-            user['_id'] = str(user['_id'])
-        
-        return {"user": user}
-        
-    except asyncio.TimeoutError:
-        logging.error("Database timeout during user info retrieval")
-        raise HTTPException(status_code=503, detail="Database temporarily unavailable. Please try again later.")
+    except HTTPException:
+        raise  # Re-raise HTTP exceptions as-is
     except Exception as e:
-        logging.error(f"User info retrieval error: {e}")
-        raise HTTPException(status_code=500, detail="Failed to retrieve user information")
+        logging.error(f"Profile image upload error: {e}")
+        raise HTTPException(status_code=500, detail="Profile image upload failed")
+    finally:
+        if file.file:
+            file.file.close()
 
-@app.get("/api/user/settings", tags=["User Settings"])
-async def get_user_settings(current_user: User = Depends(get_current_user)):
-    """Get user settings and preferences"""
-    if not db_connected:
-        raise HTTPException(status_code=503, detail="Database unavailable. Server is running in limited mode.")
-    
-    try:
-        # Get user profile which contains settings
-        profile = await asyncio.wait_for(
-            db.profiles.find_one({"user_id": current_user.id}),
-            timeout=10.0
-        )
-        
-        if not profile:
-            # Create default profile with settings
-            profile_data = UserProfile(user_id=current_user.id)
-            await asyncio.wait_for(
-                db.profiles.insert_one(profile_data.dict()),
-                timeout=10.0
-            )
-            return profile_data.dict()
-        
-        # Convert ObjectId fields to strings for JSON serialization
-        if profile and '_id' in profile:
-            profile['_id'] = str(profile['_id'])
-        return profile
-        
-    except asyncio.TimeoutError:
-        logging.error("Database timeout during settings retrieval")
-        raise HTTPException(status_code=503, detail="Database temporarily unavailable. Please try again later.")
-    except Exception as e:
-        logging.error(f"Settings retrieval error: {e}")
-        raise HTTPException(status_code=500, detail="Failed to retrieve settings")
+# Removed duplicate /api/auth/me (now provided by routers.auth)
+
+## Moved user settings GET to routers.user
 
 # ===== PUSH NOTIFICATION ENDPOINTS =====
 
-@app.post("/api/push-tokens", tags=["Push Notifications"])
+## Moved push notification endpoints to routers.notifications
+## @app.post("/api/push-tokens", tags=["Push Notifications"])
 async def register_push_token(
     payload: PushTokenPayload,
     current_user: User = Depends(get_current_user)
@@ -1879,7 +1940,7 @@ async def register_push_token(
         logging.error(f"[PushTokens] Token registration error: {e}")
         raise HTTPException(status_code=500, detail="Failed to register push token")
 
-@app.get("/api/push-tokens", tags=["Push Notifications"])
+## @app.get("/api/push-tokens", tags=["Push Notifications"])
 async def get_user_push_tokens(current_user: User = Depends(get_current_user)):
     """Get all push tokens for the current user."""
     if not db_connected:
@@ -1905,7 +1966,7 @@ async def get_user_push_tokens(current_user: User = Depends(get_current_user)):
         logging.error(f"[PushTokens] Token retrieval error: {e}")
         raise HTTPException(status_code=500, detail="Failed to retrieve push tokens")
 
-@app.delete("/api/push-tokens/{token}", tags=["Push Notifications"])
+## @app.delete("/api/push-tokens/{token}", tags=["Push Notifications"])
 async def delete_push_token(token: str, current_user: User = Depends(get_current_user)):
     """Delete a specific push token."""
     if not db_connected:
@@ -1933,7 +1994,7 @@ async def delete_push_token(token: str, current_user: User = Depends(get_current
         logging.error(f"[PushTokens] Token deletion error: {e}")
         raise HTTPException(status_code=500, detail="Failed to delete push token")
 
-@app.post("/api/notifications/send-test", tags=["Push Notifications"])
+## @app.post("/api/notifications/send-test", tags=["Push Notifications"])
 async def send_test_notification(
     payload: SendNotificationPayload,
     current_user: User = Depends(get_current_user)
@@ -1956,7 +2017,7 @@ async def send_test_notification(
         logging.error(f"[Notifications] Test notification error: {e}")
         raise HTTPException(status_code=500, detail="Failed to send test notification")
 
-@app.get("/api/notifications/history", tags=["Push Notifications"])
+## @app.get("/api/notifications/history", tags=["Push Notifications"])
 async def get_notification_history(
     limit: int = 20,
     current_user: User = Depends(get_current_user)
@@ -1987,145 +2048,12 @@ async def get_notification_history(
         logging.error(f"[Notifications] History retrieval error: {e}")
         raise HTTPException(status_code=500, detail="Failed to retrieve notification history")
 
-@app.put("/api/user/settings", tags=["User Settings"])
-async def update_user_settings(settings: UserSettingsUpdate, current_user: User = Depends(get_current_user)):
-    """Update user settings and preferences"""
-    if not db_connected:
-        raise HTTPException(status_code=503, detail="Database unavailable. Server is running in limited mode.")
-    
-    try:
-        # Prepare update data - only include non-None values
-        update_data = {}
-        if settings.audio_quality is not None:
-            if settings.audio_quality not in ["standard", "high"]:
-                raise HTTPException(status_code=400, detail="Invalid audio quality. Must be 'standard' or 'high'")
-            update_data["audio_quality"] = settings.audio_quality
-            
-        if settings.auto_play_next is not None:
-            update_data["auto_play_next"] = settings.auto_play_next
-            
-        if settings.notifications_enabled is not None:
-            update_data["notifications_enabled"] = settings.notifications_enabled
-            
-        if settings.push_notifications is not None:
-            update_data["push_notifications"] = settings.push_notifications
-            
-        if settings.schedule_enabled is not None:
-            update_data["schedule_enabled"] = settings.schedule_enabled
-            
-        if settings.schedule_time is not None:
-            # Validate time format HH:MM
-            import re
-            if not re.match(r'^([01]?[0-9]|2[0-3]):[0-5][0-9]$', settings.schedule_time):
-                raise HTTPException(status_code=400, detail="Invalid time format. Must be HH:MM")
-            update_data["schedule_time"] = settings.schedule_time
-            
-        if settings.schedule_count is not None:
-            if settings.schedule_count < 1 or settings.schedule_count > 10:
-                raise HTTPException(status_code=400, detail="Schedule count must be between 1 and 10")
-            update_data["schedule_count"] = settings.schedule_count
-            
-        if settings.text_size is not None:
-            if settings.text_size not in ["small", "medium", "large"]:
-                raise HTTPException(status_code=400, detail="Invalid text size. Must be 'small', 'medium', or 'large'")
-            update_data["text_size"] = settings.text_size
-            
-        if settings.language is not None:
-            if settings.language not in ["en", "ja"]:
-                raise HTTPException(status_code=400, detail="Invalid language. Must be 'en' or 'ja'")
-            update_data["language"] = settings.language
-            
-        if settings.auto_pick_settings is not None:
-            # Validate auto-pick settings
-            auto_pick = settings.auto_pick_settings
-            if "max_articles" in auto_pick and (auto_pick["max_articles"] < 1 or auto_pick["max_articles"] > 20):
-                raise HTTPException(status_code=400, detail="max_articles must be between 1 and 20")
-            if "source_priority" in auto_pick and auto_pick["source_priority"] not in ["balanced", "popular", "recent"]:
-                raise HTTPException(status_code=400, detail="Invalid source_priority")
-            update_data["auto_pick_settings"] = auto_pick
+## Moved user settings PUT to routers.user
 
-        if not update_data:
-            raise HTTPException(status_code=400, detail="No valid settings to update")
+# Removed duplicate /api/rss-sources CRUD endpoints (use routers.rss)
 
-        # Add updated timestamp
-        update_data["updated_at"] = datetime.utcnow()
-        
-        # Update user profile
-        await asyncio.wait_for(
-            db.profiles.update_one(
-                {"user_id": current_user.id},
-                {"$set": update_data},
-                upsert=True  # Create if doesn't exist
-            ),
-            timeout=10.0
-        )
-        
-        return {"message": "Settings updated successfully", "updated_fields": list(update_data.keys())}
-        
-    except asyncio.TimeoutError:
-        logging.error("Database timeout during settings update")
-        raise HTTPException(status_code=503, detail="Database temporarily unavailable. Please try again later.")
-    except HTTPException:
-        # Re-raise HTTP exceptions (like validation errors)
-        raise
-    except Exception as e:
-        logging.error(f"Settings update error: {e}")
-        raise HTTPException(status_code=500, detail="Failed to update settings")
-
-@app.get("/api/rss-sources", response_model=List[RSSSource], tags=["RSS"])
-async def get_user_sources(current_user: User = Depends(get_current_user)):
-    sources = await db.rss_sources.find({"user_id": current_user.id}).to_list(100)
-    return [RSSSource(**source) for source in sources]
-
-@app.post("/api/rss-sources", response_model=RSSSource, tags=["RSS"])
-async def add_rss_source(source_data: RSSSourceCreate, current_user: User = Depends(get_current_user)):
-    source = RSSSource(user_id=current_user.id, **source_data.dict())
-    await db.rss_sources.insert_one(source.dict())
-    return source
-
-@app.patch("/api/rss-sources/{source_id}", response_model=RSSSource, tags=["RSS"])
-async def update_rss_source(source_id: str, update_data: RSSSourceUpdate, current_user: User = Depends(get_current_user)):
-    try:
-        # Check if source exists and belongs to user
-        existing_source = await db.rss_sources.find_one({"id": source_id, "user_id": current_user.id})
-        if not existing_source:
-            logging.warning(f"RSS source not found: {source_id} for user {current_user.id}")
-            raise HTTPException(status_code=404, detail="RSS source not found")
-        
-        # Update the source
-        update_dict = update_data.dict(exclude_unset=True)
-        logging.info(f"Updating RSS source {source_id} with data: {update_dict}")
-        
-        result = await db.rss_sources.update_one(
-            {"id": source_id, "user_id": current_user.id},
-            {"$set": update_dict}
-        )
-        
-        logging.info(f"Update result - matched: {result.matched_count}, modified: {result.modified_count}")
-        
-        # Note: modified_count can be 0 if the values are the same, which is valid
-        # Only raise error if the operation failed completely (matched_count == 0)
-        if result.matched_count == 0:
-            logging.warning(f"RSS source update failed - no documents matched: {source_id}")
-            raise HTTPException(status_code=404, detail="RSS source not found")
-        
-        # Return updated source
-        updated_source = await db.rss_sources.find_one({"id": source_id, "user_id": current_user.id})
-        return RSSSource(**updated_source)
-    except HTTPException:
-        raise
-    except Exception as e:
-        logging.error(f"Error updating RSS source {source_id}: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
-
-@app.delete("/api/rss-sources/{source_id}", tags=["RSS"])
-async def delete_rss_source(source_id: str, current_user: User = Depends(get_current_user)):
-    result = await db.rss_sources.delete_one({"id": source_id, "user_id": current_user.id})
-    if result.deleted_count == 0: 
-        raise HTTPException(status_code=404, detail="Source not found")
-    return {"message": "Source deleted"}
-
-@app.post("/api/rss-sources/bootstrap", tags=["RSS"])
+## Removed duplicate RSS helper endpoints (moved to routers.rss)
+## @app.post("/api/rss-sources/bootstrap", tags=["RSS"])
 async def bootstrap_default_sources(current_user: User = Depends(get_current_user)):
     """Add default high-quality RSS sources for users who don't have any sources yet"""
     try:
@@ -2183,7 +2111,7 @@ async def bootstrap_default_sources(current_user: User = Depends(get_current_use
                     user_id=current_user.id,
                     name=source_data["name"],
                     url=source_data["url"],
-                    is_active=True
+                    is_active=False  # デフォルトは非アクティブ、ユーザーが明示的にONにする
                 )
                 await db.rss_sources.insert_one(source.dict())
                 added_sources.append(source.dict())
@@ -2203,7 +2131,37 @@ async def bootstrap_default_sources(current_user: User = Depends(get_current_use
         logging.error(f"Error bootstrapping default sources for user {current_user.email}: {e}")
         raise HTTPException(status_code=500, detail="Failed to add default sources")
 
-@app.get("/api/rss-sources/search", tags=["RSS"])
+## @app.post("/api/rss-sources/reset-defaults", tags=["RSS"])
+async def reset_default_sources_to_inactive(current_user: User = Depends(get_current_user)):
+    """Reset all default bootstrap sources to inactive state"""
+    try:
+        # List of default source names from bootstrap
+        default_source_names = [
+            "BBC News", "Reuters", "Associated Press", "The Guardian", 
+            "CNN", "NPR News", "TechCrunch", "Hacker News"
+        ]
+        
+        # Update all matching sources to inactive
+        result = await db.rss_sources.update_many(
+            {
+                "user_id": current_user.id,
+                "name": {"$in": default_source_names}
+            },
+            {"$set": {"is_active": False}}
+        )
+        
+        logging.info(f"Reset {result.modified_count} default sources to inactive for user {current_user.email}")
+        
+        return {
+            "message": f"Successfully reset {result.modified_count} default sources to inactive",
+            "modified_count": result.modified_count
+        }
+        
+    except Exception as e:
+        logging.error(f"Error resetting default sources for user {current_user.email}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to reset default sources")
+
+## @app.get("/api/rss-sources/search", tags=["RSS"])
 async def search_rss_sources(
     query: Optional[str] = None,
     category: Optional[str] = None,
@@ -2274,105 +2232,142 @@ async def search_rss_sources(
         logging.error(f"Error searching RSS sources: {e}")
         raise HTTPException(status_code=500, detail="Failed to search RSS sources")
 
-@app.get("/api/rss-sources/categories", tags=["RSS"])
+## @app.get("/api/rss-sources/categories", tags=["RSS"])
 async def get_rss_categories(current_user: User = Depends(get_current_user)):
     """Get all RSS categories"""
     try:
         logging.info(f"📂 [RSS CATEGORIES] Request for user: {current_user.email}")
         
-        # Return mock categories as specified in RSSSourceService.ts
-        mock_categories = [
-            {
-                "id": "news",
-                "name": "News",
-                "name_ja": "ニュース", 
-                "description": "General news and current events",
-                "icon": "📰",
-                "color": "#FF6B6B",
-                "sort_order": 1
-            },
-            {
-                "id": "technology",
-                "name": "Technology",
-                "name_ja": "テクノロジー",
-                "description": "Technology and innovation news",
-                "icon": "💻",
-                "color": "#4ECDC4",
-                "sort_order": 2
-            },
-            {
-                "id": "business",
-                "name": "Business",
-                "name_ja": "ビジネス",
-                "description": "Business and finance news",
-                "icon": "💼",
-                "color": "#45B7D1",
-                "sort_order": 3
-            }
-        ]
+        # Read categories directly from JSON file for now
+        json_file_path = Path(__file__).parent / "presets" / "jp_rss_sources.json"
         
-        return mock_categories
+        if not json_file_path.exists():
+            logging.error(f"Preset RSS sources file not found at: {json_file_path}")
+            # Fallback to mock categories
+            return [
+                {
+                    "id": "general",
+                    "name": "General",
+                    "name_ja": "総合ニュース", 
+                    "description": "General news and current events",
+                    "icon": "📰",
+                    "color": "#FF6B6B",
+                    "sort_order": 1
+                },
+                {
+                    "id": "technology",
+                    "name": "Technology",
+                    "name_ja": "テクノロジー",
+                    "description": "Technology and innovation news",
+                    "icon": "💻",
+                    "color": "#4ECDC4",
+                    "sort_order": 2
+                },
+                {
+                    "id": "business",
+                    "name": "Business",
+                    "name_ja": "ビジネス",
+                    "description": "Business and finance news",
+                    "icon": "💼",
+                    "color": "#45B7D1",
+                    "sort_order": 3
+                }
+            ]
+        
+        with open(json_file_path, 'r', encoding='utf-8') as file:
+            preset_data = json.load(file)
+        
+        # Format categories for frontend
+        formatted_categories = []
+        for i, category in enumerate(preset_data.get("categories", [])):
+            formatted_categories.append({
+                "id": category.get("id"),
+                "name": category.get("name"),
+                "name_ja": category.get("name"),  # Use name as name_ja since it's already in Japanese
+                "description": category.get("description", ""),
+                "icon": "📰",  # Default icon
+                "color": "#FF6B6B",  # Default color
+                "sort_order": i + 1
+            })
+        
+        logging.info(f"📂 [RSS CATEGORIES] Found {len(formatted_categories)} categories from JSON")
+        return formatted_categories
         
     except Exception as e:
         logging.error(f"Error getting RSS categories: {e}")
         raise HTTPException(status_code=500, detail="Failed to get RSS categories")
 
-@app.get("/api/rss-sources/my-sources", tags=["RSS"])
+## @app.get("/api/rss-sources/my-sources", tags=["RSS"])
 async def get_my_rss_sources(
     category: Optional[str] = None,
     is_active: Optional[bool] = None,
     current_user: User = Depends(get_current_user)
 ):
-    """Get user's RSS sources"""
+    """Get user's RSS sources from database"""
     try:
         logging.info(f"👤 [MY RSS SOURCES] Request for user: {current_user.email}")
         
-        # Return mock user sources as specified in RSSSourceService.ts
-        mock_user_sources = [
-            {
-                "id": "user-source-1",
-                "user_id": "user-123",
-                "preconfigured_source_id": "nhk-news",
-                "custom_alias": "NHK ニュース",
-                "is_active": True,
-                "notification_enabled": True,
-                "last_article_count": 15,
-                "fetch_error_count": 0,
-                "created_at": "2024-01-15T10:00:00Z",
-                "display_name": "NHK NEWS WEB",
-                "display_url": "https://www3.nhk.or.jp/rss/news/cat0.xml"
-            },
-            {
-                "id": "user-source-2",
-                "user_id": "user-123",
-                "preconfigured_source_id": "nikkei-tech",
-                "custom_alias": "日経テック",
-                "is_active": True,
-                "notification_enabled": False,
-                "last_article_count": 8,
-                "fetch_error_count": 0,
-                "created_at": "2024-01-20T14:30:00Z",
-                "display_name": "日本経済新聞 テクノロジー",
-                "display_url": "https://www.nikkei.com/rss/technology/"
-            }
-        ]
+        # 実際のデータベースからユーザーのRSSソースを取得
+        query = {"user_id": current_user.id}
         
-        # Filter by active status if provided
-        if is_active is not None:
-            mock_user_sources = [s for s in mock_user_sources if s["is_active"] == is_active]
+        if category:
+            query["category"] = category
             
-        return mock_user_sources
+        if is_active is not None:
+            query["is_active"] = is_active
+        
+        logging.info(f"👤 [MY RSS SOURCES] Database query: {query}")
+        
+        sources = await db.rss_sources.find(query).to_list(length=None)
+        
+        logging.info(f"👤 [MY RSS SOURCES] Raw sources found: {len(sources)}")
+        
+        # ObjectIdを文字列に変換し、表示用フィールドを追加
+        formatted_sources = []
+        for source in sources:
+            if "_id" in source:
+                source["_id"] = str(source["_id"])
+            source["display_name"] = source.get("custom_name") or source.get("name", "Unknown Source")
+            source["display_url"] = source.get("custom_url") or source.get("url", "")
+            formatted_sources.append(source)
+        
+        logging.info(f"👤 [MY RSS SOURCES] Found {len(formatted_sources)} sources in database for user {current_user.email}")
+        return formatted_sources
         
     except Exception as e:
         logging.error(f"Error getting user RSS sources: {e}")
         raise HTTPException(status_code=500, detail="Failed to get user RSS sources")
 
-@app.post("/api/rss-sources/add", tags=["RSS"])
+## @app.get("/api/rss-sources/force-cleanup", tags=["RSS"])
+async def force_cleanup_all_rss_sources(
+    current_user: User = Depends(get_current_user)
+):
+    """Force cleanup all RSS sources - デバッグ用強制削除API"""
+    try:
+        logging.info(f"🗑️  [FORCE CLEANUP] Deleting all RSS sources for debugging")
+        
+        # 全RSSソースを強制削除
+        result = await db.rss_sources.delete_many({})
+        
+        logging.info(f"🗑️  [FORCE CLEANUP] Successfully deleted {result.deleted_count} RSS sources")
+        
+        return {
+            "message": f"Successfully deleted {result.deleted_count} RSS sources from database",
+            "deleted_count": result.deleted_count,
+            "status": "success"
+        }
+        
+    except Exception as e:
+        logging.error(f"❌ [FORCE CLEANUP] Error: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to cleanup RSS sources: {str(e)}")
+
+## @app.post("/api/rss-sources/add", tags=["RSS"])
 async def add_user_rss_source(request: dict, current_user: User = Depends(get_current_user)):
     """Add RSS source to user's collection"""
     try:
-        logging.info(f"➕ [ADD RSS SOURCE] Request for user: {current_user.email}")
+        logging.info(f"➕ [ADD RSS SOURCE] Request for user: {current_user.email} (ID: {current_user.id})")
         logging.info(f"➕ [ADD RSS SOURCE] Request data: {request}")
+        logging.info(f"➕ [ADD RSS SOURCE] Saving to database...")
         
         preconfigured_source_id = request.get('preconfigured_source_id')
         custom_name = request.get('custom_name')
@@ -2401,113 +2396,143 @@ async def add_user_rss_source(request: dict, current_user: User = Depends(get_cu
             "display_category": custom_category or "news"
         }
         
-        # In a real implementation, save to database
-        # await db.user_rss_sources.insert_one(new_user_source)
+        # Save to database
+        result = await db.rss_sources.insert_one(new_user_source)
+        logging.info(f"➕ [ADD RSS SOURCE] Saved to database with ID: {result.inserted_id}")
         
-        logging.info(f"➕ [ADD RSS SOURCE] Created source: {new_user_source['display_name']}")
-        return new_user_source
+        # Create clean response without ObjectId
+        response_data = new_user_source.copy()
+        response_data["_id"] = str(result.inserted_id)
+        
+        logging.info(f"➕ [ADD RSS SOURCE] Created source: {response_data['display_name']}")
+        return response_data
         
     except Exception as e:
         logging.error(f"Error adding RSS source: {e}")
         raise HTTPException(status_code=500, detail="Failed to add RSS source")
 
-@app.get("/api/articles", response_model=List[Article], tags=["Articles"])
-async def get_articles(current_user: User = Depends(get_current_user), genre: Optional[str] = None, source: Optional[str] = None):
-    """Get articles with query parameters (backward compatibility)"""
-    return await get_articles_internal(current_user, genre, source)
-
-@app.post("/api/articles", response_model=List[Article], tags=["Articles"])
-async def post_articles(request: dict, current_user: User = Depends(get_current_user)):
-    """Get articles with POST body (supports more complex filters)"""
-    genre = request.get("genre")
-    source = request.get("source")
-    return await get_articles_internal(current_user, genre, source)
-
-@app.get("/api/articles/curated", response_model=List[Article], tags=["Articles"])
-async def get_curated_articles(current_user: User = Depends(get_current_user)):
-    """Get curated articles for the main news feed - automatically selects diverse, high-quality content"""
+## @app.delete("/api/rss-sources/my-sources/{source_id}", tags=["RSS"])
+async def delete_user_rss_source(source_id: str, current_user: User = Depends(get_current_user)):
+    """Delete RSS source from user's collection"""
     try:
-        # Use cached RSS data only to avoid long processing times
-        curated_articles = []
+        logging.info(f"🗑️ [DELETE RSS SOURCE] Request for user: {current_user.email} (ID: {current_user.id})")
+        logging.info(f"🗑️ [DELETE RSS SOURCE] Source ID: {source_id}")
         
-        # Get user's RSS sources
-        sources = await db.rss_sources.find({
-            "user_id": current_user.id,
-            "$or": [
-                {"is_active": {"$ne": False}},
-                {"is_active": {"$exists": False}}
-            ]
-        }).to_list(100)
+        # Delete from database
+        result = await db.rss_sources.delete_one({
+            "id": source_id,
+            "user_id": current_user.id
+        })
         
-        # Try to use cached data first, then fallback to regular article endpoint approach
-        current_time = time.time()
+        if result.deleted_count == 0:
+            logging.warning(f"🗑️ [DELETE RSS SOURCE] Source not found: {source_id}")
+            raise HTTPException(status_code=404, detail="RSS source not found")
         
-        for source_doc in sources[:10]:  # Optimize to 10 sources for better performance
-            # 🆕 Use consolidated RSS service instead of duplicate logic
-            try:
-                feed = parse_rss_feed(source_doc["url"], use_cache=True)
-                if not feed:
-                    logging.warning(f"Failed to fetch {source_doc['name']} for curated articles")
+        logging.info(f"🗑️ [DELETE RSS SOURCE] Successfully deleted source: {source_id}")
+        return {"message": "RSS source deleted successfully", "deleted_id": source_id}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error deleting RSS source: {e}")
+        raise HTTPException(status_code=500, detail="Failed to delete RSS source")
+
+## Removed duplicate articles endpoints (use routers.articles)
+        
+        # Load system RSS sources from jp_rss_sources.json
+        preset_file_path = os.path.join(os.path.dirname(__file__), "presets", "jp_rss_sources.json")
+        
+        try:
+            with open(preset_file_path, 'r', encoding='utf-8') as f:
+                preset_data = json.load(f)
+        except Exception as e:
+            logging.error(f"Failed to load jp_rss_sources.json: {e}")
+            raise HTTPException(status_code=500, detail="Failed to load system RSS sources")
+        
+        # Category to MECE genre mapping
+        category_to_genre = {
+            "general": "国際・社会",
+            "technology": "テクノロジー", 
+            "business": "経済・ビジネス",
+            "international": "国際・社会",
+            "entertainment": "エンタメ・スポーツ",
+            "sports": "エンタメ・スポーツ",
+            "lifestyle": "ライフスタイル",
+            "science": "テクノロジー"
+        }
+        
+        # Process each category
+        for category in preset_data["categories"]:
+            category_id = category["id"]
+            category_genre = category_to_genre.get(category_id, "その他")
+            
+            # Process sources in this category (limit for performance)
+            for source in category["sources"][:2]:  # Max 2 sources per category
+                if not source.get("is_active", True):
                     continue
-            except Exception as e:
-                logging.warning(f"Failed to fetch {source_doc['name']} for curated articles: {e}")
-                continue
+                    
+                try:
+                    feed = parse_rss_feed(source["url"], use_cache=True)
+                    if not feed:
+                        logging.warning(f"Failed to fetch {source['name']} for curated articles")
+                        continue
+                        
+                    # Get 3 articles from each source
+                    for entry in feed.entries[:3]:
+                        article_title = getattr(entry, 'title', "No Title")
+                        article_summary = getattr(entry, 'summary', getattr(entry, 'description', "No summary available"))
+                        
+                        # Get content
+                        article_content = article_summary
+                        if hasattr(entry, 'content') and entry.content:
+                            if isinstance(entry.content, list) and len(entry.content) > 0:
+                                article_content = entry.content[0].get('value', article_summary)
+                        
+                        # Clean HTML tags
+                        import re
+                        article_content = re.sub(r'<[^>]+>', '', article_content).strip()
+                        
+                        # Extract thumbnail
+                        thumbnail_url = None
+                        if hasattr(entry, 'links'):
+                            for link in entry.links:
+                                if 'image' in link.get('type', '').lower():
+                                    thumbnail_url = link.get('href')
+                                    break
+                        
+                        curated_articles.append(Article(
+                            id=str(uuid.uuid4()),
+                            title=article_title,
+                            summary=article_summary[:300] if len(article_summary) > 300 else article_summary,
+                            link=getattr(entry, 'link', ''),
+                            published=getattr(entry, 'published', ''),
+                            source_name=source["name"],
+                            source_id=source["id"],
+                            content=article_content[:1000] if len(article_content) > 1000 else article_content,
+                            genre=category_genre,  # Use MECE genre classification
+                            thumbnail_url=thumbnail_url
+                        ))
+                        
+                        # Limit total articles for performance
+                        if len(curated_articles) >= 30:
+                            break
+                            
+                except Exception as e:
+                    logging.warning(f"Failed to fetch {source['name']} for curated articles: {e}")
+                    continue
+                
+                if len(curated_articles) >= 30:
+                    break
             
-            if feed:
-                # Get first 4 articles from each source
-                for entry in feed.entries[:4]:
-                    article_title = getattr(entry, 'title', "No Title")
-                    article_summary = getattr(entry, 'summary', getattr(entry, 'description', "No summary available"))
-                    
-                    # Get content - use simpler approach for speed
-                    article_content = article_summary
-                    if hasattr(entry, 'content') and entry.content:
-                        if isinstance(entry.content, list) and len(entry.content) > 0:
-                            article_content = entry.content[0].get('value', article_summary)
-                    
-                    # Clean HTML tags quickly
-                    import re
-                    article_content = re.sub(r'<[^>]+>', '', article_content).strip()
-                    
-                    # Use simple genre classification
-                    article_genre = "General"
-                    title_lower = article_title.lower()
-                    if any(keyword in title_lower for keyword in ['tech', 'ai', 'computer', 'software', 'digital']):
-                        article_genre = "Technology"
-                    elif any(keyword in title_lower for keyword in ['finance', 'market', 'economy', 'money', 'stock']):
-                        article_genre = "Finance"
-                    elif any(keyword in title_lower for keyword in ['sport', 'game', 'match', 'team']):
-                        article_genre = "Sports"
-                    
-                    # Simple image extraction
-                    thumbnail_url = None
-                    if hasattr(entry, 'links'):
-                        for link in entry.links:
-                            if 'image' in link.get('type', '').lower():
-                                thumbnail_url = link.get('href')
-                                break
-                    
-                    curated_articles.append(Article(
-                        id=str(uuid.uuid4()),
-                        title=article_title,
-                        summary=article_summary[:300] if len(article_summary) > 300 else article_summary,
-                        link=getattr(entry, 'link', ''),
-                        published=getattr(entry, 'published', ''),
-                        source_name=source_doc.get('name', 'Unknown'),
-                        content=article_content[:1000] if len(article_content) > 1000 else article_content,
-                        genre=article_genre,
-                        thumbnail_url=thumbnail_url
-                    ))
-                    
-                    # Limit total articles to avoid too many
-                    if len(curated_articles) >= 20:
-                        break
-            
-            if len(curated_articles) >= 20:
+            if len(curated_articles) >= 30:
                 break
         
-        logging.info(f"Returning {len(curated_articles)} curated articles (cached data only) for user {current_user.email}")
-        return curated_articles
+        # Shuffle for diversity
+        import random
+        random.shuffle(curated_articles)
+        
+        logging.info(f"Returning {len(curated_articles)} curated articles from system RSS for user {current_user.email}")
+        return curated_articles[:25]  # Return max 25 articles
         
     except Exception as e:
         logging.error(f"Error getting curated articles for user {current_user.email}: {e}")
@@ -2517,13 +2542,10 @@ async def get_articles_internal(current_user: User, genre: Optional[str] = None,
     start_time = time.time()
     logging.info(f"🚀 [PERF] Starting article fetch for user {current_user.email}, genre: {genre}, source: {source}")
     
-    # Get only active sources (is_active is not explicitly False or doesn't exist)
+    # Get only explicitly active sources (is_active must be explicitly True)
     source_filter = {
         "user_id": current_user.id,
-        "$or": [
-            {"is_active": {"$ne": False}},  # is_active is not explicitly False
-            {"is_active": {"$exists": False}}  # is_active field doesn't exist (default to active)
-        ]
+        "is_active": True  # is_active must be explicitly True
     }
     
     # Add source name filter if specified
@@ -2601,6 +2623,7 @@ async def get_articles_internal(current_user: User, genre: Optional[str] = None,
                     link=getattr(entry, 'link', ""),
                     published=time.strftime('%Y-%m-%dT%H:%M:%SZ', entry.published_parsed) if hasattr(entry, 'published_parsed') and entry.published_parsed else "",
                     source_name=source_doc["name"],
+                    source_id=source_doc.get("id"),  # Add source_id for better matching
                     thumbnail_url=thumbnail_url,
                     content=article_content,
                     genre=article_genre
@@ -2869,7 +2892,7 @@ async def create_audio(request: AudioCreationRequest, http_request: Request, cur
         logging.error(f"Full traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/api/audio/direct-tts", response_model=DirectTTSResponse, tags=["Audio"])
+## Moved to routers.audio: /api/audio/direct-tts
 async def create_direct_tts(request: DirectTTSRequest, current_user: User = Depends(get_current_user)):
     """Create audio directly from article content using TTS without AI summarization"""
     try:
@@ -2913,7 +2936,7 @@ async def create_direct_tts(request: DirectTTSRequest, current_user: User = Depe
         logger.error(f"Error creating direct TTS: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to create direct TTS: {str(e)}")
 
-@app.post("/api/audio/generate", tags=["Audio"])
+## Moved to routers.audio: /api/audio/generate
 async def generate_audio(request: dict, current_user: User = Depends(get_current_user)):
     """Generate audio from article - compatible with frontend AudioService"""
     try:
@@ -2985,7 +3008,7 @@ async def generate_audio(request: dict, current_user: User = Depends(get_current
             "estimated_duration": 0
         }
 
-@app.post("/api/audio/instant-multi", response_model=AudioCreation, tags=["Audio"])
+## Moved to routers.audio: /api/audio/instant-multi
 async def create_instant_multi_audio(request: AudioCreationRequest, current_user: User = Depends(get_current_user)):
     """Create instant audio from multiple articles using direct TTS (2-5 seconds)"""
     start_time = datetime.utcnow()
@@ -3571,13 +3594,6 @@ async def get_auto_picked_articles(request: AutoPickRequest, http_request: Reque
         logging.error(f"Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Auto-pick failed: {str(e)}")
 
-@app.get("/api/user-profile", response_model=UserProfile, tags=["Auto-Pick"])
-async def get_user_profile(current_user: User = Depends(get_current_user)):
-    """Get user's personalization profile"""
-    if not db_connected:
-        raise HTTPException(status_code=503, detail="Database service unavailable. User profile requires database connectivity.")
-    profile = await get_or_create_user_profile(current_user.id)
-    return profile
 
 @app.post("/api/user-interaction", tags=["Auto-Pick"])
 async def record_user_interaction(interaction: UserInteraction, current_user: User = Depends(get_current_user)):
@@ -3627,7 +3643,7 @@ async def get_reading_history(current_user: User = Depends(get_current_user)):
 
 # ============ BOOKMARK API ENDPOINTS ============
 
-@app.post("/api/bookmarks", response_model=Bookmark, tags=["Bookmarks"])
+## Moved to routers.bookmarks: /api/bookmarks
 async def create_bookmark(bookmark_data: BookmarkCreate, current_user: User = Depends(get_current_user)):
     """Create a new bookmark"""
     if not db_connected:
@@ -3657,7 +3673,7 @@ async def create_bookmark(bookmark_data: BookmarkCreate, current_user: User = De
         logging.error(f"Error creating bookmark: {e}")
         raise HTTPException(status_code=500, detail="Failed to create bookmark")
 
-@app.get("/api/bookmarks", response_model=List[Bookmark], tags=["Bookmarks"])
+## Moved to routers.bookmarks: /api/bookmarks
 async def get_bookmarks(current_user: User = Depends(get_current_user)):
     """Get all bookmarks for the current user"""
     if not db_connected:
@@ -3672,7 +3688,7 @@ async def get_bookmarks(current_user: User = Depends(get_current_user)):
         logging.error(f"Error getting bookmarks: {e}")
         raise HTTPException(status_code=500, detail="Failed to get bookmarks")
 
-@app.delete("/api/bookmarks/{bookmark_id}", tags=["Bookmarks"])
+## Moved to routers.bookmarks: /api/bookmarks/{bookmark_id}
 async def delete_bookmark(bookmark_id: str, current_user: User = Depends(get_current_user)):
     """Delete a bookmark"""
     if not db_connected:
@@ -3694,7 +3710,7 @@ async def delete_bookmark(bookmark_id: str, current_user: User = Depends(get_cur
         logging.error(f"Error deleting bookmark: {e}")
         raise HTTPException(status_code=500, detail="Failed to delete bookmark")
 
-@app.delete("/api/bookmarks/article/{article_id}", tags=["Bookmarks"])
+## Moved to routers.bookmarks: /api/bookmarks/article/{article_id}
 async def delete_bookmark_by_article(article_id: str, current_user: User = Depends(get_current_user)):
     """Delete a bookmark by article ID"""
     if not db_connected:
@@ -3716,7 +3732,7 @@ async def delete_bookmark_by_article(article_id: str, current_user: User = Depen
         logging.error(f"Error deleting bookmark: {e}")
         raise HTTPException(status_code=500, detail="Failed to delete bookmark")
 
-@app.get("/api/bookmarks/check/{article_id}", tags=["Bookmarks"])
+## Moved to routers.bookmarks: /api/bookmarks/check/{article_id}
 async def check_bookmark_status(article_id: str, current_user: User = Depends(get_current_user)):
     """Check if an article is bookmarked"""
     if not db_connected:
@@ -3783,43 +3799,6 @@ async def record_audio_interaction(
         logging.error(f"Error recording audio interaction: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/api/user-insights", tags=["Auto-Pick"])
-async def get_user_insights(current_user: User = Depends(get_current_user)):
-    """Get user personalization insights and recommendation explanations"""
-    try:
-        if not db_connected:
-            raise HTTPException(status_code=503, detail="Database service unavailable. User insights require database connectivity.")
-        profile = await get_or_create_user_profile(current_user.id)
-        
-        # Calculate insights
-        top_genres = sorted(profile.genre_preferences.items(), key=lambda x: x[1], reverse=True)[:5]
-        
-        # Recent activity analysis
-        recent_interactions = profile.interaction_history[-20:] if profile.interaction_history else []
-        interaction_summary = {}
-        for interaction in recent_interactions:
-            int_type = interaction.get("interaction_type", "unknown")
-            interaction_summary[int_type] = interaction_summary.get(int_type, 0) + 1
-        
-        # Current time-based preferences
-        current_hour = datetime.now().hour
-        time_context = "morning" if 6 <= current_hour <= 10 else "evening" if 18 <= current_hour <= 22 else "night"
-        
-        return {
-            "top_genres": [{
-                "genre": genre,
-                "preference_score": round(score, 3),
-                "rank": i + 1
-            } for i, (genre, score) in enumerate(top_genres)],
-            "recent_activity": interaction_summary,
-            "total_interactions": len(profile.interaction_history),
-            "time_context": time_context,
-            "profile_created": profile.created_at,
-            "last_updated": profile.updated_at
-        }
-    except Exception as e:
-        logging.error(f"Error getting user insights: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/test-classification", tags=["Testing"])
 async def test_genre_classification(
@@ -4328,19 +4307,27 @@ async def create_auto_picked_audio(request: AutoPickRequest, background_tasks: B
 
 async def get_current_user_from_token_param(token: Optional[str] = None):
     """Get current user from token query parameter (for SSE compatibility)"""
-    global db_connected
-    if not db_connected:
-        raise HTTPException(status_code=503, detail="Database not connected")
-        
+    from services.auth_service import verify_jwt_token
+    
     if not token:
         raise HTTPException(status_code=401, detail="Authentication token required")
     
-    # Use same simple auth logic as get_current_user
-    user = await db.users.find_one({"id": token})
-    if not user:
+    try:
+        # Use proper JWT verification
+        payload = verify_jwt_token(token)
+        user_id = payload.get("user_id")
+        
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Invalid token payload")
+        
+        # Get user from database
+        user = await db.users.find_one({"id": user_id})
+        if not user:
+            raise HTTPException(status_code=401, detail="User not found")
+        
+        return User(**user)
+    except Exception as e:
         raise HTTPException(status_code=401, detail="Invalid authentication credentials")
-    
-    return User(**user)
 
 @app.get("/api/auto-pick/status/{task_id}")
 async def stream_autopick_progress(task_id: str, token: Optional[str] = None, current_user: User = Depends(get_current_user_from_token_param)):
@@ -4428,125 +4415,59 @@ async def initialize_preset_categories():
         logging.error(f"Error checking existing preset categories: {e}")
         raise
     
-    preset_categories = [
-        {
-            "name": "technology",
-            "display_name": "Technology",
-            "description": "Latest tech news, AI, startups, and innovation",
-            "icon": "laptop-outline",
-            "color": "#3B82F6",
-            "rss_sources": [
-                {"name": "TechCrunch", "url": "https://techcrunch.com/feed/"},
-                {"name": "The Verge", "url": "https://www.theverge.com/rss/index.xml"},
-                {"name": "Wired", "url": "https://www.wired.com/feed/rss"},
-                {"name": "Ars Technica", "url": "http://feeds.arstechnica.com/arstechnica/index"},
-                {"name": "Engadget", "url": "https://www.engadget.com/rss.xml"},
-                {"name": "ZDNet", "url": "https://www.zdnet.com/news/rss.xml"}
-            ]
-        },
-        {
-            "name": "business",
-            "display_name": "Business",
-            "description": "Market news, finance, economics, and business insights",
-            "icon": "trending-up-outline",
-            "color": "#10B981",
-            "rss_sources": [
-                {"name": "Reuters Business", "url": "https://feeds.reuters.com/reuters/businessNews"},
-                {"name": "Bloomberg", "url": "https://feeds.bloomberg.com/markets/news.rss"},
-                {"name": "Fortune", "url": "https://fortune.com/feed/"},
-                {"name": "Forbes", "url": "https://www.forbes.com/real-time/feed2/"},
-                {"name": "Wall Street Journal", "url": "https://feeds.a.dj.com/rss/RSSWorldNews.xml"},
-                {"name": "Harvard Business Review", "url": "http://feeds.harvardbusiness.org/harvardbusiness"}
-            ]
-        },
-        {
-            "name": "global",
-            "display_name": "Global News",
-            "description": "International news, politics, and world events",
-            "icon": "earth-outline",
-            "color": "#8B5CF6",
-            "rss_sources": [
-                {"name": "BBC World", "url": "http://feeds.bbci.co.uk/news/world/rss.xml"},
-                {"name": "CNN International", "url": "http://rss.cnn.com/rss/edition.rss"},
-                {"name": "Reuters World", "url": "https://feeds.reuters.com/Reuters/worldNews"},
-                {"name": "Associated Press", "url": "https://feeds.apnews.com/rss/apf-topnews"},
-                {"name": "NPR News", "url": "https://feeds.npr.org/1001/rss.xml"},
-                {"name": "The Guardian", "url": "https://www.theguardian.com/world/rss"}
-            ]
-        },
-        {
-            "name": "science",
-            "display_name": "Science",
-            "description": "Scientific discoveries, research, and innovation",
-            "icon": "flask-outline",
-            "color": "#F59E0B",
-            "rss_sources": [
-                {"name": "Science Daily", "url": "https://www.sciencedaily.com/rss/all.xml"},
-                {"name": "Nature News", "url": "https://www.nature.com/nature.rss"},
-                {"name": "Scientific American", "url": "https://rss.sciam.com/ScientificAmerican-Global"},
-                {"name": "New Scientist", "url": "https://www.newscientist.com/feed/home/"},
-                {"name": "Science Magazine", "url": "https://www.science.org/rss/news_current.xml"},
-                {"name": "MIT Technology Review", "url": "https://www.technologyreview.com/feed/"}
-            ]
-        },
-        {
-            "name": "entertainment",
-            "display_name": "Entertainment",
-            "description": "Movies, music, TV, celebrities, and pop culture",
-            "icon": "film-outline",
-            "color": "#EF4444",
-            "rss_sources": [
-                {"name": "Entertainment Weekly", "url": "https://ew.com/feed/"},
-                {"name": "Variety", "url": "https://variety.com/feed/"},
-                {"name": "The Hollywood Reporter", "url": "https://www.hollywoodreporter.com/feed/"},
-                {"name": "Rolling Stone", "url": "https://www.rollingstone.com/feed/"},
-                {"name": "Billboard", "url": "https://www.billboard.com/feed/"},
-                {"name": "IGN", "url": "http://feeds.ign.com/ign/all"}
-            ]
-        },
-        {
-            "name": "sports",
-            "display_name": "Sports",
-            "description": "Sports news, updates, and analysis",
-            "icon": "football-outline",
-            "color": "#06B6D4",
-            "rss_sources": [
-                {"name": "ESPN", "url": "https://www.espn.com/espn/rss/news"},
-                {"name": "Sports Illustrated", "url": "https://www.si.com/rss/si_topstories.rss"},
-                {"name": "CBS Sports", "url": "https://www.cbssports.com/rss/headlines/"},
-                {"name": "The Athletic", "url": "https://theathletic.com/rss/"},
-                {"name": "Bleacher Report", "url": "http://bleacherreport.com/articles/feed"}
-            ]
-        },
-        {
-            "name": "health",
-            "display_name": "Health & Medicine",
-            "description": "Health news, medical research, and wellness",
-            "icon": "medical-outline",
-            "color": "#EC4899",
-            "rss_sources": [
-                {"name": "WebMD", "url": "https://www.webmd.com/rss/rss.aspx?RSSSource=RSS_PUBLIC"},
-                {"name": "Healthline", "url": "https://www.healthline.com/health/rss"},
-                {"name": "Mayo Clinic", "url": "https://www.mayoclinic.org/rss"},
-                {"name": "Medical News Today", "url": "https://www.medicalnewstoday.com/rss"},
-                {"name": "Harvard Health", "url": "https://www.health.harvard.edu/rss"}
-            ]
-        },
-        {
-            "name": "lifestyle",
-            "display_name": "Lifestyle",
-            "description": "Travel, food, fashion, and personal interests",
-            "icon": "cafe-outline",
-            "color": "#F97316",
-            "rss_sources": [
-                {"name": "Conde Nast Traveler", "url": "https://www.cntraveler.com/feed/rss"},
-                {"name": "Food & Wine", "url": "https://www.foodandwine.com/syndication/rss"},
-                {"name": "Vogue", "url": "https://www.vogue.com/feed/rss"},
-                {"name": "Travel + Leisure", "url": "https://www.travelandleisure.com/syndication/rss"},
-                {"name": "Real Simple", "url": "https://www.realsimple.com/syndication/rss"}
-            ]
+    # Load preset categories from the JSON file
+    json_file_path = ROOT_DIR / "presets" / "jp_rss_sources.json"
+
+    if not json_file_path.exists():
+        logging.error(f"Preset RSS sources file not found at: {json_file_path}")
+        return
+
+    try:
+        with open(json_file_path, 'r', encoding='utf-8') as f:
+            jp_rss_data = json.load(f)
+        logging.info(f"Successfully loaded JP RSS data with {len(jp_rss_data.get('categories', []))} categories")
+    except json.JSONDecodeError as e:
+        logging.error(f"Failed to decode JSON from {json_file_path}: {e}")
+        return
+    except Exception as e:
+        logging.error(f"Failed to read preset file {json_file_path}: {e}")
+        return
+
+    # Convert JP RSS data to PresetCategory format
+    category_icon_mapping = {
+        "general": {"icon": "newspaper-outline", "color": "#6B7280"},
+        "technology": {"icon": "laptop-outline", "color": "#3B82F6"},
+        "business": {"icon": "trending-up-outline", "color": "#10B981"},
+        "international": {"icon": "earth-outline", "color": "#8B5CF6"},
+        "entertainment": {"icon": "film-outline", "color": "#EF4444"},
+        "sports": {"icon": "football-outline", "color": "#06B6D4"},
+        "lifestyle": {"icon": "cafe-outline", "color": "#F97316"},
+        "science": {"icon": "flask-outline", "color": "#F59E0B"}
+    }
+
+    preset_categories = []
+    
+    for category in jp_rss_data.get("categories", []):
+        category_id = category.get("id", "")
+        icon_data = category_icon_mapping.get(category_id, {"icon": "document-outline", "color": "#6B7280"})
+        
+        # Convert sources format
+        rss_sources = []
+        for source in category.get("sources", []):
+            rss_sources.append({
+                "name": source.get("name", ""),
+                "url": source.get("url", "")
+            })
+        
+        preset_category = {
+            "name": category_id,
+            "display_name": category.get("name", category_id),
+            "description": category.get("description", ""),
+            "icon": icon_data["icon"],
+            "color": icon_data["color"],
+            "rss_sources": rss_sources
         }
-    ]
+        preset_categories.append(preset_category)
     
     try:
         for category_data in preset_categories:
@@ -4691,13 +4612,13 @@ async def get_playlist_audio(playlist_id: str, current_user: User = Depends(get_
     return [AudioCreation(**audio) for audio in ordered_audio]
 
 # ==================== ALBUM ENDPOINTS ====================
-@app.get("/api/albums", response_model=List[Album], tags=["Albums"])
+## Moved to routers.albums: /api/albums
 async def get_user_albums(current_user: User = Depends(get_current_user)):
     """Get all albums for the current user"""
     albums = await db.albums.find({"user_id": current_user.id}).sort("updated_at", -1).to_list(100)
     return [Album(**album) for album in albums]
 
-@app.post("/api/albums", response_model=Album, tags=["Albums"])
+## Moved to routers.albums: /api/albums
 async def create_album(request: AlbumCreate, current_user: User = Depends(get_current_user)):
     """Create a new album"""
     album = Album(
@@ -4710,7 +4631,7 @@ async def create_album(request: AlbumCreate, current_user: User = Depends(get_cu
     await db.albums.insert_one(album.dict())
     return album
 
-@app.put("/api/albums/{album_id}", response_model=Album, tags=["Albums"])
+## Moved to routers.albums: /api/albums/{album_id}
 async def update_album(album_id: str, request: AlbumUpdate, current_user: User = Depends(get_current_user)):
     """Update album details"""
     update_data = {k: v for k, v in request.dict().items() if v is not None}
@@ -4727,7 +4648,7 @@ async def update_album(album_id: str, request: AlbumUpdate, current_user: User =
     album = await db.albums.find_one({"id": album_id, "user_id": current_user.id})
     return Album(**album)
 
-@app.delete("/api/albums/{album_id}", tags=["Albums"])
+## Moved to routers.albums: /api/albums/{album_id}
 async def delete_album(album_id: str, current_user: User = Depends(get_current_user)):
     """Delete an album"""
     result = await db.albums.delete_one({"id": album_id, "user_id": current_user.id})
@@ -4735,7 +4656,7 @@ async def delete_album(album_id: str, current_user: User = Depends(get_current_u
         raise HTTPException(status_code=404, detail="Album not found")
     return {"message": "Album deleted"}
 
-@app.post("/api/albums/{album_id}/audio", tags=["Albums"])
+## Moved to routers.albums: /api/albums/{album_id}/audio
 async def add_audio_to_album(album_id: str, request: AlbumAddAudio, current_user: User = Depends(get_current_user)):
     """Add audio items to album"""
     # Verify audio items belong to user
@@ -4760,7 +4681,7 @@ async def add_audio_to_album(album_id: str, request: AlbumAddAudio, current_user
     
     return {"message": f"Added {len(request.audio_ids)} audio items to album"}
 
-@app.delete("/api/albums/{album_id}/audio/{audio_id}", tags=["Albums"])
+## Moved to routers.albums: /api/albums/{album_id}/audio/{audio_id}
 async def remove_audio_from_album(album_id: str, audio_id: str, current_user: User = Depends(get_current_user)):
     """Remove audio item from album"""
     result = await db.albums.update_one(
@@ -4776,7 +4697,7 @@ async def remove_audio_from_album(album_id: str, audio_id: str, current_user: Us
     
     return {"message": "Audio removed from album"}
 
-@app.get("/api/albums/{album_id}/audio", response_model=List[AudioCreation], tags=["Albums"])
+## Moved to routers.albums: /api/albums/{album_id}/audio
 async def get_album_audio(album_id: str, current_user: User = Depends(get_current_user)):
     """Get all audio items in an album"""
     album = await db.albums.find_one({"id": album_id, "user_id": current_user.id})
@@ -4798,7 +4719,7 @@ async def get_album_audio(album_id: str, current_user: User = Depends(get_curren
     return [AudioCreation(**audio) for audio in ordered_audio]
 
 # ==================== DOWNLOAD ENDPOINTS ====================
-@app.get("/api/downloads", response_model=List[Dict], tags=["Downloads"])
+## Moved to routers.downloads: /api/downloads
 async def get_downloaded_audio(current_user: User = Depends(get_current_user)):
     """Get all downloaded audio for the current user"""
     downloads = await db.downloaded_audio.find({"user_id": current_user.id}).sort("downloaded_at", -1).to_list(100)
@@ -4823,7 +4744,7 @@ async def get_downloaded_audio(current_user: User = Depends(get_current_user)):
     
     return result
 
-@app.post("/api/downloads/{audio_id}", tags=["Downloads"])
+## Moved to routers.downloads: /api/downloads/{audio_id}
 async def download_audio(audio_id: str, current_user: User = Depends(get_current_user)):
     """Mark audio as downloaded (simulate download process)"""
     # Verify audio belongs to user
@@ -4846,7 +4767,7 @@ async def download_audio(audio_id: str, current_user: User = Depends(get_current
     await db.downloaded_audio.insert_one(download.dict())
     return {"message": "Audio downloaded successfully"}
 
-@app.delete("/api/downloads/{audio_id}", tags=["Downloads"])
+## Moved to routers.downloads: /api/downloads/{audio_id}
 async def remove_download(audio_id: str, current_user: User = Depends(get_current_user)):
     """Remove audio from downloads"""
     logging.info(f"DELETE /api/downloads/{audio_id} called by user {current_user.id}")
@@ -4865,7 +4786,7 @@ async def remove_download(audio_id: str, current_user: User = Depends(get_curren
     logging.info(f"Successfully removed download for audio_id={audio_id}")
     return {"message": "Download removed"}
 
-@app.post("/api/feedback/misreading", tags=["Feedback"])
+## Moved to routers.audio: /api/feedback/misreading
 async def report_misreading(
     audio_id: str,
     timestamp: int,
@@ -4889,13 +4810,13 @@ async def report_misreading(
     return {"message": "Feedback recorded successfully"}
 
 # ==================== ONBOARD PRESET ENDPOINTS ====================
-@app.get("/api/onboard/categories", response_model=List[PresetCategory], tags=["Onboard"])
+## Moved to routers.onboard: /api/onboard/categories
 async def get_preset_categories():
     """Get all available preset categories for onboarding"""
     categories = await db.preset_categories.find({}).to_list(100)
     return [PresetCategory(**category) for category in categories]
 
-@app.post("/api/onboard/setup", tags=["Onboard"])
+## Moved to routers.onboard: /api/onboard/setup
 async def setup_user_onboard(request: OnboardRequest, current_user: User = Depends(get_current_user)):
     """Setup user account with selected preset categories"""
     try:
@@ -5277,99 +5198,7 @@ class UserProfileUpdate(BaseModel):
     display_name: Optional[str] = None
     location: Optional[str] = None
 
-@app.put("/api/user/profile", tags=["User Profile"])
-async def update_user_profile(
-    profile_update: UserProfileUpdate,
-    current_user: User = Depends(get_current_user)
-):
-    """Update user profile information including genre preferences"""
-    try:
-        global db
-        if db is None:
-            logging.error("Database not connected")
-            raise HTTPException(status_code=503, detail="Database service unavailable")
-        
-        # Validate genre preferences if provided
-        if profile_update.genre_preferences:
-            logging.info(f"Received genre preferences: {profile_update.genre_preferences}")
-            for genre, score in profile_update.genre_preferences.items():
-                logging.info(f"Validating {genre}: {score} (type: {type(score)})")
-                if not isinstance(score, (int, float)) or score < 0.1 or score > 2.0:
-                    logging.error(f"Validation failed for {genre}: score={score}, type={type(score)}")
-                    raise HTTPException(
-                        status_code=400, 
-                        detail=f"Invalid genre preference score for {genre}: {score}. Must be between 0.1 and 2.0"
-                    )
-        
-        # Build update dictionary
-        update_data = {"updated_at": datetime.utcnow()}
-        
-        if profile_update.genre_preferences is not None:
-            update_data["genre_preferences"] = profile_update.genre_preferences
-        if profile_update.bio is not None:
-            update_data["bio"] = profile_update.bio
-        if profile_update.display_name is not None:
-            update_data["display_name"] = profile_update.display_name
-        if profile_update.location is not None:
-            update_data["location"] = profile_update.location
-        
-        # Update the user profile
-        result = await db.user_profiles.update_one(
-            {"user_id": current_user.id},
-            {"$set": update_data}
-        )
-        
-        if result.matched_count == 0:
-            # Profile doesn't exist, create it
-            from services.user_service import get_or_create_user_profile
-            profile = await get_or_create_user_profile(current_user.id)
-            
-            # Update with new data
-            await db.user_profiles.update_one(
-                {"user_id": current_user.id},
-                {"$set": update_data}
-            )
-        
-        logging.info(f"Updated profile for user {current_user.email}")
-        
-        return {
-            "success": True,
-            "message": "Profile updated successfully",
-            "updated_fields": list(update_data.keys())
-        }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logging.error(f"Error updating user profile: {e}")
-        raise HTTPException(status_code=500, detail="Failed to update profile")
 
-@app.get("/api/user/insights", tags=["User Profile"])
-async def get_user_insights(current_user: User = Depends(get_current_user)):
-    """Get user insights and analytics based on usage patterns"""
-    try:
-        from services.user_service import get_user_insights
-        
-        insights = await get_user_insights(current_user.id)
-        return insights
-        
-    except Exception as e:
-        logging.error(f"Error fetching user insights: {e}")
-        # Return basic default insights if service fails
-        return {
-            "top_genres": [],
-            "total_interactions": 0,
-            "interaction_breakdown": {},
-            "engagement_score": 0,
-            "recent_activity": [],
-            "profile_created": None,
-            "last_updated": None,
-            "listening_patterns": {
-                "total_audio_created": 0,
-                "total_listening_time": 0,
-                "average_completion_rate": 0.0
-            }
-        }
 
 class ProfileImageUpload(BaseModel):
     image_data: str  # Base64 encoded image
@@ -5426,6 +5255,20 @@ async def upload_profile_image(
         # Validate and process image
         try:
             image = Image.open(BytesIO(image_bytes))
+            # Validate format
+            allowed_formats = { 'JPEG', 'JPG', 'PNG', 'WEBP' }
+            fmt = (image.format or '').upper()
+            if fmt == 'JPG':
+                fmt = 'JPEG'
+            if fmt not in allowed_formats:
+                raise HTTPException(status_code=400, detail="Unsupported image format (allow: jpeg/png/webp)")
+            # Enforce payload size (additional guard beyond middleware)
+            try:
+                max_mb = float(os.environ.get('MAX_UPLOAD_SIZE_MB', '10'))
+            except Exception:
+                max_mb = 10.0
+            if len(image_bytes) > max_mb * 1024 * 1024:
+                raise HTTPException(status_code=413, detail=f"Image too large (>{int(max_mb)}MB)")
             
             # Convert to RGB if necessary
             if image.mode != 'RGB':

@@ -1,360 +1,386 @@
 /**
- * AuthService - Unified authentication management
- * Consolidates all authentication-related functionality
+ * Authentication Service for New Audion Frontend
+ * Clean service layer for authentication operations
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { apiService } from './ApiService';
-import { API_CONFIG } from '../config/api';
+import axios, { AxiosResponse } from 'axios';
+import { API_CONFIG, API_ENDPOINTS, getAuthHeaders } from '../config/api';
+import {
+  LoginRequest,
+  RegisterRequest,
+  AuthResponse,
+  RegisterResponse,
+  User,
+  AuthenticationError,
+  ProfileUpdateRequest,
+} from '../types/auth';
 
-export interface User {
-  id: string;
-  email: string;
-  created_at: string;
-  subscription_tier?: string;
-  profile?: {
-    name?: string;
-    avatar_url?: string;
-    bio?: string;
-  };
-}
+// Storage Keys
+const STORAGE_KEYS = {
+  TOKEN: '@audion_auth_token',
+  USER: '@audion_user_data',
+} as const;
 
-export interface AuthState {
-  isAuthenticated: boolean;
-  token: string | null;
-  user: User | null;
-  isLoading: boolean;
-}
+// Configure axios instance with retry capability
+const apiClient = axios.create({
+  baseURL: API_CONFIG.BASE_URL,
+  timeout: API_CONFIG.TIMEOUT,
+});
 
-export interface LoginCredentials {
-  email: string;
-  password: string;
-}
+// Request interceptor to automatically add auth token to headers
+apiClient.interceptors.request.use(
+  async (config) => {
+    // Public endpoints that don't require a token
+    const publicEndpoints = [
+      API_ENDPOINTS.AUTH.LOGIN,
+      API_ENDPOINTS.AUTH.REGISTER,
+    ];
 
-export interface RegisterCredentials extends LoginCredentials {
-  // Add any additional registration fields here
-}
-
-class AuthService {
-  private static instance: AuthService;
-  private authState: AuthState = {
-    isAuthenticated: false,
-    token: null,
-    user: null,
-    isLoading: true
-  };
-  private listeners: Array<(state: AuthState) => void> = [];
-
-  static getInstance(): AuthService {
-    if (!this.instance) {
-      this.instance = new AuthService();
-    }
-    return this.instance;
-  }
-
-  // ================== Auth State Management ==================
-
-  getAuthState(): AuthState {
-    return { ...this.authState };
-  }
-
-  subscribe(listener: (state: AuthState) => void): () => void {
-    this.listeners.push(listener);
-    // Return unsubscribe function
-    return () => {
-      const index = this.listeners.indexOf(listener);
-      if (index > -1) {
-        this.listeners.splice(index, 1);
+    let token = null;
+    if (config.url && !publicEndpoints.includes(config.url)) {
+      token = await AuthService.getStoredToken();
+      if (token) {
+        config.headers.Authorization = `Bearer ${token}`;
       }
+    }
+    
+    console.log(`[API] ${config.method?.toUpperCase()} ${config.url}`, token ? 'WITH_AUTH' : 'NO_AUTH');
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
+  }
+);
+
+// Response interceptor for error handling
+apiClient.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    // Better error message extraction
+    let errorMessage = 'Network Error';
+
+    const formatDetail = (detail: any): string => {
+      if (!detail) return '';
+      if (Array.isArray(detail)) return detail.map(d => d?.msg || JSON.stringify(d)).join('\n');
+      if (typeof detail === 'string') return detail;
+      if (typeof detail === 'object') return detail.msg || JSON.stringify(detail);
+      return String(detail);
     };
+
+    if (error.response) {
+      const data = error.response.data || {};
+      const detailMsg = formatDetail(data.detail) || data.message;
+      errorMessage = detailMsg || `Server Error (${error.response.status})`;
+    } else if (error.request) {
+      errorMessage = 'Network Error - No response from server';
+    } else {
+      errorMessage = error.message || 'Unknown error';
+    }
+
+    console.error('[API Error]', errorMessage, 'Status:', error.response?.status);
+    
+    if (error.response?.status === 401) {
+      // Token expired or invalid - clear storage
+      console.log('[API] Clearing auth due to 401 error');
+      AuthService.clearStoredAuth();
+    }
+    
+    throw new AuthenticationError(errorMessage, error.response?.status);
   }
+);
 
-  private notifyListeners(): void {
-    this.listeners.forEach(listener => listener(this.getAuthState()));
-  }
-
-  private updateAuthState(updates: Partial<AuthState>): void {
-    this.authState = { ...this.authState, ...updates };
-    this.notifyListeners();
-  }
-
-  // ================== Token Management ==================
-
-  private async storeToken(token: string): Promise<void> {
+// Retry helper function for critical authentication calls
+const withRetry = async <T>(
+  fn: () => Promise<T>, 
+  maxRetries: number = 2, 
+  delay: number = 1000
+): Promise<T> => {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      await AsyncStorage.setItem('auth_token', token);
-      apiService.setAuthToken(token);
-    } catch (error) {
-      console.error('Error storing token:', error);
-      throw new Error('Failed to store authentication token');
+      return await fn();
+    } catch (error: any) {
+      console.warn(`[Auth] Attempt ${attempt}/${maxRetries} failed:`, error.message);
+      
+      if (attempt === maxRetries) {
+        throw error; // Re-throw on final attempt
+      }
+      
+      // Exponential backoff delay
+      await new Promise(resolve => setTimeout(resolve, delay * attempt));
     }
   }
+  throw new Error('Retry attempts exhausted');
+};
 
-  private async getStoredToken(): Promise<string | null> {
-    try {
-      return await AsyncStorage.getItem('auth_token');
-    } catch (error) {
-      console.error('Error getting stored token:', error);
-      return null;
-    }
+export class AuthService {
+  /**
+   * Register a new user
+   */
+  static async register(
+    email: string, 
+    password: string, 
+    displayName: string
+  ): Promise<RegisterResponse> {
+    const requestData: RegisterRequest = {
+      email,
+      password,
+      display_name: displayName,
+    };
+
+    const response: AxiosResponse<RegisterResponse> = await apiClient.post(
+      API_ENDPOINTS.AUTH.REGISTER,
+      requestData
+    );
+
+    const { data } = response;
+    
+    // Store token and user data
+    await this.storeAuthData(data.access_token, data.user);
+    
+    return data;
   }
 
-  private async removeToken(): Promise<void> {
-    try {
-      await AsyncStorage.removeItem('auth_token');
-      apiService.setAuthToken(null);
-    } catch (error) {
-      console.error('Error removing token:', error);
-    }
+  /**
+   * Login with email and password
+   */
+  static async login(email: string, password: string): Promise<AuthResponse> {
+    const requestData: LoginRequest = {
+      email,
+      password,
+    };
+
+    const response: AxiosResponse<AuthResponse> = await apiClient.post(
+      API_ENDPOINTS.AUTH.LOGIN,
+      requestData
+    );
+
+    const { data } = response;
+    
+    // Store token and user data
+    await this.storeAuthData(data.access_token, data.user);
+    
+    return data;
   }
 
-  // ================== User Management ==================
+  /**
+   * Get current user information
+   */
+  static async getCurrentUser(): Promise<User> {
+    return await withRetry(async () => {
+      const response: AxiosResponse<User> = await apiClient.get(
+        API_ENDPOINTS.AUTH.ME
+      );
 
-  private async storeUser(user: User): Promise<void> {
-    try {
-      await AsyncStorage.setItem('user_data', JSON.stringify(user));
-    } catch (error) {
-      console.error('Error storing user data:', error);
-    }
+      const userData = response.data;
+      
+      // Update stored user data
+      await this.storeUserData(userData);
+      
+      return userData;
+    }, 3, 1500); // 3回まで、1.5秒間隔でリトライ
   }
 
-  private async getStoredUser(): Promise<User | null> {
-    try {
-      const userData = await AsyncStorage.getItem('user_data');
-      return userData ? JSON.parse(userData) : null;
-    } catch (error) {
-      console.error('Error getting stored user data:', error);
-      return null;
-    }
-  }
-
-  private async removeUser(): Promise<void> {
-    try {
-      await AsyncStorage.removeItem('user_data');
-    } catch (error) {
-      console.error('Error removing user data:', error);
-    }
-  }
-
-  // ================== Authentication Methods ==================
-
-  async initialize(): Promise<void> {
-    this.updateAuthState({ isLoading: true });
-
+  /**
+   * Logout user
+   */
+  static async logout(): Promise<void> {
     try {
       const token = await this.getStoredToken();
-      const user = await this.getStoredUser();
-
-      if (token && user) {
-        // Verify token is still valid
-        apiService.setAuthToken(token);
-        const response = await apiService.getEndpoint<User>('user.profile');
-        
-        if (response.success && response.data) {
-          // Token is valid, user is authenticated
-          this.updateAuthState({
-            isAuthenticated: true,
-            token,
-            user: response.data,
-            isLoading: false
-          });
-        } else {
-          // Token is invalid, clear stored data
-          await this.clearAuthData();
-          this.updateAuthState({
-            isAuthenticated: false,
-            token: null,
-            user: null,
-            isLoading: false
-          });
-        }
-      } else {
-        // No stored auth data
-        this.updateAuthState({
-          isAuthenticated: false,
-          token: null,
-          user: null,
-          isLoading: false
-        });
-      }
-    } catch (error) {
-      console.error('Error initializing auth:', error);
-      await this.clearAuthData();
-      this.updateAuthState({
-        isAuthenticated: false,
-        token: null,
-        user: null,
-        isLoading: false
-      });
-    }
-
-    // Set up API service auth error handler
-    apiService.setAuthErrorHandler(async () => {
-      await this.handleAuthError();
-    });
-  }
-
-  async login(credentials: LoginCredentials): Promise<User> {
-    this.updateAuthState({ isLoading: true });
-
-    try {
-      const response = await apiService.postEndpoint<{ access_token: string; user: User }>(
-        'auth.login',
-        credentials
-      );
-
-      if (response.success && response.data) {
-        const { access_token, user } = response.data;
-        
-        await this.storeToken(access_token);
-        await this.storeUser(user);
-        
-        this.updateAuthState({
-          isAuthenticated: true,
-          token: access_token,
-          user,
-          isLoading: false
-        });
-        
-        return user;
-      } else {
-        this.updateAuthState({ isLoading: false });
-        throw new Error(response.error || 'Login failed');
-      }
-    } catch (error: any) {
-      this.updateAuthState({ isLoading: false });
-      throw new Error(error.response?.data?.detail || error.message || 'Login failed');
-    }
-  }
-
-  async register(credentials: RegisterCredentials): Promise<User> {
-    this.updateAuthState({ isLoading: true });
-
-    try {
-      const response = await apiService.postEndpoint<{ access_token: string; user: User }>(
-        'auth.register',
-        credentials
-      );
-
-      if (response.success && response.data) {
-        const { access_token, user } = response.data;
-        
-        await this.storeToken(access_token);
-        await this.storeUser(user);
-        
-        this.updateAuthState({
-          isAuthenticated: true,
-          token: access_token,
-          user,
-          isLoading: false
-        });
-        
-        return user;
-      } else {
-        this.updateAuthState({ isLoading: false });
-        throw new Error(response.error || 'Registration failed');
-      }
-    } catch (error: any) {
-      this.updateAuthState({ isLoading: false });
-      throw new Error(error.response?.data?.detail || error.message || 'Registration failed');
-    }
-  }
-
-  async logout(): Promise<void> {
-    this.updateAuthState({ isLoading: true });
-
-    try {
-      // Clear all auth data
-      await this.clearAuthData();
       
-      this.updateAuthState({
-        isAuthenticated: false,
-        token: null,
-        user: null,
-        isLoading: false
-      });
-    } catch (error) {
-      console.error('Error during logout:', error);
-      // Still update state even if cleanup fails
-      this.updateAuthState({
-        isAuthenticated: false,
-        token: null,
-        user: null,
-        isLoading: false
-      });
-    }
-  }
-
-  // ================== Profile Management ==================
-
-  async updateProfile(updates: Partial<User['profile']>): Promise<User> {
-    const response = await apiService.postEndpoint<User>('user.profile', updates);
-    
-    if (response.success && response.data) {
-      const userData = response.data as User;
-      await this.storeUser(userData);
-      this.updateAuthState({ user: userData });
-      return userData;
-    }
-
-    throw new Error(response.error || 'Failed to update profile');
-  }
-
-  async uploadAvatar(imageData: string): Promise<User> {
-    const formData = new FormData();
-    formData.append('image', {
-      uri: imageData,
-      type: 'image/jpeg',
-      name: 'avatar.jpg'
-    } as any);
-
-    const response = await apiService.post('/user/profile-image', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data'
+      if (token) {
+        // Call backend logout endpoint
+        await apiClient.post(
+          API_ENDPOINTS.AUTH.LOGOUT,
+          {}
+        );
       }
-    });
-
-    if (response.success && response.data) {
-      const userData = response.data as User;
-      await this.storeUser(userData);
-      this.updateAuthState({ user: userData });
-      return userData;
+    } catch (error) {
+      console.warn('[Auth] Logout API call failed:', error);
+      // Continue with local cleanup even if API call fails
+    } finally {
+      // Always clear local storage
+      await this.clearStoredAuth();
     }
-
-    throw new Error(response.error || 'Failed to upload avatar');
   }
 
-  // ================== Utility Methods ==================
-
-  private async clearAuthData(): Promise<void> {
+  /**
+   * Store authentication data locally
+   */
+  static async storeAuthData(token: string, user: User): Promise<void> {
     await Promise.all([
-      this.removeToken(),
-      this.removeUser()
+      AsyncStorage.setItem(STORAGE_KEYS.TOKEN, token),
+      AsyncStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(user)),
     ]);
   }
 
-  private async handleAuthError(): Promise<void> {
-    console.log('Handling authentication error - logging out user');
-    await this.logout();
+  /**
+   * Store user data locally
+   */
+  static async storeUserData(user: User): Promise<void> {
+    await AsyncStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(user));
   }
 
-  // ================== Public Getters ==================
-
-  get isAuthenticated(): boolean {
-    return this.authState.isAuthenticated;
+  /**
+   * Store user data locally (alias for consistency)
+   */
+  static async storeUser(user: User): Promise<void> {
+    await this.storeUserData(user);
   }
 
-  get currentUser(): User | null {
-    return this.authState.user;
+  /**
+   * Get stored authentication token
+   */
+  static async getStoredToken(): Promise<string | null> {
+    return await AsyncStorage.getItem(STORAGE_KEYS.TOKEN);
   }
 
-  get authToken(): string | null {
-    return this.authState.token;
+  /**
+   * Get stored user data
+   */
+  static async getStoredUser(): Promise<User | null> {
+    const userData = await AsyncStorage.getItem(STORAGE_KEYS.USER);
+    return userData ? JSON.parse(userData) : null;
   }
 
-  get isLoading(): boolean {
-    return this.authState.isLoading;
+  /**
+   * Clear stored authentication data
+   */
+  static async clearStoredAuth(): Promise<void> {
+    await Promise.all([
+      AsyncStorage.removeItem(STORAGE_KEYS.TOKEN),
+      AsyncStorage.removeItem(STORAGE_KEYS.USER),
+    ]);
+  }
+
+  /**
+   * Check if user is authenticated (has valid token)
+   */
+  static async isAuthenticated(): Promise<boolean> {
+    const token = await this.getStoredToken();
+    return !!token;
+  }
+
+  /**
+   * Register push notification token with backend
+   */
+  static async registerPushToken(token: string, pushToken: string): Promise<void> {
+    const response: AxiosResponse<{status: string, message: string}> = await apiClient.post(
+      '/api/push-tokens',
+      { token: pushToken }
+    );
+
+    console.log('[Auth] Push token registration response:', response.data);
+  }
+
+  /**
+   * Get user's push tokens from backend
+   */
+  static async getPushTokens(token: string): Promise<any[]> {
+    const response: AxiosResponse<{tokens: any[]}> = await apiClient.get(
+      '/api/push-tokens'
+    );
+
+    return response.data.tokens;
+  }
+
+  /**
+   * Delete a specific push token from backend
+   */
+  static async deletePushToken(token: string, pushToken: string): Promise<void> {
+    await apiClient.delete(
+      `/api/push-tokens/${encodeURIComponent(pushToken)}`
+    );
+  }
+
+  /**
+   * Update user profile information (JSON format)
+   */
+  static async updateUserProfile(token: string, updates: ProfileUpdateRequest): Promise<User> {
+    try {
+      // JSON形式でプロフィール更新リクエストを送信
+      const requestData = {
+        username: updates.username || null,
+        email: updates.email || null,
+      };
+
+      console.log('[Auth] Sending profile update:', requestData);
+
+      const response: AxiosResponse<{user: User, message: string}> = await apiClient.put(
+        API_ENDPOINTS.USER.PROFILE,
+        requestData,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+
+      console.log('[Auth] Profile update successful:', response.data);
+      
+      // ローカルストレージの更新
+      await this.storeUserData(response.data.user);
+      
+      return response.data.user;
+    } catch (error: any) {
+      console.error('[Auth] Profile update failed:', error.response?.data || error.message);
+      if (error.response?.status === 401) {
+        throw new AuthenticationError('Authentication failed', 401);
+      }
+      throw new AuthenticationError(
+        error.response?.data?.detail || 'Profile update failed',
+        error.response?.status
+      );
+    }
+  }
+
+  /**
+   * Upload profile image
+   */
+  static async uploadProfileImage(token: string, imageUri: string): Promise<{message: string, profile_image_url: string}> {
+    try {
+      console.log('[Auth] Uploading profile image:', imageUri);
+      
+      // Create FormData for multipart/form-data upload
+      const formData = new FormData();
+      
+      // Get filename and type from URI
+      const filename = imageUri.split('/').pop() || 'profile.jpg';
+      const match = /\.(w+)$/.exec(filename);
+      const type = match ? `image/${match[1]}` : 'image/jpeg';
+      
+      // React Native FormData format
+      (formData as any).append('file', {
+        uri: imageUri,
+        name: filename,
+        type,
+      });
+      
+      const response: AxiosResponse<{message: string, profile_image_url: string}> = await apiClient.post(
+        API_ENDPOINTS.USER.PROFILE_IMAGE,
+        formData,
+        {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+          },
+        }
+      );
+      
+      console.log('[Auth] Profile image upload successful:', response.data);
+      return response.data;
+      
+    } catch (error: any) {
+      console.error('[Auth] Profile image upload failed:', error.response?.data || error.message);
+      if (error.response?.status === 401) {
+        throw new AuthenticationError('Authentication failed', 401);
+      }
+      throw new AuthenticationError(
+        error.response?.data?.detail || 'Profile image upload failed',
+        error.response?.status
+      );
+    }
   }
 }
 
-export default AuthService.getInstance();
+// シングルトンインスタンスをexport
+export const authService = new AuthService();

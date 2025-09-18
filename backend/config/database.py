@@ -9,9 +9,17 @@ from contextlib import asynccontextmanager
 from motor.motor_asyncio import AsyncIOMotorClient
 from .settings import MONGO_URL, DB_NAME
 
-# Global database connection variables
-db = None
-db_connected = False
+# データベース接続のグローバル変数（server.pyと共有）
+_db_instance = None
+_db_connected = False
+
+def set_database_instance(db, connected):
+    """
+    server.pyから呼び出されてデータベースインスタンスを設定
+    """
+    global _db_instance, _db_connected
+    _db_instance = db
+    _db_connected = connected
 
 async def connect_to_database():
     """
@@ -20,22 +28,22 @@ async def connect_to_database():
     Returns:
         tuple: (database_instance, connection_status)
     """
-    global db, db_connected
+    global _db_instance, _db_connected
     
     try:
         client = AsyncIOMotorClient(MONGO_URL)
-        db = client[DB_NAME]
+        _db_instance = client[DB_NAME]
         
         # Test the connection with timeout
-        await asyncio.wait_for(db.command('ping'), timeout=5.0)
-        db_connected = True
+        await asyncio.wait_for(_db_instance.command('ping'), timeout=5.0)
+        _db_connected = True
         logging.info("Connected to MongoDB successfully")
         
-        return db, True
+        return _db_instance, True
         
     except Exception as e:
         logging.error(f"Failed to connect to MongoDB: {e}")
-        db_connected = False
+        _db_connected = False
         logging.info("Server will run in limited mode without database")
         return None, False
 
@@ -44,34 +52,35 @@ async def create_database_indexes():
     Creates necessary database indexes for optimal performance.
     Should be called after successful database connection.
     """
-    if not db_connected or not db:
+    global _db_instance, _db_connected
+    if not _db_connected or not _db_instance:
         logging.warning("Cannot create indexes: database not connected")
         return
     
     try:
         # User indexes
-        await db.users.create_index("email", unique=True)
+        await _db_instance.users.create_index("email", unique=True)
         
         # RSS sources indexes
-        await db.rss_sources.create_index([("user_id", 1)])
+        await _db_instance.rss_sources.create_index([("user_id", 1)])
         
         # Audio creations indexes
-        await db.audio_creations.create_index([("user_id", 1), ("created_at", -1)])
+        await _db_instance.audio_creations.create_index([("user_id", 1), ("created_at", -1)])
         
         # User profiles indexes
-        await db.user_profiles.create_index("user_id", unique=True)
-        await db.user_profiles.create_index([("user_id", 1), ("updated_at", -1)])
+        await _db_instance.user_profiles.create_index("user_id", unique=True)
+        await _db_instance.user_profiles.create_index([("user_id", 1), ("updated_at", -1)])
         
         # Preset categories indexes
-        await db.preset_categories.create_index("name", unique=True)
+        await _db_instance.preset_categories.create_index("name", unique=True)
         
         # Deleted audio indexes
-        await db.deleted_audio.create_index([("user_id", 1), ("deleted_at", -1)])
-        await db.deleted_audio.create_index("permanent_delete_at")
+        await _db_instance.deleted_audio.create_index([("user_id", 1), ("deleted_at", -1)])
+        await _db_instance.deleted_audio.create_index("permanent_delete_at")
         
         # Playlists and albums indexes
-        await db.playlists.create_index([("user_id", 1), ("created_at", -1)])
-        await db.albums.create_index([("user_id", 1), ("created_at", -1)])
+        await _db_instance.playlists.create_index([("user_id", 1), ("created_at", -1)])
+        await _db_instance.albums.create_index([("user_id", 1), ("created_at", -1)])
         
         logging.info("Database indexes created successfully")
         
@@ -86,7 +95,8 @@ def get_database():
     Returns:
         AsyncIOMotorDatabase: Database instance or None if not connected
     """
-    return db
+    global _db_instance
+    return _db_instance
 
 def is_database_connected():
     """
@@ -95,7 +105,8 @@ def is_database_connected():
     Returns:
         bool: True if database is connected, False otherwise
     """
-    return db_connected
+    global _db_connected
+    return _db_connected
 
 @asynccontextmanager
 async def get_database_session():
@@ -103,11 +114,12 @@ async def get_database_session():
     Context manager for database sessions.
     Provides error handling and logging for database operations.
     """
-    if not db_connected:
+    global _db_instance, _db_connected
+    if not _db_connected:
         raise RuntimeError("Database not connected")
     
     try:
-        yield db
+        yield _db_instance
     except Exception as e:
         logging.error(f"Database operation failed: {e}")
         raise

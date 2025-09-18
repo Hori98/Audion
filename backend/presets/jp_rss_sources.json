@@ -1,0 +1,330 @@
+{
+  "categories": [
+    {
+      "id": "general",
+      "name": "総合ニュース",
+      "description": "主要な総合ニュースソース",
+      "sources": [
+        {
+          "id": "nhk-news",
+          "name": "NHK ニュース",
+          "url": "https://www.nhk.or.jp/rss/news/cat0.xml",
+          "description": "日本の公共放送NHKが提供する主要ニュース",
+          "language": "ja",
+          "country": "JP",
+          "is_active": true
+        },
+        {
+          "id": "asahi-news",
+          "name": "朝日新聞デジタル",
+          "url": "https://www.asahi.com/rss/asahi/newsheadlines.rdf",
+          "description": "朝日新聞の主要ニュースヘッドライン",
+          "language": "ja",
+          "country": "JP",
+          "is_active": true
+        },
+        {
+          "id": "yomiuri-news",
+          "name": "読売新聞オンライン",
+          "url": "https://www.yomiuri.co.jp/rss/yol/topstories",
+          "description": "読売新聞の最新トップニュース",
+          "language": "ja",
+          "country": "JP",
+          "is_active": true
+        },
+        {
+          "id": "mainichi-news",
+          "name": "毎日新聞",
+          "url": "https://mainichi.jp/rss/etc/mainichi-flash.rss",
+          "description": "毎日新聞の速報ニュース",
+          "language": "ja",
+          "country": "JP",
+          "is_active": true
+        },
+        {
+          "id": "kyodo-news",
+          "name": "共同通信",
+          "url": "https://www.kyodo.co.jp/program/rss/kyodo-flash.xml",
+          "description": "日本の代表的な通信社が配信するニュース速報",
+          "language": "ja",
+          "country": "JP",
+          "is_active": true
+        }
+      ]
+    },
+    {
+      "id": "technology",
+      "name": "テクノロジー",
+      "description": "技術・IT関連のニュースソース",
+      "sources": [
+        {
+          "id": "nikkei-xtech",
+          "name": "日経クロステック",
+          "url": "https://xtech.nikkei.com/rss/new/",
+          "description": "日経BP社が運営する技術者向け情報サイト",
+          "language": "ja",
+          "country": "JP",
+          "is_active": true
+        },
+        {
+          "id": "itmedia-news",
+          "name": "ITmedia NEWS",
+          "url": "https://rss.itmedia.co.jp/rss/2.0/news_bursts.xml",
+          "description": "IT関連の速報ニュースを提供",
+          "language": "ja",
+          "country": "JP",
+          "is_active": true
+        },
+        {
+          "id": "techcrunch-jp",
+          "name": "TechCrunch Japan",
+          "url": "https://jp.techcrunch.com/feed/",
+          "description": "スタートアップとテクノロジーに関するニュース（日本語版）",
+          "language": "ja",
+          "country": "JP",
+          "is_active": true
+        },
+        {
+          "id": "gizmodo-jp",
+          "name": "GIZMODO JAPAN",
+          "url": "https://www.gizmodo.jp/index.xml",
+          "description": "最新のガジェットやテクノロジーに関する情報サイト",
+          "language": "ja",
+          "country": "JP",
+          "is_active": true
+        },
+        {
+          "id": "cnet-jp",
+          "name": "CNET Japan",
+          "url": "https://japan.cnet.com/rss/index.rdf",
+          "description": "ITビジネスやテクノロジー製品のレビュー・ニュース",
+          "language": "ja",
+          "country": "JP",
+          "is_active": true
+        }
+      ]
+    },
+    {
+      "id": "business",
+      "name": "ビジネス・経済",
+      "description": "経済・ビジネス関連のニュースソース",
+      "sources": [
+        {
+          "id": "nikkei-news",
+          "name": "日本経済新聞",
+          "url": "https://www.nikkei.com/rss/nikkei/news.xml",
+          "description": "日本経済新聞の主要経済ニュース",
+          "language": "ja",
+          "country": "JP",
+          "is_active": true
+        },
+        {
+          "id": "toyokeizai",
+          "name": "東洋経済オンライン",
+          "url": "https://toyokeizai.net/list/feed/rss",
+          "description": "ビジネス、経済に関する深い洞察と分析",
+          "language": "ja",
+          "country": "JP",
+          "is_active": true
+        },
+        {
+          "id": "diamond-online",
+          "name": "ダイヤモンド・オンライン",
+          "url": "https://diamond.jp/rss/feed/atom/new",
+          "description": "ビジネスパーソン向けの経済・経営情報",
+          "language": "ja",
+          "country": "JP",
+          "is_active": true
+        },
+        {
+          "id": "president-online",
+          "name": "PRESIDENT Online",
+          "url": "https://president.jp/rss/",
+          "description": "経営者やリーダー層に向けた情報サイト",
+          "language": "ja",
+          "country": "JP",
+          "is_active": true
+        }
+      ]
+    },
+    {
+      "id": "international",
+      "name": "国際",
+      "description": "国際ニュースソース",
+      "sources": [
+        {
+          "id": "reuters-jp",
+          "name": "ロイター",
+          "url": "https://jp.reuters.com/rss/topNews",
+          "description": "世界の最新ニュースを配信する国際通信社（日本語版）",
+          "language": "ja",
+          "country": "JP",
+          "is_active": true
+        },
+        {
+          "id": "bbc-jp",
+          "name": "BBCニュース",
+          "url": "https://www.bbc.com/japanese/rss.xml",
+          "description": "英国放送協会が提供する国際ニュース（日本語版）",
+          "language": "ja",
+          "country": "JP",
+          "is_active": true
+        },
+        {
+          "id": "cnn-jp",
+          "name": "CNN.co.jp",
+          "url": "https://www.cnn.co.jp/rss/cnn/cnn.rdf",
+          "description": "CNNの国際ニュース（日本語版）",
+          "language": "ja",
+          "country": "JP",
+          "is_active": true
+        }
+      ]
+    },
+    {
+      "id": "entertainment",
+      "name": "エンタメ",
+      "description": "エンタメ・芸能関連のニュースソース",
+      "sources": [
+        {
+          "id": "oricon-news",
+          "name": "ORICON NEWS",
+          "url": "https://www.oricon.co.jp/feed/news/",
+          "description": "音楽、映画、芸能など総合エンタメニュース",
+          "language": "ja",
+          "country": "JP",
+          "is_active": true
+        },
+        {
+          "id": "cinematoday",
+          "name": "シネマトゥデイ",
+          "url": "https://www.cinematoday.jp/feed.xml",
+          "description": "最新の映画ニュースやレビュー",
+          "language": "ja",
+          "country": "JP",
+          "is_active": true
+        },
+        {
+          "id": "natalie-music",
+          "name": "音楽ナタリー",
+          "url": "https://natalie.mu/music/feed",
+          "description": "最新の音楽ニュース専門サイト",
+          "language": "ja",
+          "country": "JP",
+          "is_active": true
+        },
+        {
+          "id": "fashionsnap",
+          "name": "FASHIONSNAP",
+          "url": "https://www.fashionsnap.com/rss.xml",
+          "description": "ファッション、ビューティー、アートなどのカルチャーニュース",
+          "language": "ja",
+          "country": "JP",
+          "is_active": true
+        }
+      ]
+    },
+    {
+      "id": "sports",
+      "name": "スポーツ",
+      "description": "スポーツ関連のニュースソース",
+      "sources": [
+        {
+          "id": "nikkan-sports",
+          "name": "日刊スポーツ",
+          "url": "https://www.nikkansports.com/rss/atom-top.xml",
+          "description": "プロ野球やサッカーなど主要スポーツニュース",
+          "language": "ja",
+          "country": "JP",
+          "is_active": true
+        },
+        {
+          "id": "sponichi",
+          "name": "スポニチアネックス",
+          "url": "https://www.sponichi.co.jp/sports/rss/sponichi-sports.xml",
+          "description": "スポーツニッポンの総合スポーツニュース",
+          "language": "ja",
+          "country": "JP",
+          "is_active": true
+        },
+        {
+          "id": "number-web",
+          "name": "Number Web",
+          "url": "https://number.bunshun.jp/rss/feed/atom/number/all",
+          "description": "質の高いスポーツコラムや分析記事",
+          "language": "ja",
+          "country": "JP",
+          "is_active": true
+        }
+      ]
+    },
+    {
+      "id": "lifestyle",
+      "name": "ライフスタイル",
+      "description": "ライフスタイル関連のニュースソース",
+      "sources": [
+        {
+          "id": "lifehacker-jp",
+          "name": "Lifehacker Japan",
+          "url": "https://www.lifehacker.jp/feed/index.xml",
+          "description": "仕事術や生活の質を向上させるハックやツールを紹介",
+          "language": "ja",
+          "country": "JP",
+          "is_active": true
+        },
+        {
+          "id": "roomie",
+          "name": "ROOMIE",
+          "url": "https://www.roomie.jp/feed/index.xml",
+          "description": "インテリア、雑貨、DIYなど心地よい暮らしのヒント",
+          "language": "ja",
+          "country": "JP",
+          "is_active": true
+        },
+        {
+          "id": "cookpad-news",
+          "name": "クックパッドニュース",
+          "url": "https://news.cookpad.com/feed.atom",
+          "description": "食と料理に関する最新トレンドやレシピ情報",
+          "language": "ja",
+          "country": "JP",
+          "is_active": true
+        }
+      ]
+    },
+    {
+      "id": "science",
+      "name": "科学",
+      "description": "科学・自然関連のニュースソース",
+      "sources": [
+        {
+          "id": "natgeo-jp",
+          "name": "ナショナル ジオグラフィック",
+          "url": "https://natgeo.nikkeibp.co.jp/rss/index.rdf",
+          "description": "自然、科学、歴史、文化に関する高品質な記事",
+          "language": "ja",
+          "country": "JP",
+          "is_active": true
+        },
+        {
+          "id": "sorae",
+          "name": "sorae 宇宙へのポータルサイト",
+          "url": "https://sorae.info/feed",
+          "description": "宇宙開発や天文学に関するニュース",
+          "language": "ja",
+          "country": "JP",
+          "is_active": true
+        },
+        {
+          "id": "wired-jp",
+          "name": "WIRED.jp",
+          "url": "https://wired.jp/rssfeeder/",
+          "description": "テクノロジーが社会や文化に与える影響を探る",
+          "language": "ja",
+          "country": "JP",
+          "is_active": true
+        }
+      ]
+    }
+  ]
+}

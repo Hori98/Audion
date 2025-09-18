@@ -1,110 +1,147 @@
 /**
- * Unified API Configuration
- * Centralizes all API-related configuration to eliminate redundancy
+ * API Configuration for New Audion Frontend
+ * Centralized configuration with dynamic IP detection
  */
 
-export const API_CONFIG = {
-  // Base URLs
-  baseURL: process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:8003',
-  get apiURL() {
-    return `${this.baseURL}/api`;
-  },
-  
-  // Timeouts
-  timeout: 10000,
-  shortTimeout: 3000, // For background requests
-  
-  // Retry configuration
-  retryAttempts: 3,
-  retryDelay: 1000,
-  
-  // Headers
-  defaultHeaders: {
-    'Content-Type': 'application/json',
-    'Accept': 'application/json',
-  },
-  
-  // Endpoints
-  endpoints: {
-    // Authentication
-    auth: {
-      login: '/auth/login',
-      register: '/auth/register',
-      refresh: '/auth/refresh',
-    },
-    
-    // User management
-    user: {
-      profile: '/user/profile',
-      settings: '/user/settings',
-      avatar: '/user/profile-image',
-      insights: '/user/insights',
-      limits: '/user/audio-limits/check',
-      subscription: '/user/subscription',
-    },
-    
-    // RSS and Articles
-    content: {
-      sources: '/rss-sources',
-      articles: '/articles',
-      autopick: '/auto-pick',
-    },
-    
-    // Audio
-    audio: {
-      create: '/audio/create',
-      library: '/audio/library',
-      directTTS: '/audio/direct-tts',
-      streamTTS: '/audio/stream-tts', // Future streaming endpoint
-    },
-    
-    // Archive and Bookmarks
-    archive: {
-      articles: '/archive/articles',
-      folders: '/archive/folders',
-      stats: '/archive/stats',
-    },
-    
-    bookmarks: '/bookmarks',
-    
-    // Analytics and Interactions
-    analytics: {
-      interaction: '/user-interaction',
-      feedback: '/feedback/misreading',
-      scheduleDelivery: '/analytics/schedule-delivery',
-    },
-    
-    // Health check
-    health: '/health',
+// Dynamic Backend Detection
+const detectBackendUrl = (): string => {
+  // Prefer explicit env vars
+  let envUrl = process.env.EXPO_PUBLIC_API_BASE_URL || process.env.EXPO_PUBLIC_BACKEND_URL;
+  if (envUrl) {
+    // Normalize by removing trailing /api to avoid duplication
+    envUrl = envUrl.replace(/\/api\/?$/, '');
+    // If running on a physical device, replace localhost with dev host IP
+    if (__DEV__ && envUrl.includes('localhost')) {
+      const host = resolveDevHost();
+      if (host) {
+        envUrl = envUrl.replace('localhost', host);
+      }
+    }
+    return envUrl;
   }
+
+  // Production fallback
+  if (!__DEV__) {
+    return 'https://api.audion.app';
+  }
+
+  // Development sensible default: match server-manager backend port
+  const host = resolveDevHost();
+  return `http://${host || 'localhost'}:8001`;
+};
+
+// API Base Configuration
+export const API_CONFIG = {
+  BASE_URL: detectBackendUrl(),
+  TIMEOUT: parseInt(process.env.EXPO_PUBLIC_API_TIMEOUT || '30000'),
 } as const;
 
-// Helper function to build full URLs
-export const buildURL = (endpoint: string): string => {
-  return `${API_CONFIG.apiURL}${endpoint}`;
+// API Endpoints - All paths include /api prefix to avoid duplication
+export const API_ENDPOINTS = {
+  // Authentication
+  AUTH: {
+    REGISTER: '/api/auth/register',
+    LOGIN: '/api/auth/login', 
+    LOGOUT: '/api/auth/logout',
+    ME: '/api/auth/me',
+  },
+  
+  // User Management
+  USER: {
+    PROFILE: '/api/user/profile',
+    PROFILE_IMAGE: '/api/user/profile/image',
+  },
+  
+  // Articles
+  ARTICLES: {
+    LIST: '/api/articles',
+    GET: '/api/articles/{id}',
+  },
+  
+  // Audio
+  AUDIO: {
+    CREATE: '/api/audio/create',
+    LIST: '/api/audio/library',
+    GET: '/api/audio/{id}',
+    DELETE: '/api/audio/{id}',
+  },
+
+  // Unified Audio v2
+  AUDIO_V2: {
+    AUTOPICK: '/api/v2/audio/autopick',
+    MANUAL: '/api/v2/audio/manual',
+    SCHEDULES: '/api/v2/audio/schedules',
+    SCHEDULER_STATUS: '/api/v2/audio/scheduler/status',
+    SCHEDULE: '/api/v2/audio/schedules/{id}',
+    SCHEDULE_GENERATE: '/api/v2/audio/schedules/{id}/generate',
+    SCHEDULE_PLAYLISTS: '/api/v2/audio/schedules/{id}/playlists',
+  },
+
+  // Task-based AutoPick (RN polling)
+  AUTOPICK_TASK: {
+    START: '/api/auto-pick/create-audio',
+    STATUS: '/api/auto-pick/task-status/{task_id}',
+  },
+
+  // RSS Sources
+  RSS: {
+    LIST: '/api/rss-sources',
+    MY_SOURCES: '/api/rss-sources/my-sources',
+    ADD: '/api/rss-sources',
+    DELETE: '/api/rss-sources/{id}',
+  },
+} as const;
+
+// Complete URL builder
+export const buildApiUrl = (endpoint: string): string => {
+  return `${API_CONFIG.BASE_URL}${endpoint}`;
 };
 
-// Helper function to get endpoint by path
-export const getEndpoint = (path: string): string => {
-  const pathArray = path.split('.');
-  let current: any = API_CONFIG.endpoints;
-  
-  for (const key of pathArray) {
-    if (current && typeof current === 'object' && key in current) {
-      current = current[key];
-    } else {
-      throw new Error(`Endpoint not found: ${path}`);
-    }
-  }
-  
-  if (typeof current !== 'string') {
-    throw new Error(`Invalid endpoint path: ${path}`);
-  }
-  
-  return current;
+// Replace path params like {id} with provided values
+export const buildPath = (
+  endpoint: string,
+  params: Record<string, string | number> = {}
+): string => {
+  return Object.keys(params).reduce((acc, key) => {
+    const value = String(params[key]);
+    return acc.replace(new RegExp(`\\{${key}\\}`, 'g'), encodeURIComponent(value));
+  }, endpoint);
 };
 
-// Helper function to build full URL from endpoint path
-export const buildEndpointURL = (path: string): string => {
-  return buildURL(getEndpoint(path));
+// Convenience: build full URL with path params
+export const url = (
+  endpoint: string,
+  params: Record<string, string | number> = {}
+): string => buildApiUrl(buildPath(endpoint, params));
+
+// Request Headers
+export const getAuthHeaders = (token?: string) => ({
+  'Content-Type': 'application/json',
+  ...(token && { 'Authorization': `Bearer ${token}` }),
+});
+
+// Environment Detection
+export const isDevelopment = __DEV__;
+import Constants from 'expo-constants';
+
+const resolveDevHost = (): string | null => {
+  try {
+    const m: any = (Constants as any);
+    const dbg = m.manifest2?.extra?.expoGo?.debuggerHost || m.manifest?.debuggerHost || m.expoConfig?.hostUri;
+    if (!dbg) return null;
+    const host = String(dbg).split(':')[0];
+    return host || null;
+  } catch {
+    return null;
+  }
 };
+
+export const isProduction = !__DEV__;
+
+// 🚨 DEBUG: API Configuration Status (after all definitions)
+if (__DEV__) {
+  console.log('🔧 [API Config] BASE_URL:', API_CONFIG.BASE_URL);
+  console.log('🔧 [API Config] TIMEOUT:', API_CONFIG.TIMEOUT);
+  console.log('🔧 [API Config] ENV_VAR:', process.env.EXPO_PUBLIC_API_BASE_URL);
+  console.log('🔧 [API Config] Sample URL:', buildApiUrl(API_ENDPOINTS.AUTH.LOGIN));
+}

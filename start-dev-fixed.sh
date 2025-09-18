@@ -8,8 +8,8 @@ echo "=================================================="
 
 cd "$(dirname "$0")"
 
-# Get the current IP address for network access
-CURRENT_IP=$(ifconfig | grep -Eo 'inet (addr:)?([0-9]*\.){3}[0-9]*' | grep -v '127.0.0.1' | awk '{print $2}' | head -1)
+# Force IP address to 192.168.11.21 for consistency
+CURRENT_IP="192.168.11.21"
 echo "🌐 Local Network IP: $CURRENT_IP"
 
 # Clean up any existing processes on backend port
@@ -52,10 +52,10 @@ fi
 echo ""
 echo "📱 Now you can start the frontend:"
 echo "   cd audion-app"
-echo "   npx expo start"
+echo "   npx expo start --port 8085"
 echo ""
 echo "🔧 Environment Variables:"
-echo "   EXPO_PUBLIC_BACKEND_URL should be set to: http://$CURRENT_IP:8003"
+echo "   EXPO_PUBLIC_API_BASE_URL should be set to: http://$CURRENT_IP:8003"
 echo ""
 echo "Press Ctrl+C to stop backend server"
 

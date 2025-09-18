@@ -326,10 +326,28 @@ class SchedulerService:
     async def _send_schedule_notification(self, schedule: Schedule, playlist: ScheduledPlaylist):
         """スケジュール生成通知送信（プレースホルダー）"""
         try:
-            # TODO: Implement push notification system
+            # Placeholder implementation: persist a notification document for later delivery
+            notification_doc = {
+                "id": f"notif_{playlist.id}",
+                "user_id": schedule.user_id,
+                "type": "schedule_generated",
+                "title": "スケジュール生成が完了しました",
+                "message": f"{schedule.schedule_name} のプレイリストを生成しました: {playlist.playlist_title}",
+                "playlist_id": playlist.id,
+                "articles_count": playlist.articles_count,
+                "created_at": datetime.utcnow(),
+                "read": False,
+            }
+            try:
+                await self.db.notifications.insert_one(notification_doc)
+                logger.info("📅 NOTIFICATION: Inserted notification placeholder into DB")
+            except Exception as db_err:
+                logger.warning(f"📅 NOTIFICATION: Failed to insert notification doc: {db_err}")
+
+            # Log for visibility in development
             logger.info(f"📅 NOTIFICATION: Would send notification for schedule '{schedule.schedule_name}' to user {schedule.user_id}")
             logger.info(f"📅 NOTIFICATION: Generated playlist: {playlist.playlist_title} ({playlist.articles_count} articles)")
-            
+        
         except Exception as e:
             logger.error(f"🚫 NOTIFICATION: Failed to send notification: {str(e)}")
     

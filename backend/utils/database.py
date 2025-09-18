@@ -198,6 +198,46 @@ async def soft_delete_document(collection_name: str, document_id: str, user_id: 
     """
     Soft delete a document by adding deleted_at timestamp.
     
+async def update_many_by_user(collection_name: str, user_id: str, 
+                              filters: Optional[Dict[str, Any]], 
+                              updates: Dict[str, Any]) -> int:
+    """
+    Update many documents for a user with additional filters.
+
+    Returns modified_count.
+    """
+    if not is_database_connected():
+        raise handle_database_error(Exception("Database not connected"), "update many documents")
+
+    try:
+        db = get_database()
+        collection = getattr(db, collection_name)
+        query: Dict[str, Any] = {"user_id": user_id}
+        if filters:
+            query.update(filters)
+        result = await collection.update_many(query, {"$set": updates})
+        return result.modified_count
+    except Exception as e:
+        raise handle_database_error(e, f"update many {collection_name} documents")
+
+
+async def delete_many(collection_name: str, filters: Optional[Dict[str, Any]] = None) -> int:
+    """
+    Delete many documents matching the filters.
+
+    Returns deleted_count.
+    """
+    if not is_database_connected():
+        raise handle_database_error(Exception("Database not connected"), "delete many documents")
+
+    try:
+        db = get_database()
+        collection = getattr(db, collection_name)
+        result = await collection.delete_many(filters or {})
+        return result.deleted_count
+    except Exception as e:
+        raise handle_database_error(e, f"delete many {collection_name} documents")
+
     Args:
         collection_name: Name of the MongoDB collection
         document_id: ID of the document to soft delete
