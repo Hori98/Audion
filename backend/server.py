@@ -193,7 +193,9 @@ app = FastAPI(lifespan=lifespan, default_response_class=ORJSONResponse)
 
 # Mount static files for audio serving
 backend_dir = Path(__file__).parent
-audio_dir = backend_dir / "audio_files"
+# Serve audio from project_root/audio_files to match TTS local save path
+project_root_dir = backend_dir.parent
+audio_dir = project_root_dir / "audio_files"
 audio_dir.mkdir(exist_ok=True)  # Ensure audio directory exists
 app.mount("/audio", StaticFiles(directory=str(audio_dir)), name="audio")
 
@@ -324,6 +326,7 @@ from routers.downloads import router as downloads_router
 from routers.onboard import router as onboard_router
 from routers.bookmarks import router as bookmarks_router
 from routers.archive import router as archive_router
+from routers.articles import router as articles_router
 app.include_router(subscription_router)
 app.include_router(auth_router)
 app.include_router(notifications_router)
@@ -333,6 +336,7 @@ app.include_router(downloads_router)
 app.include_router(onboard_router)
 app.include_router(bookmarks_router)
 app.include_router(archive_router)
+app.include_router(articles_router)
 
 # Import and register user router
 from routers.user import router as user_router
@@ -380,6 +384,18 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
     Ensures proper JWT token validation.
     """
     return await get_current_user_service(credentials)
+
+async def get_current_user_optional(credentials: HTTPAuthorizationCredentials = Depends(HTTPBearer(auto_error=False))):
+    """
+    Optional authentication dependency.
+    Returns User if valid token provided, None otherwise.
+    """
+    if credentials is None:
+        return None
+    try:
+        return await get_current_user_service(credentials)
+    except HTTPException:
+        return None
 
 # Pydantic Models
 class User(BaseModel):
@@ -2052,114 +2068,77 @@ async def get_notification_history(
 
 # Removed duplicate /api/rss-sources CRUD endpoints (use routers.rss)
 
-## Removed duplicate RSS helper endpoints (moved to routers.rss)
-## @app.post("/api/rss-sources/bootstrap", tags=["RSS"])
-async def bootstrap_default_sources(current_user: User = Depends(get_current_user)):
-    """Add default high-quality RSS sources for users who don't have any sources yet"""
-    try:
-        # Check if user already has sources
-        existing_sources = await db.rss_sources.count_documents({"user_id": current_user.id})
-        
-        # Default comprehensive news sources with high coverage
-        default_sources = [
-            {
-                "name": "BBC News",
-                "url": "http://feeds.bbci.co.uk/news/rss.xml",
-                "description": "British Broadcasting Corporation - International news coverage"
-            },
-            {
-                "name": "Reuters",
-                "url": "https://feeds.reuters.com/reuters/topNews",
-                "description": "Reuters - Global news and business information"
-            },
-            {
-                "name": "Associated Press",
-                "url": "https://feeds.apnews.com/rss/apf-topnews",
-                "description": "Associated Press - Breaking news and top stories"
-            },
-            {
-                "name": "The Guardian",
-                "url": "https://www.theguardian.com/world/rss",
-                "description": "The Guardian - World news and analysis"
-            },
-            {
-                "name": "CNN",
-                "url": "http://rss.cnn.com/rss/edition.rss",
-                "description": "CNN - Cable News Network international edition"
-            },
-            {
-                "name": "NPR News",
-                "url": "https://feeds.npr.org/1001/rss.xml",
-                "description": "National Public Radio - News from the US and around the world"
-            },
-            {
-                "name": "TechCrunch",
-                "url": "https://techcrunch.com/feed/",
-                "description": "TechCrunch - Technology industry news and startups"
-            },
-            {
-                "name": "Hacker News",
-                "url": "https://feeds.feedburner.com/oreilly/radar/atom",
-                "description": "Technology and programming news"
-            }
-        ]
-        
-        added_sources = []
-        for source_data in default_sources:
-            try:
-                source = RSSSource(
-                    user_id=current_user.id,
-                    name=source_data["name"],
-                    url=source_data["url"],
-                    is_active=False  # デフォルトは非アクティブ、ユーザーが明示的にONにする
-                )
-                await db.rss_sources.insert_one(source.dict())
-                added_sources.append(source.dict())
-                # Default RSS source added
-            except Exception as e:
-                logging.warning(f"Failed to add default source {source_data['name']}: {e}")
-                continue
-        
-        return {
-            "message": f"Successfully added {len(added_sources)} default RSS sources",
-            "sources_added": len(added_sources),
-            "existing_sources": existing_sources,
-            "added_sources": [s["name"] for s in added_sources]
-        }
-        
-    except Exception as e:
-        logging.error(f"Error bootstrapping default sources for user {current_user.email}: {e}")
-        raise HTTPException(status_code=500, detail="Failed to add default sources")
+# RSS & Articles endpoints are now handled by routers/rss.py
 
-## @app.post("/api/rss-sources/reset-defaults", tags=["RSS"])
-async def reset_default_sources_to_inactive(current_user: User = Depends(get_current_user)):
-    """Reset all default bootstrap sources to inactive state"""
+## Main RSS sources endpoint for frontend compatibility
+@app.post("/api/rss-sources", tags=["RSS"])
+async def add_rss_source_main(request: dict, current_user: User = Depends(get_current_user_optional)):
+    """Main RSS source addition endpoint (compatible with frontend)"""
     try:
-        # List of default source names from bootstrap
-        default_source_names = [
-            "BBC News", "Reuters", "Associated Press", "The Guardian", 
-            "CNN", "NPR News", "TechCrunch", "Hacker News"
-        ]
-        
-        # Update all matching sources to inactive
-        result = await db.rss_sources.update_many(
-            {
-                "user_id": current_user.id,
-                "name": {"$in": default_source_names}
-            },
-            {"$set": {"is_active": False}}
-        )
-        
-        logging.info(f"Reset {result.modified_count} default sources to inactive for user {current_user.email}")
-        
-        return {
-            "message": f"Successfully reset {result.modified_count} default sources to inactive",
-            "modified_count": result.modified_count
+        logging.info(f"➕ [RSS SOURCE MAIN] Starting request processing")
+        logging.info(f"➕ [RSS SOURCE MAIN] User: {current_user.email if current_user else 'None'} (ID: {current_user.id if current_user else 'None'})")
+        logging.info(f"➕ [RSS SOURCE MAIN] Request data: {request}")
+
+        # Check if database is available
+        if not db_connected:
+            logging.error(f"➕ [RSS SOURCE MAIN] Database not connected!")
+            raise HTTPException(status_code=503, detail="Database unavailable")
+
+        # Check if user is authenticated
+        if not current_user:
+            logging.error(f"➕ [RSS SOURCE MAIN] No authenticated user found")
+            raise HTTPException(status_code=401, detail="Authentication required")
+
+        # Extract fields from request
+        name = request.get('name') or request.get('custom_name')
+        url = request.get('url') or request.get('custom_url')
+        logging.info(f"➕ [RSS SOURCE MAIN] Extracted - name: {name}, url: {url}")
+
+        # Validate required fields
+        if not name or not url:
+            logging.error(f"➕ [RSS SOURCE MAIN] Missing required fields - name: {name}, url: {url}")
+            raise HTTPException(status_code=422, detail="Name and URL are required")
+
+        # Generate new user source
+        new_source_id = str(uuid.uuid4())
+        new_user_source = {
+            "id": new_source_id,
+            "user_id": current_user.id,
+            "name": name,
+            "url": url,
+            "is_active": True,
+            "notification_enabled": False,
+            "last_article_count": 0,
+            "fetch_error_count": 0,
+            "created_at": datetime.utcnow().isoformat()
         }
-        
+        logging.info(f"➕ [RSS SOURCE MAIN] Prepared document: {new_user_source}")
+
+        # Save to database
+        logging.info(f"➕ [RSS SOURCE MAIN] Inserting into database...")
+        result = await db.rss_sources.insert_one(new_user_source)
+        logging.info(f"➕ [RSS SOURCE MAIN] Saved to database with ID: {result.inserted_id}")
+
+        # Create clean response
+        response_data = new_user_source.copy()
+        response_data["_id"] = str(result.inserted_id)
+
+        logging.info(f"➕ [RSS SOURCE MAIN] Successfully created source: {name}")
+        return response_data
+
+    except HTTPException as http_ex:
+        logging.error(f"➕ [RSS SOURCE MAIN] HTTP Exception: {http_ex.status_code} - {http_ex.detail}")
+        raise
     except Exception as e:
-        logging.error(f"Error resetting default sources for user {current_user.email}: {e}")
-        raise HTTPException(status_code=500, detail="Failed to reset default sources")
+        logging.error(f"➕ [RSS SOURCE MAIN] Unexpected error: {type(e).__name__}: {str(e)}")
+        logging.error(f"➕ [RSS SOURCE MAIN] Error details: {repr(e)}")
+        import traceback
+        logging.error(f"➕ [RSS SOURCE MAIN] Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: create RSS source failed")
+
+# Removed obsolete bootstrap endpoint (RSSSource model not available)
+
+# Removed obsolete reset-defaults endpoint (not used by frontend)
 
 ## @app.get("/api/rss-sources/search", tags=["RSS"])
 async def search_rss_sources(
@@ -2361,55 +2340,7 @@ async def force_cleanup_all_rss_sources(
         logging.error(f"❌ [FORCE CLEANUP] Error: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to cleanup RSS sources: {str(e)}")
 
-## @app.post("/api/rss-sources/add", tags=["RSS"])
-async def add_user_rss_source(request: dict, current_user: User = Depends(get_current_user)):
-    """Add RSS source to user's collection"""
-    try:
-        logging.info(f"➕ [ADD RSS SOURCE] Request for user: {current_user.email} (ID: {current_user.id})")
-        logging.info(f"➕ [ADD RSS SOURCE] Request data: {request}")
-        logging.info(f"➕ [ADD RSS SOURCE] Saving to database...")
-        
-        preconfigured_source_id = request.get('preconfigured_source_id')
-        custom_name = request.get('custom_name')
-        custom_url = request.get('custom_url')
-        custom_category = request.get('custom_category')
-        custom_alias = request.get('custom_alias')
-        notification_enabled = request.get('notification_enabled', False)
-        
-        # Generate new user source
-        new_source_id = str(uuid.uuid4())
-        new_user_source = {
-            "id": new_source_id,
-            "user_id": current_user.id,
-            "preconfigured_source_id": preconfigured_source_id,
-            "custom_name": custom_name,
-            "custom_url": custom_url,
-            "custom_category": custom_category,
-            "custom_alias": custom_alias,
-            "is_active": True,
-            "notification_enabled": notification_enabled,
-            "last_article_count": 0,
-            "fetch_error_count": 0,
-            "created_at": datetime.utcnow().isoformat(),
-            "display_name": custom_name or custom_alias or "New RSS Source",
-            "display_url": custom_url or "https://example.com/rss",
-            "display_category": custom_category or "news"
-        }
-        
-        # Save to database
-        result = await db.rss_sources.insert_one(new_user_source)
-        logging.info(f"➕ [ADD RSS SOURCE] Saved to database with ID: {result.inserted_id}")
-        
-        # Create clean response without ObjectId
-        response_data = new_user_source.copy()
-        response_data["_id"] = str(result.inserted_id)
-        
-        logging.info(f"➕ [ADD RSS SOURCE] Created source: {response_data['display_name']}")
-        return response_data
-        
-    except Exception as e:
-        logging.error(f"Error adding RSS source: {e}")
-        raise HTTPException(status_code=500, detail="Failed to add RSS source")
+# Removed duplicate /api/rss-sources/add endpoint (replaced by /api/rss-sources)
 
 ## @app.delete("/api/rss-sources/my-sources/{source_id}", tags=["RSS"])
 async def delete_user_rss_source(source_id: str, current_user: User = Depends(get_current_user)):
@@ -6618,6 +6549,137 @@ async def generate_simple_audio(
         error_duration = (datetime.utcnow() - start_time).total_seconds()
         logging.error(f"🆕 SIMPLE AUDIO: Failed after {error_duration:.1f}s - {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to generate audio: {str(e)}")
+
+# ===== USER MANAGEMENT DEBUG API =====
+
+@app.get("/api/debug/users", tags=["Debug"])
+async def list_all_users():
+    """デバッグ用: 全登録ユーザー一覧（認証不要）"""
+    try:
+        if not db_connected:
+            raise HTTPException(status_code=503, detail="Database not connected")
+
+        users = await db.users.find({}).to_list(length=None)
+        user_list = []
+
+        for user in users:
+            user_info = {
+                "id": user.get("id", str(user.get("_id", ""))),
+                "email": user.get("email", "N/A"),
+                "name": user.get("name", user.get("displayName", "N/A")),
+                "created_at": user.get("created_at", "N/A"),
+                "subscription_plan": "N/A"
+            }
+
+            # サブスクリプション情報を取得
+            subscription = await db.user_subscriptions.find_one({"user_id": user.get("id")})
+            if subscription:
+                user_info["subscription_plan"] = subscription.get("plan", "free")
+
+            user_list.append(user_info)
+
+        return {
+            "total_users": len(user_list),
+            "users": user_list
+        }
+
+    except Exception as e:
+        logging.error(f"Users list error: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to list users: {str(e)}")
+
+@app.delete("/api/debug/users/clear-all", tags=["Debug"])
+async def clear_all_users():
+    """デバッグ用: 全ユーザーとデータを削除（認証不要）"""
+    try:
+        if not db_connected:
+            raise HTTPException(status_code=503, detail="Database not connected")
+
+        # 削除対象コレクション
+        collections_to_clear = [
+            'users',
+            'user_subscriptions',
+            'audio_creations',
+            'rss_sources',
+            'articles',
+            'audio_files',
+            'user_settings',
+            'user_preferences',
+            'audio_schedules',
+            'playlist_items'
+        ]
+
+        deletion_results = {}
+        total_deleted = 0
+
+        for collection_name in collections_to_clear:
+            try:
+                result = await db[collection_name].delete_many({})
+                deletion_results[collection_name] = result.deleted_count
+                total_deleted += result.deleted_count
+                logging.info(f"🗑️ {collection_name}: {result.deleted_count}件削除")
+            except Exception as e:
+                deletion_results[collection_name] = f"削除エラー: {str(e)}"
+                logging.error(f"Collection {collection_name} deletion error: {e}")
+
+        return {
+            "message": "全ユーザーとデータを削除しました",
+            "total_deleted": total_deleted,
+            "details": deletion_results
+        }
+
+    except Exception as e:
+        logging.error(f"Clear all users error: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to clear users: {str(e)}")
+
+@app.delete("/api/debug/users/{user_email}", tags=["Debug"])
+async def delete_user_by_email(user_email: str):
+    """デバッグ用: 指定したメールアドレスのユーザーを削除（認証不要）"""
+    try:
+        if not db_connected:
+            raise HTTPException(status_code=503, detail="Database not connected")
+
+        # ユーザーを検索
+        user = await db.users.find_one({"email": user_email})
+        if not user:
+            raise HTTPException(status_code=404, detail=f"User with email {user_email} not found")
+
+        user_id = user.get("id", str(user.get("_id", "")))
+
+        # 関連データを削除
+        deletion_results = {}
+
+        # ユーザーデータ削除
+        user_result = await db.users.delete_one({"email": user_email})
+        deletion_results["users"] = user_result.deleted_count
+
+        # 関連データ削除
+        collections_to_clear = [
+            ('user_subscriptions', {"user_id": user_id}),
+            ('audio_creations', {"user_id": user_id}),
+            ('rss_sources', {"user_id": user_id}),
+            ('user_settings', {"user_id": user_id}),
+            ('user_preferences', {"user_id": user_id}),
+            ('audio_schedules', {"user_id": user_id}),
+        ]
+
+        for collection_name, query in collections_to_clear:
+            try:
+                result = await db[collection_name].delete_many(query)
+                deletion_results[collection_name] = result.deleted_count
+            except Exception as e:
+                deletion_results[collection_name] = f"エラー: {str(e)}"
+
+        return {
+            "message": f"ユーザー {user_email} とすべての関連データを削除しました",
+            "user_id": user_id,
+            "deletion_details": deletion_results
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Delete user error: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete user: {str(e)}")
 
 # Lifespan events now handled above
 
