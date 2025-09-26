@@ -12,7 +12,7 @@ import uuid
 
 from config.settings import (
     AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION, 
-    S3_BUCKET_NAME, PROFILE_IMAGES_PATH
+    S3_BUCKET_NAME, PROFILE_IMAGES_PATH, SERVER_PUBLIC_BASE_URL
 )
 from utils.errors import handle_external_service_error
 
@@ -156,8 +156,8 @@ async def save_profile_image(image_data: str, user_id: str) -> str:
         with open(image_path, 'wb') as f:
             f.write(image_bytes)
         
-        # Return local URL
-        local_url = f"http://localhost:8001/profile-images/{image_filename}"
+        # Return local URL (matches FastAPI mount: /static/profile_images)
+        local_url = f"{SERVER_PUBLIC_BASE_URL.rstrip('/')}/static/profile_images/{image_filename}"
         logging.info(f"Profile image saved locally: {local_url}")
         
         return local_url
@@ -177,12 +177,14 @@ async def delete_profile_image(image_url: str) -> bool:
         bool: True if deletion was successful
     """
     try:
-        # Extract filename from URL
-        if "/profile-images/" not in image_url:
-            logging.warning(f"URL is not a profile image URL: {image_url}")
+        # Extract filename from URL (support both legacy and current path)
+        if "/static/profile_images/" in image_url:
+            filename = image_url.split("/static/profile_images/")[-1]
+        elif "/profile-images/" in image_url:
+            filename = image_url.split("/profile-images/")[-1]
+        else:
+            logging.warning(f"URL is not a recognized profile image URL: {image_url}")
             return False
-        
-        filename = image_url.split("/profile-images/")[-1]
         image_path = PROFILE_IMAGES_PATH / filename
         
         # Delete file if it exists

@@ -156,20 +156,42 @@ export const useRSSFeed = (): RSSFeedState & RSSFeedActions => {
         setAllArticles([]);
         return;
       }
-      
-      // 全記事を一度に取得（ジャンルフィルターなし）
-      const apiParams: any = { per_page: 50 }; // より多くの記事を取得
+
+      // プログレッシブローディングのパラメータ設定
+      const apiParams: any = { per_page: 50, progressiveMode: true }; // プログレッシブモード有効化
       if (selectedReadStatus && selectedReadStatus !== 'all') {
         apiParams.read_filter = selectedReadStatus;
       }
-      
-      const data = selectedReadStatus !== 'all' 
+
+      // Phase 1: プログレッシブモードでキャッシュデータを即座に取得
+      const cachedData = selectedReadStatus !== 'all'
         ? await ArticleService.getArticlesWithReadStatus(apiParams)
         : await ArticleService.getArticles(apiParams);
 
       // Handle both array responses and object responses
-      const articles = Array.isArray(data) ? data : (data?.articles || []);
-      setAllArticles(articles); // 全記事を保存
+      const cachedArticles = Array.isArray(cachedData) ? cachedData : (cachedData?.articles || []);
+
+      if (cachedArticles.length > 0) {
+        console.log('📱 [useRSSFeed] Loaded from cache:', cachedArticles.length);
+        setAllArticles(cachedArticles);
+        setLoading(false); // キャッシュデータが表示できたのでローディング終了
+      }
+
+      // Phase 2: バックグラウンドで最新データを取得（背景で更新される）
+      try {
+        const freshParams = { ...apiParams, forceRefresh: true, progressiveMode: false };
+        const freshData = selectedReadStatus !== 'all'
+          ? await ArticleService.getArticlesWithReadStatus(freshParams)
+          : await ArticleService.getArticles(freshParams);
+
+        const freshArticles = Array.isArray(freshData) ? freshData : (freshData?.articles || []);
+        console.log('🌐 [useRSSFeed] Fresh data loaded:', freshArticles.length);
+        setAllArticles(freshArticles);
+      } catch (freshError) {
+        // 最新データ取得失敗時はキャッシュデータを維持
+        console.warn('⚠️ [useRSSFeed] Fresh data failed, keeping cache:', freshError);
+      }
+
     } catch (error) {
       console.error('❌ Error fetching articles:', error);
       setAllArticles([]);
@@ -179,10 +201,35 @@ export const useRSSFeed = (): RSSFeedState & RSSFeedActions => {
     }
   }, [token, selectedReadStatus]);  // selectedGenreを依存から削除
 
-  const onRefresh = useCallback(() => {
+  const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    fetchArticles();
-  }, [fetchArticles]);
+    try {
+      if (!token) {
+        console.error('⚠️  No auth token - authentication required');
+        setAllArticles([]);
+        return;
+      }
+
+      // プルツーリフレッシュの場合は強制的に最新データを取得
+      const apiParams: any = { per_page: 50, forceRefresh: true };
+      if (selectedReadStatus && selectedReadStatus !== 'all') {
+        apiParams.read_filter = selectedReadStatus;
+      }
+
+      const freshData = selectedReadStatus !== 'all'
+        ? await ArticleService.getArticlesWithReadStatus(apiParams)
+        : await ArticleService.getArticles(apiParams);
+
+      const articles = Array.isArray(freshData) ? freshData : (freshData?.articles || []);
+      console.log('🔄 [useRSSFeed] Force refreshed articles:', articles.length);
+      setAllArticles(articles);
+
+    } catch (error) {
+      console.error('❌ Error refreshing articles:', error);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [token, selectedReadStatus]);
 
 
   const addPreConfiguredSource = useCallback(async (sourceId: string, sourceName: string) => {

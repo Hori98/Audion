@@ -1,33 +1,16 @@
 INFO:     Will watch for changes in these directories: ['/Users/hori/Desktop/audion_project_final/Audion_Emergent.AI_Demo/backend']
-INFO:     Uvicorn running on http://127.0.0.1:8001 (Press CTRL+C to quit)
-INFO:     Started reloader process [9384] using StatReload
-INFO:     Started server process [9386]
+INFO:     Uvicorn running on http://0.0.0.0:8003 (Press CTRL+C to quit)
+INFO:     Started reloader process [73885] using StatReload
+WARNING:root:Audio models not found, using fallback definitions
+INFO:     Started server process [73888]
 INFO:     Waiting for application startup.
-2025-08-05 14:24:30,150 - INFO - Connected to MongoDB successfully
-2025-08-05 14:24:30,370 - INFO - Database indexes created successfully
-2025-08-05 14:24:30,395 - INFO - Found 5 existing preset categories
-2025-08-05 14:24:30,395 - INFO - Preset categories initialized successfully
-2025-08-05 14:24:30,395 - INFO - Cleanup tasks completed
 INFO:     Application startup complete.
-INFO:     Will watch for changes in these directories: ['/Users/hori/Desktop/audion_project_final/Audion_Emergent.AI_Demo/backend']
-INFO:     Uvicorn running on http://127.0.0.1:8001 (Press CTRL+C to quit)
-INFO:     Started reloader process [29947] using StatReload
-INFO:     Started server process [29949]
+WARNING:  StatReload detected changes in 'server.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [73888]
+WARNING:root:Audio models not found, using fallback definitions
+INFO:     Started server process [79071]
 INFO:     Waiting for application startup.
-2025-08-07 13:39:06,268 - INFO - Connected to MongoDB successfully
-2025-08-07 13:39:07,721 - INFO - Database indexes created successfully
-2025-08-07 13:39:07,772 - INFO - Found 5 existing preset categories
-2025-08-07 13:39:07,772 - INFO - Preset categories initialized successfully
-2025-08-07 13:39:07,772 - INFO - Cleanup tasks completed
-INFO:     Application startup complete.
-INFO:     Will watch for changes in these directories: ['/Users/hori/Desktop/audion_project_final/Audion_Emergent.AI_Demo/backend']
-INFO:     Uvicorn running on http://127.0.0.1:8001 (Press CTRL+C to quit)
-INFO:     Started reloader process [60008] using StatReload
-INFO:     Started server process [60010]
-INFO:     Waiting for application startup.
-2025-08-30 00:11:57,451 - INFO - Connected to MongoDB successfully
-2025-08-30 00:11:57,925 - INFO - Database indexes created successfully
-2025-08-30 00:11:57,941 - INFO - Found 5 existing preset categories
-2025-08-30 00:11:57,942 - INFO - Preset categories initialized successfully
-2025-08-30 00:11:57,942 - INFO - Cleanup tasks completed
 INFO:     Application startup complete.

@@ -5,6 +5,7 @@ Articles router for fetching and managing articles from RSS sources.
 import logging
 from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, HTTPException, status, Depends, Query
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from models.user import User
 from models.article import Article, AutoPickRequest
@@ -16,35 +17,37 @@ from services.article_service import filter_articles_by_genre
 from utils.errors import handle_database_error, handle_generic_error
 
 router = APIRouter(prefix="/api", tags=["Articles"])
+security = HTTPBearer()
 
 @router.get("/articles", response_model=List[Article])
 async def get_articles(
-    current_user: User = Depends(get_current_user),
+    credentials: HTTPAuthorizationCredentials = Depends(security),
     genre: Optional[str] = Query(None, description="Filter articles by genre"),
     source: Optional[str] = Query(None, description="Filter articles by source name")
 ):
     """
     Get articles from user's RSS sources with optional filtering.
-    
+
     Args:
-        current_user: Current authenticated user
+        credentials: HTTP Bearer credentials containing JWT token
         genre: Optional genre filter
         source: Optional source name filter
-        
+
     Returns:
         List[Article]: Filtered articles
     """
     try:
+        current_user = await get_current_user(credentials)
         articles = await get_articles_for_user(
-            current_user.id, 
-            genre=genre, 
+            current_user.id,
+            genre=genre,
             source=source,
             max_articles=50
         )
-        
+
         logging.info(f"Retrieved {len(articles)} articles for user {current_user.email}")
         return articles
-        
+
     except Exception as e:
         logging.error(f"Error getting articles: {e}")
         raise handle_database_error(e, "get articles")
@@ -228,7 +231,84 @@ async def search_articles(
         
         logging.info(f"Article search '{q}' returned {len(results)} results for user {current_user.email}")
         return results[:20]  # Limit to 20 results
-        
+
     except Exception as e:
         logging.error(f"Error searching articles: {e}")
         raise handle_generic_error(e, "search articles")
+
+@router.get("/articles/curated", response_model=List[Article])
+async def get_curated_articles_endpoint(
+    genre: Optional[str] = Query(None, description="Filter by genre (optional)"),
+    max_articles: int = Query(50, ge=1, le=100, description="Maximum number of articles to return")
+):
+    """
+    Get curated articles from preset RSS sources.
+
+    This endpoint is used by the Home tab to display articles from
+    system-defined RSS sources (jp_rss_sources.json).
+    No authentication required - public curated content.
+
+    Args:
+        genre: Optional genre filter (e.g., "総合ニュース", "テクノロジー")
+        max_articles: Maximum number of articles to return (1-100)
+
+    Returns:
+        List[Article]: List of curated articles sorted by publication date
+
+    Raises:
+        HTTPException: If error occurs while fetching articles
+    """
+    try:
+        from services.rss_service import get_curated_articles
+
+        logging.info(f"Fetching curated articles - genre: {genre}, max: {max_articles}")
+
+        articles = await get_curated_articles(
+            genre=genre,
+            max_articles=max_articles
+        )
+
+        logging.info(f"Successfully fetched {len(articles)} curated articles")
+        return articles
+
+    except Exception as e:
+        logging.error(f"Error in get_curated_articles_endpoint: {e}")
+        raise handle_generic_error(e, "fetch curated articles")
+
+@router.get("/articles/categories")
+async def get_curated_categories():
+    """
+    Get available article categories from preset RSS sources.
+    No authentication required - public information.
+
+    Returns:
+        List[dict]: Available categories with their names and descriptions
+    """
+    import json
+    import os
+
+    try:
+        # Load preset RSS sources
+        preset_file_path = os.path.join(os.path.dirname(__file__), "../presets/jp_rss_sources.json")
+
+        if not os.path.exists(preset_file_path):
+            logging.error(f"Preset RSS sources file not found: {preset_file_path}")
+            raise HTTPException(status_code=500, detail="Preset sources configuration not found")
+
+        with open(preset_file_path, 'r', encoding='utf-8') as f:
+            preset_data = json.load(f)
+
+        categories = []
+        for category in preset_data.get("categories", []):
+            categories.append({
+                "id": category.get("id"),
+                "name": category.get("name"),
+                "description": category.get("description")
+            })
+
+        logging.info(f"Returning {len(categories)} available categories")
+        return {"categories": categories}
+
+    except Exception as e:
+        logging.error(f"Error getting curated categories: {e}")
+        raise handle_generic_error(e, "get available categories")

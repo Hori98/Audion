@@ -13,7 +13,7 @@ const path = require('path');
 const SERVERS = {
   // Development servers (for user testing)
   dev: {
-    backend: { port: 8001, cmd: 'uvicorn', args: ['server:app', '--reload', '--port', '8001'] },
+    backend: { port: 8001, cmd: 'uvicorn', args: ['server:app', '--reload', '--host', '0.0.0.0', '--port', '8001'] },
     frontend: { port: 8081, cmd: 'npx', args: ['expo', 'start'] }
   },
   // Testing servers (for AI assistant testing)
@@ -65,7 +65,7 @@ class ServerManager {
     
     const workDir = type === 'backend' ? 
       path.join(__dirname, 'backend') : 
-      path.join(__dirname, 'audion-app');
+      path.join(__dirname, 'audion-app-fresh');
 
     // Create log files
     const logFile = path.join(this.logDir, `${serverId}.log`);
@@ -83,7 +83,7 @@ class ServerManager {
       const venvPath = path.join(__dirname, 'venv', 'bin', 'activate');
       if (fs.existsSync(venvPath)) {
         actualCmd = 'bash';
-        actualArgs = ['-c', `source ${venvPath} && cd ${workDir} && uvicorn server:app --reload --port ${config.port}`];
+        actualArgs = ['-c', `source ${venvPath} && cd ${workDir} && uvicorn server:app --reload --host 0.0.0.0 --port ${config.port}`];
       }
     }
 

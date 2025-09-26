@@ -43,17 +43,42 @@ export function useCuratedFeed(): UseCuratedFeedState & UseCuratedFeedActions {
     return filtered;
   }, []);
 
-  // キュレーション記事取得
+  // キュレーション記事取得（プログレッシブローディング対応）
   const fetchArticles = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
 
-      const curatedArticles = await ArticleService.getCuratedArticles();
-      
-      setArticles(curatedArticles);
-      setFilteredArticles(applyFilters(curatedArticles, selectedGenre));
-      
+      // Phase 1: プログレッシブモードでキャッシュデータを即座に取得
+      const cachedResult = await ArticleService.getCuratedArticles({
+        genre: selectedGenre !== 'すべて' ? selectedGenre : undefined,
+        maxArticles: 50,
+        progressiveMode: true,
+      });
+
+      if (cachedResult.articles.length > 0) {
+        console.log('📱 [useCuratedFeed] Loaded from cache:', cachedResult.articles.length);
+        setArticles(cachedResult.articles);
+        setFilteredArticles(applyFilters(cachedResult.articles, selectedGenre));
+        setLoading(false); // キャッシュデータが表示できたのでローディング終了
+      }
+
+      // Phase 2: バックグラウンドで最新データを取得（背景で更新される）
+      try {
+        const freshResult = await ArticleService.getCuratedArticles({
+          genre: selectedGenre !== 'すべて' ? selectedGenre : undefined,
+          maxArticles: 50,
+          forceRefresh: true,
+        });
+
+        console.log('🌐 [useCuratedFeed] Fresh data loaded:', freshResult.articles.length);
+        setArticles(freshResult.articles);
+        setFilteredArticles(applyFilters(freshResult.articles, selectedGenre));
+      } catch (freshError) {
+        // 最新データ取得失敗時はキャッシュデータを維持
+        console.warn('⚠️ [useCuratedFeed] Fresh data failed, keeping cache:', freshError);
+      }
+
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to fetch curated articles';
       setError(errorMessage);
@@ -63,17 +88,23 @@ export function useCuratedFeed(): UseCuratedFeedState & UseCuratedFeedActions {
     }
   }, [selectedGenre, applyFilters]);
 
-  // プルツーリフレッシュ
+  // プルツーリフレッシュ（強制リフレッシュ）
   const refreshArticles = useCallback(async () => {
     try {
       setRefreshing(true);
       setError(null);
 
-      const curatedArticles = await ArticleService.getCuratedArticles();
-      
-      setArticles(curatedArticles);
-      setFilteredArticles(applyFilters(curatedArticles, selectedGenre));
-      
+      // プルツーリフレッシュの場合は強制的に最新データを取得
+      const freshResult = await ArticleService.getCuratedArticles({
+        genre: selectedGenre !== 'すべて' ? selectedGenre : undefined,
+        maxArticles: 50,
+        forceRefresh: true,
+      });
+
+      console.log('🔄 [useCuratedFeed] Force refreshed articles:', freshResult.articles.length);
+      setArticles(freshResult.articles);
+      setFilteredArticles(applyFilters(freshResult.articles, selectedGenre));
+
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to refresh curated articles';
       setError(errorMessage);

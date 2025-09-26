@@ -30,6 +30,7 @@ import ArticleCard from './ArticleCard';
 import ArticleDetailModal from './ArticleDetailModal';
 import ManualPickModal from './ManualPickModal';
 import FloatingAutoPickButton from './FloatingAutoPickButton';
+import { SkeletonFeedScreen } from './SkeletonComponents';
 import AudioService, { ManualPickRequest, AutoPickRequest } from '../services/AudioService';
 import AutoPickProgressBar from './AutoPickProgressBar';
 import { AutoPickProgressService, AutoPickProgressData } from '../services/AutoPickProgressService';
@@ -570,11 +571,15 @@ export const FeedUI: React.FC<FeedUIProps> = ({
   }, []);
 
 
-  if (loading) {
+  // ローディング状態（初回読み込み時）でスケルトンUIを表示
+  if (loading && articles.length === 0) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#ffffff" />
-        <Text style={styles.loadingText}>記事を読み込み中...</Text>
+      <View style={styles.container}>
+        <UnifiedHeader
+          onSearchPress={onSearchPress}
+          onReadStatusPress={() => setShowReadStatusModal(true)}
+        />
+        <SkeletonFeedScreen />
       </View>
     );
   }

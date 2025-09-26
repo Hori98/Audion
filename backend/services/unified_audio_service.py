@@ -54,6 +54,8 @@ except ImportError:
         prompt_style: str = "standard"
         custom_prompt: Optional[str] = None
         user_plan: str = "free"
+        source_scope: str = "user"  # "fixed" or "user"
+        preferred_genres: Optional[List[str]] = None
         
     @dataclass
     class AudioGenerationResponse:
@@ -178,56 +180,70 @@ class UnifiedAudioService:
             return articles
             
         elif mode in [AudioGenerationMode.AUTO_PICK, AudioGenerationMode.SCHEDULE]:
-            # Auto-pick mode: Fetch from RSS sources
-            articles = await self._fetch_autopick_articles(user_id, request.max_articles)
+            # Auto-pick mode: Fetch according to source scope
+            scope = getattr(request, 'source_scope', 'user') or 'user'
+            genres = getattr(request, 'preferred_genres', None)
+            articles = await self._fetch_autopick_articles(user_id, request.max_articles, scope, genres)
             self.logger.info(f"🎯 {mode.value.upper()}: Selected {len(articles)} articles")
             return articles
             
         else:
             raise ValueError(f"Unsupported mode: {mode}")
 
-    async def _fetch_autopick_articles(self, user_id: str, max_articles: int) -> List[Dict]:
-        """AutoPick/Schedule用記事取得"""
-        
-        # Get user's RSS sources
-        sources = await self.db.rss_sources.find({
-            "user_id": user_id,
-            "$or": [
-                {"is_active": {"$ne": False}},
-                {"is_active": {"$exists": False}}
-            ]
-        }).to_list(100)
-        
-        if not sources:
-            raise ValueError("No active RSS sources found")
-        
-        # Fetch articles from sources
-        all_articles = []
-        for source in sources[:3]:  # Limit to 3 sources for performance
-            try:
-                feed = parse_rss_feed(source["url"], use_cache=True)
-                if not feed:
-                    continue
-                    
-                for entry in feed.entries[:max_articles]:
-                    article = {
-                        "id": str(uuid.uuid4()),
-                        "title": getattr(entry, 'title', 'No Title'),
-                        "summary": getattr(entry, 'summary', getattr(entry, 'description', 'No summary')),
-                        "link": getattr(entry, 'link', ''),
-                        "content": getattr(entry, 'content', [{}])[0].get('value', '') if hasattr(entry, 'content') and entry.content else '',
-                        "source_name": source["name"]
-                    }
-                    all_articles.append(article)
-                    
-            except Exception as e:
-                self.logger.warning(f"Error parsing feed {source['url']}: {e}")
-                continue
-        
-        if not all_articles:
-            raise ValueError("No articles found from RSS sources")
-            
-        return all_articles[:max_articles]
+    async def _fetch_autopick_articles(self, user_id: str, max_articles: int, scope: str, preferred_genres: Optional[List[str]]) -> List[Dict]:
+        """AutoPick/Schedule用記事取得（スコープ分岐: fixed | user）"""
+        try:
+            all_articles: List[Dict] = []
+            if scope == 'fixed':
+                # Use curated sources for Home scope
+                from services.rss_service import get_curated_articles
+                # choose first preferred genre if provided
+                genre = (preferred_genres or [None])[0]
+                curated = await get_curated_articles(genre=genre, max_articles=max_articles)
+                for a in curated:
+                    all_articles.append({
+                        "id": getattr(a, 'id', str(uuid.uuid4())),
+                        "title": a.title,
+                        "summary": a.summary,
+                        "link": a.link,
+                        "content": getattr(a, 'content', ''),
+                        "source_name": a.source_name
+                    })
+            else:
+                # Default: user-managed sources
+                sources = await self.db.rss_sources.find({
+                    "user_id": user_id,
+                    "$or": [
+                        {"is_active": {"$ne": False}},
+                        {"is_active": {"$exists": False}}
+                    ]
+                }).to_list(100)
+                if not sources:
+                    raise ValueError("No active RSS sources found")
+                for source in sources[:3]:  # Limit to 3 sources for performance
+                    try:
+                        feed = parse_rss_feed(source["url"], use_cache=True)
+                        if not feed:
+                            continue
+                        for entry in feed.entries[:max_articles]:
+                            article = {
+                                "id": str(uuid.uuid4()),
+                                "title": getattr(entry, 'title', 'No Title'),
+                                "summary": getattr(entry, 'summary', getattr(entry, 'description', 'No summary')),
+                                "link": getattr(entry, 'link', ''),
+                                "content": getattr(entry, 'content', [{}])[0].get('value', '') if hasattr(entry, 'content') and entry.content else '',
+                                "source_name": source["name"]
+                            }
+                            all_articles.append(article)
+                    except Exception as e:
+                        self.logger.warning(f"Error parsing feed {source['url']}: {e}")
+                        continue
+            if not all_articles:
+                raise ValueError("No articles found for selected scope")
+            return all_articles[:max_articles]
+        except Exception as e:
+            self.logger.error(f"AutoPick fetch error (scope={scope}): {e}")
+            raise
 
     async def _generate_script(
         self,
@@ -384,7 +400,11 @@ Articles to transform into audio script:
         """音声作成データベース保存 - 統一実装"""
         
         audio_id = str(uuid.uuid4())
-        
+
+        # Prepare links and chapters
+        article_links = [article.get('link', '') for article in selected_articles]
+        chapters = self._generate_chapters(selected_articles, audio_data['duration'])
+
         audio_creation = AudioCreation(
             id=audio_id,
             title=title,
@@ -396,7 +416,9 @@ Articles to transform into audio script:
             voice_language=request.voice_language,
             voice_name=request.voice_name,
             article_ids=[article['id'] for article in selected_articles],
-            article_titles=[article['title'] for article in selected_articles]
+            article_titles=[article['title'] for article in selected_articles],
+            chapters=chapters,
+            article_links=article_links
         )
         
         # Save to database (would integrate with existing DB logic)

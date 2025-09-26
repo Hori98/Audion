@@ -3,6 +3,22 @@
  * Centralized configuration with dynamic IP detection
  */
 
+import Constants from 'expo-constants';
+import { Platform } from 'react-native';
+
+// Helper function to resolve development host
+const resolveDevHost = (): string | null => {
+  try {
+    const m: any = (Constants as any);
+    const dbg = m.manifest2?.extra?.expoGo?.debuggerHost || m.manifest?.debuggerHost || m.expoConfig?.hostUri;
+    if (!dbg) return null;
+    const host = String(dbg).split(':')[0];
+    return host || null;
+  } catch {
+    return null;
+  }
+};
+
 // Dynamic Backend Detection
 const detectBackendUrl = (): string => {
   // Prefer explicit env vars
@@ -10,10 +26,10 @@ const detectBackendUrl = (): string => {
   if (envUrl) {
     // Normalize by removing trailing /api to avoid duplication
     envUrl = envUrl.replace(/\/api\/?$/, '');
-    // If running on a physical device, replace localhost with dev host IP
-    if (__DEV__ && envUrl.includes('localhost')) {
+    // Only replace localhost with dev host IP on native (Expo Go/Dev Client), not on web
+    if (__DEV__ && envUrl.includes('localhost') && Platform.OS !== 'web') {
       const host = resolveDevHost();
-      if (host) {
+      if (host && /^(?:\d{1,3}\.){3}\d{1,3}$/.test(host)) {
         envUrl = envUrl.replace('localhost', host);
       }
     }
@@ -25,9 +41,9 @@ const detectBackendUrl = (): string => {
     return 'https://api.audion.app';
   }
 
-  // Development sensible default: match server-manager backend port
+  // Development sensible default: match current backend port
   const host = resolveDevHost();
-  return `http://${host || 'localhost'}:8001`;
+  return `http://${host || 'localhost'}:8003`;
 };
 
 // API Base Configuration
@@ -122,20 +138,6 @@ export const getAuthHeaders = (token?: string) => ({
 
 // Environment Detection
 export const isDevelopment = __DEV__;
-import Constants from 'expo-constants';
-
-const resolveDevHost = (): string | null => {
-  try {
-    const m: any = (Constants as any);
-    const dbg = m.manifest2?.extra?.expoGo?.debuggerHost || m.manifest?.debuggerHost || m.expoConfig?.hostUri;
-    if (!dbg) return null;
-    const host = String(dbg).split(':')[0];
-    return host || null;
-  } catch {
-    return null;
-  }
-};
-
 export const isProduction = !__DEV__;
 
 // 🚨 DEBUG: API Configuration Status (after all definitions)

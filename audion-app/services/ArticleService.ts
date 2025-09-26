@@ -39,9 +39,71 @@ export interface ImportRSSResponse {
 }
 
 class ArticleService {
-  // Simple in-memory cache with TTL
+  // Enhanced caching system for progressive loading
   private cache: Map<string, { data: ArticleListResponse; ts: number }> = new Map();
-  private cacheTTL = 60_000; // 60 seconds
+  private cacheTTL = 300_000; // 5 minutes - extended for better performance
+  private persistentCachePrefix = '@audion_articles_cache_';
+
+  // Progressive loading configuration
+  private progressiveLoadingEnabled = true;
+
+  /**
+   * Save articles to persistent cache (AsyncStorage)
+   */
+  private async saveToPersistentCache(cacheKey: string, data: ArticleListResponse): Promise<void> {
+    try {
+      const cacheData = {
+        data,
+        timestamp: Date.now(),
+        version: '1.0'
+      };
+      await AsyncStorage.setItem(
+        `${this.persistentCachePrefix}${cacheKey}`,
+        JSON.stringify(cacheData)
+      );
+    } catch (error) {
+      console.warn('Failed to save to persistent cache:', error);
+    }
+  }
+
+  /**
+   * Load articles from persistent cache (AsyncStorage)
+   */
+  private async loadFromPersistentCache(cacheKey: string): Promise<ArticleListResponse | null> {
+    try {
+      const cachedString = await AsyncStorage.getItem(`${this.persistentCachePrefix}${cacheKey}`);
+      if (!cachedString) return null;
+
+      const cached = JSON.parse(cachedString);
+      const now = Date.now();
+
+      // Check if cache is still valid (24 hours for persistent cache)
+      if (now - cached.timestamp > 86400000) { // 24 hours
+        await AsyncStorage.removeItem(`${this.persistentCachePrefix}${cacheKey}`);
+        return null;
+      }
+
+      return cached.data;
+    } catch (error) {
+      console.warn('Failed to load from persistent cache:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Clear all persistent cache entries
+   */
+  async clearPersistentCache(): Promise<void> {
+    try {
+      const keys = await AsyncStorage.getAllKeys();
+      const cacheKeys = keys.filter(key => key.startsWith(this.persistentCachePrefix));
+      await AsyncStorage.multiRemove(cacheKeys);
+      console.log(`Cleared ${cacheKeys.length} persistent cache entries`);
+    } catch (error) {
+      console.warn('Failed to clear persistent cache:', error);
+    }
+  }
+
   private async getAuthToken(): Promise<string | null> {
     const token = await AsyncStorage.getItem('@audion_auth_token');
     // Token validation completed
@@ -53,9 +115,9 @@ class ArticleService {
     options: RequestInit = {}
   ): Promise<T> {
     const token = await this.getAuthToken();
-    
+
     // API request: ${API_BASE_URL}${endpoint}
-    
+
     const response = await fetch(`${API_BASE_URL}${endpoint}`, {
       ...options,
       headers: {
@@ -75,6 +137,10 @@ class ArticleService {
     return response.json();
   }
 
+  /**
+   * Enhanced getArticles with progressive loading support
+   * Returns cached data immediately, then optionally fetches fresh data
+   */
   async getArticles(params?: {
     page?: number;
     per_page?: number;
@@ -84,8 +150,8 @@ class ArticleService {
     source_name?: string;
     source?: string;
     forceRefresh?: boolean;
+    progressiveMode?: boolean; // Enable progressive loading
   }): Promise<ArticleListResponse | Article[]> {
-    // Call backend /api/articles which returns an array
     const token = await this.getAuthToken();
     const url = new URL(`${API_BASE_URL}/api/articles`);
     if (params?.genre) url.searchParams.set('genre', params.genre);
@@ -94,15 +160,34 @@ class ArticleService {
     }
     if (params?.search) url.searchParams.set('search', params.search);
 
-    const cacheKey = url.toString();
+    const cacheKey = this.generateCacheKey(url.toString());
     const now = Date.now();
-    if (!params?.forceRefresh) {
-      const cached = this.cache.get(cacheKey);
-      if (cached && now - cached.ts < this.cacheTTL) {
-        return cached.data;
+
+    // Progressive loading: Return cached data immediately if available
+    if (this.progressiveLoadingEnabled && params?.progressiveMode && !params?.forceRefresh) {
+      // Check memory cache first
+      const memoryCache = this.cache.get(cacheKey);
+      if (memoryCache && now - memoryCache.ts < this.cacheTTL) {
+        console.log('📱 [Progressive] Serving from memory cache');
+        // Start background refresh for next time (don't await)
+        this.refreshInBackground(url.toString(), cacheKey, token);
+        return memoryCache.data;
+      }
+
+      // Check persistent cache
+      const persistentCache = await this.loadFromPersistentCache(cacheKey);
+      if (persistentCache) {
+        console.log('💾 [Progressive] Serving from persistent cache');
+        // Update memory cache
+        this.cache.set(cacheKey, { data: persistentCache, ts: now });
+        // Start background refresh for next time (don't await)
+        this.refreshInBackground(url.toString(), cacheKey, token);
+        return persistentCache;
       }
     }
 
+    // No cache available or force refresh - fetch fresh data
+    console.log('🌐 [Progressive] Fetching fresh data');
     const response = await fetch(url.toString(), {
       method: 'GET',
       headers: {
@@ -118,27 +203,179 @@ class ArticleService {
     }
 
     const articles = await response.json();
+
     // Normalize fields minimally for the UI
     const normalized: Article[] = (articles || []).map((a: any) => ({
       ...a,
       published_at: a.published || a.published_at,
     }));
 
-    // Return as list structure the hook can handle
-    const result = {
+    // Create result structure
+    const result: ArticleListResponse = {
       articles: normalized,
       total: normalized.length,
       page: params?.page || 1,
       per_page: params?.per_page || 50,
       has_next: false,
     };
+
+    // Update caches
     this.cache.set(cacheKey, { data: result, ts: now });
+    await this.saveToPersistentCache(cacheKey, result);
+
     return result;
   }
 
-  async getCuratedArticles(): Promise<Article[]> {
-    console.warn('[ArticleService] getCuratedArticles called but not implemented in backend. Returning empty array.');
-    return [];
+  /**
+   * Background refresh for progressive loading
+   */
+  private async refreshInBackground(url: string, cacheKey: string, token: string | null): Promise<void> {
+    try {
+      console.log('🔄 [Background] Starting refresh');
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token && { Authorization: `Bearer ${token}` }),
+        },
+      });
+
+      if (response.ok) {
+        const articles = await response.json();
+        const normalized: Article[] = (articles || []).map((a: any) => ({
+          ...a,
+          published_at: a.published || a.published_at,
+        }));
+
+        const result: ArticleListResponse = {
+          articles: normalized,
+          total: normalized.length,
+          page: 1,
+          per_page: 50,
+          has_next: false,
+        };
+
+        // Update caches
+        this.cache.set(cacheKey, { data: result, ts: Date.now() });
+        await this.saveToPersistentCache(cacheKey, result);
+        console.log('✅ [Background] Refresh completed');
+      }
+    } catch (error) {
+      console.warn('⚠️ [Background] Refresh failed:', error);
+    }
+  }
+
+  /**
+   * Generate normalized cache key
+   */
+  private generateCacheKey(url: string): string {
+    // Remove base URL and normalize parameters for consistent caching
+    return url.replace(API_BASE_URL, '').replace(/[^\w\-._~:/?#[\]@!$&'()*+,;=]/g, '_');
+  }
+
+  async getCuratedArticles(
+    params?: {
+      genre?: string;
+      maxArticles?: number;
+      forceRefresh?: boolean;
+      progressiveMode?: boolean;
+    }
+  ): Promise<ArticleListResponse> {
+    const url = new URL(`${API_BASE_URL}/api/articles/curated`);
+    if (params?.genre && params.genre !== 'すべて') {
+      url.searchParams.set('genre', params.genre);
+    }
+    if (params?.maxArticles) {
+      url.searchParams.set('max_articles', params.maxArticles.toString());
+    }
+
+    const cacheKey = this.generateCacheKey(url.toString());
+    const now = Date.now();
+    const token = await this.getAuthToken();
+
+    if (this.progressiveLoadingEnabled && params?.progressiveMode && !params?.forceRefresh) {
+      const memoryCache = this.cache.get(cacheKey);
+      if (memoryCache && now - memoryCache.ts < this.cacheTTL) {
+        console.log('📱 [Progressive Curated] Serving from memory cache');
+        this.refreshCuratedInBackground(url.toString(), cacheKey, token);
+        return memoryCache.data;
+      }
+
+      const persistentCache = await this.loadFromPersistentCache(cacheKey);
+      if (persistentCache) {
+        console.log('💾 [Progressive Curated] Serving from persistent cache');
+        this.cache.set(cacheKey, { data: persistentCache, ts: now });
+        this.refreshCuratedInBackground(url.toString(), cacheKey, token);
+        return persistentCache;
+      }
+    }
+
+    console.log('🌐 [Progressive Curated] Fetching fresh data');
+    const response = await fetch(url.toString(), {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[ArticleService] Curated articles API error:', errorText);
+      throw new Error(`Failed to fetch curated articles: ${response.status}`);
+    }
+
+    const articles: Article[] = await response.json();
+    const normalizedArticles = articles.map(article => ({
+      ...article,
+      published_at: article.published || article.published_at,
+      id: article.id || `${article.source_id || 'unknown'}-${Date.now()}-${Math.random()}`,
+    }));
+
+    const result: ArticleListResponse = {
+      articles: normalizedArticles,
+      total: normalizedArticles.length,
+      page: 1,
+      per_page: params?.maxArticles || 50,
+      has_next: false,
+    };
+
+    this.cache.set(cacheKey, { data: result, ts: now });
+    await this.saveToPersistentCache(cacheKey, result);
+
+    return result;
+  }
+
+  private async refreshCuratedInBackground(url: string, cacheKey: string, token: string | null): Promise<void> {
+    try {
+      console.log('🔄 [Background Curated] Starting refresh');
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token && { Authorization: `Bearer ${token}` }),
+        },
+      });
+
+      if (response.ok) {
+        const articles: Article[] = await response.json();
+        const normalized: Article[] = articles.map((a: any) => ({
+          ...a,
+          published_at: a.published || a.published_at,
+        }));
+
+        const result: ArticleListResponse = {
+          articles: normalized,
+          total: normalized.length,
+          page: 1,
+          per_page: 50,
+          has_next: false,
+        };
+
+        this.cache.set(cacheKey, { data: result, ts: Date.now() });
+        await this.saveToPersistentCache(cacheKey, result);
+        console.log('✅ [Background Curated] Refresh completed');
+      }
+    } catch (error) {
+      console.warn('⚠️ [Background Curated] Refresh failed:', error);
+    }
   }
 
   async getArticle(articleId: string): Promise<Article> {
@@ -146,7 +383,7 @@ class ArticleService {
   }
 
   async updateArticle(
-    articleId: string, 
+    articleId: string,
     updates: { category?: string; audio_available?: boolean }
   ): Promise<Article> {
     return this.makeRequest<Article>(`/articles/${articleId}`, {
@@ -186,12 +423,12 @@ class ArticleService {
       read_at: new Date().toISOString(),
       status: 'read' as const
     };
-    
+
     const updatedReadArticles = [
       ...readArticles.filter(item => item.id !== articleId),
       newReadStatus
     ];
-    
+
     await AsyncStorage.setItem('@audion_read_articles', JSON.stringify(updatedReadArticles));
   }
 
@@ -202,12 +439,12 @@ class ArticleService {
       read_at: new Date().toISOString(),
       status: 'saved' as const
     };
-    
+
     const updatedReadArticles = [
       ...readArticles.filter(item => item.id !== articleId),
       newSavedStatus
     ];
-    
+
     await AsyncStorage.setItem('@audion_read_articles', JSON.stringify(updatedReadArticles));
   }
 
@@ -228,7 +465,7 @@ class ArticleService {
   }): Promise<ArticleListResponse> {
     const response = await this.getArticles(params);
     const readArticles = await this.getReadArticles();
-    
+
     // 既読ステータスをマージ
     const articlesWithStatus = response.articles.map(article => {
       const readInfo = readArticles.find(r => r.id === article.id);
@@ -242,7 +479,7 @@ class ArticleService {
     // フィルタリング適用
     let filteredArticles = articlesWithStatus;
     if (params?.read_filter && params.read_filter !== 'all') {
-      filteredArticles = articlesWithStatus.filter(article => 
+      filteredArticles = articlesWithStatus.filter(article =>
         article.read_status === params.read_filter
       );
     }

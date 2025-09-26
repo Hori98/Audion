@@ -57,3 +57,7 @@ PROFILE_IMAGES_PATH = ROOT_DIR / "profile_images"
 # Ensure directories exist
 AUDIO_STORAGE_PATH.mkdir(exist_ok=True)
 PROFILE_IMAGES_PATH.mkdir(exist_ok=True)
+
+# Public base URL for generating absolute links to locally stored assets
+# Adjust via env var SERVER_PUBLIC_BASE_URL to match the running backend host:port
+SERVER_PUBLIC_BASE_URL = os.environ.get('SERVER_PUBLIC_BASE_URL', 'http://localhost:8003')

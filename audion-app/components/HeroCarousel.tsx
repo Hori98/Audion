@@ -21,8 +21,9 @@ interface HeroCarouselProps {
 }
 
 const { width: screenWidth } = Dimensions.get('window');
-const CARD_WIDTH = screenWidth - 32; // 16px margin on each side
-const CARD_SPACING = 16;
+const SIDE_PADDING = 16; // 左右余白
+const CARD_SPACING = 16; // カード間の余白
+const CARD_WIDTH = screenWidth - SIDE_PADDING * 2; // 画面左右の余白を差し引いた幅
 
 export default function HeroCarousel({
   articles,
@@ -32,9 +33,18 @@ export default function HeroCarousel({
 }: HeroCarouselProps) {
   const [currentIndex, setCurrentIndex] = useState(1); // 真ん中から開始
   const scrollViewRef = useRef<ScrollView>(null);
-  const autoScrollTimer = useRef<number | null>(null);
-  const isScrollingRef = useRef(false);
-  const restartTimeoutRef = useRef<number | null>(null);
+  const isUserScrollingRef = useRef(false);
+  const isAdjustingRef = useRef(false);
+  const currentIndexRef = useRef(1);
+
+  // 指定インデックスを画面中央にスナップさせるオフセットを算出
+  const getOffsetForIndex = (i: number) =>
+    SIDE_PADDING + i * (CARD_WIDTH + CARD_SPACING) + CARD_WIDTH / 2 - screenWidth / 2;
+
+  // snapToOffsetsを利用して、常に最寄りのカード中央へ吸着させる
+  const snapOffsets = React.useMemo(() => {
+    return Array.from({ length: displayArticles.length }, (_, i) => getOffsetForIndex(i));
+  }, [displayArticles.length]);
 
   // 表示用記事配列（前後に複製を配置して無限スクロールを実現）
   const displayArticles = React.useMemo(() => {
@@ -51,133 +61,67 @@ export default function HeroCarousel({
     ];
   }, [articles]);
 
-  // 初期位置設定（真ん中から開始するため1番目に移動）
+  // 初期位置設定（1番目を中央に）
   useEffect(() => {
     if (displayArticles.length > 2 && scrollViewRef.current) {
-      setTimeout(() => {
-        scrollViewRef.current?.scrollTo({
-          x: 1 * (CARD_WIDTH + CARD_SPACING),
-          animated: false,
-        });
-      }, 100);
+      // 初期位置へ正確に移動（中央スナップ用オフセット）
+      const initialX = getOffsetForIndex(1);
+      requestAnimationFrame(() => {
+        scrollViewRef.current?.scrollTo({ x: initialX, animated: false });
+        setCurrentIndex(1);
+        currentIndexRef.current = 1;
+      });
     }
-  }, [displayArticles.length]);
-
-  // 自動スクロール機能（5秒間隔）
-  useEffect(() => {
-    if (displayArticles.length <= 2) return; // 実質的に1記事以下の場合は自動スクロールしない
-
-    const startAutoScroll = () => {
-      autoScrollTimer.current = setInterval(() => {
-        if (!isScrollingRef.current) {
-          setCurrentIndex(prev => {
-            const nextIndex = prev + 1;
-            scrollViewRef.current?.scrollTo({
-              x: nextIndex * (CARD_WIDTH + CARD_SPACING),
-              animated: true,
-            });
-            return nextIndex;
-          });
-        }
-      }, 5000); // 5秒間隔
-    };
-
-    startAutoScroll();
-
-    return () => {
-      if (autoScrollTimer.current) {
-        clearInterval(autoScrollTimer.current);
-      }
-      if (restartTimeoutRef.current) {
-        clearTimeout(restartTimeoutRef.current);
-      }
-    };
   }, [displayArticles.length]);
 
   const handleScroll = (event: any) => {
+    // インジケータ・インデックスは確定後（onMomentumScrollEnd）で更新する
     if (displayArticles.length <= 2) return;
-    
-    const offsetX = event.nativeEvent.contentOffset.x;
-    const index = Math.round(offsetX / (CARD_WIDTH + CARD_SPACING));
-    
-    // インジケータ表示用のインデックス計算（0-4の範囲）
-    const actualArticleCount = Math.min(articles.length, 5);
-    let indicatorIndex;
-    
-    if (index <= 0) {
-      indicatorIndex = actualArticleCount - 1; // 最後
-    } else if (index >= displayArticles.length - 1) {
-      indicatorIndex = 0; // 最初
-    } else {
-      indicatorIndex = (index - 1) % actualArticleCount;
-    }
-    
-    setCurrentIndex(index);
   };
 
   const handleScrollEnd = (event: any) => {
     if (displayArticles.length <= 2) return;
-    
-    isScrollingRef.current = false;
+    isUserScrollingRef.current = false;
     const offsetX = event.nativeEvent.contentOffset.x;
-    const index = Math.round(offsetX / (CARD_WIDTH + CARD_SPACING));
-    
+    // i ≒ round((x - SIDE_PADDING - CARD_WIDTH/2 + screenWidth/2) / (CARD_WIDTH + CARD_SPACING))
+    let index = Math.round(
+      (offsetX - SIDE_PADDING - CARD_WIDTH / 2 + screenWidth / 2) /
+        (CARD_WIDTH + CARD_SPACING)
+    );
+
     // 無限ループの境界処理
     if (index <= 0) {
-      // 最初の複製（実際は最後の記事）から最後の実記事に移動
-      setTimeout(() => {
-        const targetIndex = displayArticles.length - 2;
-        scrollViewRef.current?.scrollTo({
-          x: targetIndex * (CARD_WIDTH + CARD_SPACING),
-          animated: false,
-        });
+      // 最初の複製 → 最後の実記事へジャンプ
+      isAdjustingRef.current = true;
+      const targetIndex = displayArticles.length - 2;
+      const x = getOffsetForIndex(targetIndex);
+      requestAnimationFrame(() => {
+        scrollViewRef.current?.scrollTo({ x, animated: false });
         setCurrentIndex(targetIndex);
-      }, 50);
+        currentIndexRef.current = targetIndex;
+        isAdjustingRef.current = false;
+      });
     } else if (index >= displayArticles.length - 1) {
-      // 最後の複製（実際は最初の記事）から最初の実記事に移動
-      setTimeout(() => {
-        scrollViewRef.current?.scrollTo({
-          x: 1 * (CARD_WIDTH + CARD_SPACING),
-          animated: false,
-        });
-        setCurrentIndex(1);
-      }, 50);
+      // 最後の複製 → 最初の実記事へジャンプ
+      isAdjustingRef.current = true;
+      const targetIndex = 1;
+      const x = getOffsetForIndex(targetIndex);
+      requestAnimationFrame(() => {
+        scrollViewRef.current?.scrollTo({ x, animated: false });
+        setCurrentIndex(targetIndex);
+        currentIndexRef.current = targetIndex;
+        isAdjustingRef.current = false;
+      });
     } else {
       setCurrentIndex(index);
+      currentIndexRef.current = index;
+      // 既にsnapToOffsetsで中央に吸着される
     }
   };
 
   const handleScrollBegin = () => {
-    isScrollingRef.current = true;
-    
-    // 自動スクロールを一時停止
-    if (autoScrollTimer.current) {
-      clearInterval(autoScrollTimer.current);
-      autoScrollTimer.current = null;
-    }
-    
-    // 既存の再開タイマーをクリア
-    if (restartTimeoutRef.current) {
-      clearTimeout(restartTimeoutRef.current);
-    }
-    
-    // 4秒後に自動スクロールを再開
-    restartTimeoutRef.current = setTimeout(() => {
-      if (displayArticles.length > 2) {
-        autoScrollTimer.current = setInterval(() => {
-          if (!isScrollingRef.current) {
-            setCurrentIndex(prev => {
-              const nextIndex = prev + 1;
-              scrollViewRef.current?.scrollTo({
-                x: nextIndex * (CARD_WIDTH + CARD_SPACING),
-                animated: true,
-              });
-              return nextIndex;
-            });
-          }
-        }, 5000);
-      }
-    }, 4000) as unknown as number;
+    isUserScrollingRef.current = true;
+    // 自動スクロールは廃止（ユーザー操作優先のページング挙動）
   };
 
   // インジケータ表示用のインデックス計算
@@ -217,8 +161,7 @@ export default function HeroCarousel({
         onMomentumScrollEnd={handleScrollEnd}
         scrollEventThrottle={16}
         contentContainerStyle={styles.scrollContainer}
-        snapToInterval={CARD_WIDTH + CARD_SPACING}
-        snapToAlignment="start"
+        snapToOffsets={snapOffsets}
         decelerationRate="fast"
       >
         {displayArticles.map((article, index) => (
@@ -296,8 +239,8 @@ const styles = StyleSheet.create({
     marginVertical: 8,
   },
   scrollContainer: {
-    paddingHorizontal: 16,
-    paddingRight: 32, // Extra padding for last item
+    paddingLeft: SIDE_PADDING,
+    paddingRight: SIDE_PADDING,
   },
   heroCard: {
     width: CARD_WIDTH,

@@ -11,7 +11,7 @@ from pathlib import Path
 import openai
 from mutagen.mp3 import MP3
 
-from config.settings import OPENAI_API_KEY, AUDIO_STORAGE_PATH
+from config.settings import OPENAI_API_KEY, AUDIO_STORAGE_PATH, SERVER_PUBLIC_BASE_URL
 from services.storage_service import upload_to_s3
 from utils.errors import handle_external_service_error
 
@@ -208,8 +208,8 @@ async def save_audio_locally(audio_content: bytes, filename: str) -> str:
         with open(audio_path, 'wb') as f:
             f.write(audio_content)
         
-        # Return local URL
-        public_url = f"http://localhost:8001/audio/{filename}"
+        # Return local URL using configured public base URL
+        public_url = f"{SERVER_PUBLIC_BASE_URL.rstrip('/')}/audio/{filename}"
         logging.info(f"Audio saved locally: {public_url}")
         
         return public_url

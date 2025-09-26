@@ -120,6 +120,70 @@ def classify_article_genre(title: str, summary: str, threshold: float = 2.0) -> 
         logging.error(f"Error classifying article genre: {e}")
         return "General"
 
+def normalize_genre(title: str, summary: str, genre: str) -> str:
+    """
+    Map coarse genres to a refined, UI-aligned set.
+    - 分割: 「国際・社会」→（政治 or 国際 or 国内）
+    - 分割: 「エンタメ・スポーツ」→（スポーツ or エンタメ・文化）
+    - 抽出: 「ライフスタイル」内の医療系→健康・医療
+    - 既存: テクノロジー/経済・ビジネス/科学・環境/ライフスタイルは維持
+    - 未判定/汎用→その他
+    """
+    try:
+        text = f"{title} {summary}".lower()
+
+        political_kw = [
+            '政治', '選挙', '投票', '政府', '政策', '議会', '国会', '首相', '大統領', '与党', '野党',
+            'politics', 'election', 'vote', 'congress', 'parliament', 'government', 'policy'
+        ]
+        international_kw = [
+            '国際', '世界', '外交', '条約', '制裁', '紛争', '戦争', '国連', 'un', 'nato', 'eu', '大使', '大使館',
+            'international', 'foreign', 'global', 'diplomatic', 'sanctions', 'conflict', 'war', 'united nations'
+        ]
+        sports_kw = [
+            'スポーツ', '試合', 'リーグ', '選手', '監督', 'コーチ', '得点', '勝利', '敗北', 'ゴール', 'オリンピック',
+            'sports', 'game', 'match', 'league', 'player', 'coach', 'goal', 'score', 'tournament', 'world cup'
+        ]
+        entertainment_kw = [
+            '映画', '音楽', '芸能', '俳優', '女優', '歌手', 'ドラマ', 'テレビ', '配信', 'ストリーミング', '文化', 'アート',
+            'movie', 'film', 'music', 'celebrity', 'actor', 'actress', 'singer', 'series', 'streaming', 'art', 'culture'
+        ]
+        medical_kw = [
+            '医療', '病院', '医師', '治療', '薬', 'ワクチン', '感染', '健康', '患者', '疾患',
+            'medical', 'hospital', 'doctor', 'treatment', 'medicine', 'vaccine', 'infection', 'health', 'patient', 'disease'
+        ]
+
+        g = genre or ''
+        if g in ('General', '', None):
+            return 'その他'
+
+        if g == '国際・社会':
+            if any(k in text for k in political_kw):
+                return '政治'
+            if any(k in text for k in international_kw):
+                return '国際'
+            return '国内'
+
+        if g == 'エンタメ・スポーツ':
+            if any(k in text for k in sports_kw):
+                return 'スポーツ'
+            if any(k in text for k in entertainment_kw):
+                return 'エンタメ・文化'
+            return 'エンタメ・文化'
+
+        if g == 'ライフスタイル':
+            if any(k in text for k in medical_kw):
+                return '健康・医療'
+            return 'ライフスタイル'
+
+        if g in ('テクノロジー', '経済・ビジネス', '科学・環境'):
+            return g
+
+        return 'その他'
+    except Exception as e:
+        logging.error(f"Error normalizing genre: {e}")
+        return 'その他'
+
 def _resolve_genre_conflict(title: str, summary: str, genre1: str, genre2: str, score1: float, score2: float) -> Optional[str]:
     """
     Resolve conflicts between closely scored genres using additional logic.
