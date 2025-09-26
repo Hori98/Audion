@@ -5,16 +5,15 @@ RSS記事やWebコンテンツを高品質な音声コンテンツに変換し�
 ## 📋 Project Documentation
 
 ### **📖 Primary Documentation**
-- **[PROJECT_MASTER_PLAN.md](./PROJECT_MASTER_PLAN.md)** - 📌 **Single Source of Truth for all project information**
-- **[CLAUDE.md](./CLAUDE.md)** - AI development guidelines and collaboration instructions  
+- **[CODEX_PROJECT_OVERVIEW.md](./CODEX_PROJECT_OVERVIEW.md)** - Compact hand-off for Codex (run, endpoints, pitfalls)
+- **This README** - Quick start and current architecture
 
 ### **📚 Supporting Documentation**
-- `TECHNICAL_SPEC.md` - Technical specifications and API documentation
-- `DEVELOPMENT_BEST_PRACTICES.md` - Code quality and development guidelines
-- `TESTING_GUIDE.md` - Testing procedures and quality assurance
+- `docs/BACKEND.md` - Backend env, endpoints, integration notes
+- `docs/DEVELOPMENT_GUIDE.md` - Dev practices, testing, debug tips
 
 ### **🗂️ Archived Documentation**
-Historical documents moved to `docs_archive/` to prevent confusion with current status.
+Historical/plan documents are consolidated under `docs_archive/` to reduce clutter.
 
 ## 🚀 Quick Start
 

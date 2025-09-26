@@ -4,10 +4,10 @@ Authentication router for user registration and login endpoints.
 
 import logging
 from fastapi import APIRouter, HTTPException, status, Depends
-from fastapi.security import HTTPBearer
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from models.user import User, UserCreate, UserLogin
-from models.common import TokenResponse, StandardResponse
+from models.common import TokenResponse, RegisterResponse, StandardResponse
 from services.auth_service import authenticate_user, create_user, create_jwt_token, get_current_user
 from utils.errors import handle_authentication_error, handle_database_error
 from utils.helpers import validate_email
@@ -15,16 +15,16 @@ from utils.helpers import validate_email
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 security = HTTPBearer()
 
-@router.post("/register", response_model=TokenResponse)
+@router.post("/register", response_model=RegisterResponse)
 async def register(user_data: UserCreate):
     """
     Register a new user account.
-    
+
     Args:
         user_data: User registration data
-        
+
     Returns:
-        TokenResponse: JWT token for the new user
+        RegisterResponse: JWT token and user information for the new user
     """
     try:
         # Validate input
@@ -50,9 +50,9 @@ async def register(user_data: UserCreate):
         
         # Generate JWT token
         token = create_jwt_token(user.id, user.email)
-        
+
         logging.info(f"New user registered: {user.email}")
-        return TokenResponse(access_token=token, token_type="bearer")
+        return RegisterResponse(access_token=token, user=user.model_dump())
         
     except HTTPException:
         raise
@@ -100,16 +100,17 @@ async def login(user_data: UserLogin):
         raise handle_authentication_error(e, "user login")
 
 @router.get("/me", response_model=User)
-async def get_current_user_info(current_user: User = Depends(get_current_user)):
+async def get_current_user_info(credentials: HTTPAuthorizationCredentials = Depends(security)):
     """
     Get current authenticated user information.
-    
+
     Args:
-        current_user: Current authenticated user from dependency injection
-        
+        credentials: HTTP Bearer credentials containing JWT token
+
     Returns:
         User: Current user information
     """
+    current_user = await get_current_user(credentials)
     return current_user
 
 @router.post("/verify-token", response_model=StandardResponse)

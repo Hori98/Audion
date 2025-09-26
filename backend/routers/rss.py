@@ -5,7 +5,9 @@ RSS router for managing RSS sources and related operations.
 import logging
 from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, HTTPException, status, Depends, Query
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
+import feedparser
 
 from models.user import User
 from models.rss import RSSSource, RSSSourceCreate, RSSSourceUpdate
@@ -24,61 +26,74 @@ import json
 from utils.database import insert_document, find_many_by_user, update_many_by_user, delete_many
 
 router = APIRouter(prefix="/api", tags=["RSS Sources"])
+security = HTTPBearer()
 
 @router.get("/rss-sources", response_model=List[RSSSource])
-async def get_user_sources(current_user: User = Depends(get_current_user)):
+async def get_user_sources(credentials: HTTPAuthorizationCredentials = Depends(security)):
     """
     Get all RSS sources for the current user.
-    
+
     Args:
-        current_user: Current authenticated user
-        
+        credentials: HTTP Bearer credentials containing JWT token
+
     Returns:
         List[RSSSource]: User's RSS sources
     """
     try:
+        current_user = await get_current_user(credentials)
         sources = await get_user_rss_sources(current_user.id)
         return sources
-        
+
     except Exception as e:
         logging.error(f"Error getting RSS sources: {e}")
         raise handle_database_error(e, "get RSS sources")
 
 @router.post("/rss-sources", response_model=RSSSource)
-async def add_rss_source(source_data: RSSSourceCreate, current_user: User = Depends(get_current_user)):
+async def add_rss_source(source_data: RSSSourceCreate, credentials: HTTPAuthorizationCredentials = Depends(security)):
     """
     Add a new RSS source for the current user.
-    
+
     Args:
         source_data: RSS source creation data
         current_user: Current authenticated user
-        
+
     Returns:
         RSSSource: Created RSS source
     """
     try:
-        # Validate input
-        if not source_data.name.strip():
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="RSS source name cannot be empty"
-            )
-        
-        if not source_data.url.strip():
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="RSS source URL cannot be empty"
-            )
-        
         # Basic URL validation
-        if not (source_data.url.startswith('http://') or source_data.url.startswith('https://')):
+        if not source_data.url or not (source_data.url.startswith('http://') or source_data.url.startswith('https://')):
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="RSS source URL must start with http:// or https://"
+                detail="A valid RSS source URL starting with http:// or https:// is required."
             )
-        
-        source = await create_rss_source(current_user.id, source_data.name, source_data.url)
-        logging.info(f"Created RSS source for user {current_user.email}: {source_data.name}")
+
+        # Use feedparser to get the title if name is not provided or is a default value
+        source_name = source_data.name.strip() if source_data.name else ""
+        if not source_name or source_name.lower() in ["rss source", "new rss source", "unknown source"]:
+            try:
+                feed = feedparser.parse(source_data.url)
+                if feed.feed and hasattr(feed.feed, 'title') and feed.feed.title:
+                    source_name = feed.feed.title.strip()
+                    logging.info(f"Auto-detected RSS name from feed: {source_name}")
+                else:
+                    if not source_name:
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="Could not automatically determine the RSS feed name. Please provide one."
+                        )
+            except Exception as e:
+                logging.error(f"Error parsing RSS feed for title: {e}")
+                if not source_name:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Could not parse RSS feed from the provided URL. Error: {str(e)}"
+                    )
+
+        current_user = await get_current_user(credentials)
+        # Use the determined source_name
+        source = await create_rss_source(current_user.id, source_name, source_data.url)
+        logging.info(f"Created RSS source for user {current_user.email}: {source_name}")
         return source
         
     except HTTPException:
@@ -214,11 +229,25 @@ async def add_user_rss_source(request: AddUserSourceRequest, current_user: User 
         if db is None:
             raise HTTPException(status_code=503, detail="Database unavailable")
 
+        # Determine name using feedparser if URL is provided and name is not
+        display_name = request.custom_name or request.custom_alias
+        if not display_name and request.custom_url:
+            try:
+                feed = feedparser.parse(request.custom_url)
+                if feed.feed and hasattr(feed.feed, 'title') and feed.feed.title:
+                    display_name = feed.feed.title.strip()
+                    logging.info(f"Auto-detected RSS name from feed: {display_name}")
+            except Exception as e:
+                logging.warning(f"Could not parse feed to get title for URL: {request.custom_url}, error: {e}")
+
+        if not display_name:
+            display_name = "New RSS Source" # Fallback
+
         new_source = {
             "id": str(uuid.uuid4()),
             "user_id": current_user.id,
             "preconfigured_source_id": request.preconfigured_source_id,
-            "custom_name": request.custom_name,
+            "custom_name": display_name,
             "custom_url": request.custom_url,
             "custom_category": request.custom_category,
             "custom_alias": request.custom_alias,
@@ -227,7 +256,9 @@ async def add_user_rss_source(request: AddUserSourceRequest, current_user: User 
             "last_article_count": 0,
             "fetch_error_count": 0,
             "created_at": datetime.utcnow().isoformat(),
-            "display_name": request.custom_name or request.custom_alias or "New RSS Source",
+            "name": display_name,  # Ensure name field is set
+            "url": request.custom_url or "",
+            "display_name": display_name,
             "display_url": request.custom_url or "",
         }
 

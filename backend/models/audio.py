@@ -18,7 +18,8 @@ class AudioCreation(BaseModel):
     duration: int
     script: Optional[str] = None  # 構造化XMLスクリプト（プロンプトエンジニアリング用）
     clean_script: Optional[str] = None  # 表示・TTS用のクリーンテキスト（XMLタグ除去済み）
-    chapters: Optional[List[Dict[str, Any]]] = None  # [{"title": "Article Title", "start_time": 0, "end_time": 30000, "original_url": "https://..."}] (times in milliseconds)
+    chapters: Optional[List[Dict[str, Any]]] = None  # chapters with timing and links
+    article_links: Optional[List[str]] = None  # original article URLs for player link list
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 class AudioCreationRequest(BaseModel):

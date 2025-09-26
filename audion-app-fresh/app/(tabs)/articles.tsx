@@ -1,0 +1,62 @@
+/**
+ * Articles Screen - Container Component
+ * カスタムフックとUIコンポーネントを接続するだけの薄いレイヤー
+ * UI刷新時も変更不要（FeedUIのみ差し替え）
+ */
+
+import React, { useState, useEffect } from 'react';
+import { Alert } from 'react-native';
+import { useRouter } from 'expo-router';
+import { useAuth } from '../../context/AuthContext';
+import { useUserFeed } from '../../hooks/useUserFeed';
+import { FeedUI } from '../../components/FeedUI';
+import SearchModal from '../../components/SearchModal';
+
+export default function ArticlesScreen() {
+  // 1. 認証情報を取得
+  const { user } = useAuth();
+  const router = useRouter();
+  
+  // 2. FEEDタブ専用：ユーザー登録RSSからの記事データを取得
+  const rssState = useUserFeed();
+  
+  // 3. 検索機能の状態管理
+  const [showSearchModal, setShowSearchModal] = useState(false);
+  
+  const handleSearchResult = (result: any) => {
+    switch (result.type) {
+      case 'article':
+        Alert.alert('記事選択', `${result.title}を表示します`);
+        break;
+      case 'genre':
+        rssState.setSelectedGenre(result.id || 'すべて');
+        break;
+      case 'source':
+        rssState.setSelectedSource(result.id || 'all');
+        break;
+      default:
+        break;
+    }
+  };
+
+  
+  // 4. UIコンポーネントにpropsとして渡すだけ
+  // FeedUI にはフィルタ適用後の記事を渡す
+  const feedProps = { ...rssState, articles: rssState.filteredArticles } as any;
+
+  return (
+    <>
+      <FeedUI
+        user={user}
+        {...feedProps}
+        onSearchPress={() => setShowSearchModal(true)}
+      />
+      
+      <SearchModal
+        visible={showSearchModal}
+        onClose={() => setShowSearchModal(false)}
+        onResultPress={handleSearchResult}
+      />
+    </>
+  );
+}

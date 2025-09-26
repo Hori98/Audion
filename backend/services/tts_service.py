@@ -18,7 +18,7 @@ from pathlib import Path
 import openai
 from mutagen.mp3 import MP3
 
-from config.settings import OPENAI_API_KEY, AUDIO_STORAGE_PATH
+from config.settings import OPENAI_API_KEY, AUDIO_STORAGE_PATH, SERVER_PUBLIC_BASE_URL
 from services.storage_service import upload_to_s3
 from utils.text_utils import extract_clean_script_text
 from utils.errors import handle_external_service_error
@@ -155,8 +155,8 @@ class TTSService:
             with open(audio_path, 'wb') as f:
                 f.write(audio_content)
             
-            # ローカルURLを返却
-            public_url = f"http://localhost:8001/audio/{filename}"
+            # ローカルURLを返却（公開ベースURLに依存）
+            public_url = f"{SERVER_PUBLIC_BASE_URL.rstrip('/')}/audio/{filename}"
             self.logger.info(f"Audio saved locally: {public_url}")
             
             return public_url

@@ -28,9 +28,9 @@ import HeroCarousel from '../../components/HeroCarousel';
 import ArticleCard from '../../components/ArticleCard';
 import UnifiedHeader from '../../components/UnifiedHeader';
 import SearchModal from '../../components/SearchModal';
-import DevResetButton from '../../components/DevResetButton';
 import FloatingAutoPickButton from '../../components/FloatingAutoPickButton';
 import ArticleDetailModal from '../../components/ArticleDetailModal';
+import { SkeletonHomeScreen } from '../../components/SkeletonComponents';
 import { Article } from '../../services/ArticleService';
 import { API_CONFIG } from '../../config/api';
 import { useGlobalAudio } from '../../context/GlobalAudioContext';
@@ -332,15 +332,40 @@ export default function HomeScreen() {
     </TouchableOpacity>
   );
 
+  // ローディング状態では早期リターンでスケルトンUIを表示
+  if (loading && articles.length === 0) {
+    return (
+      <View style={styles.container}>
+        <StatusBar barStyle="light-content" backgroundColor="#000000" />
+
+        {/* ヘッダーは常に表示 */}
+        <UnifiedHeader
+          onSearchPress={() => setShowSearchModal(true)}
+        />
+
+        {/* カテゴリータブ */}
+        <HorizontalTabs
+          tabs={NEWS_CATEGORIES}
+          selectedTab={selectedGenre}
+          onTabSelect={setSelectedGenre}
+          style={styles.categoryTabs}
+        />
+
+        {/* スケルトンローディング */}
+        <SkeletonHomeScreen />
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#000000" />
-      
+
       {/* FlatListで全体を管理し、ヘッダーコンポーネントでヒーローを表示 */}
       <FlatList
         data={smallCardArticles}
         renderItem={({ item }) => (
-          <ArticleCard 
+          <ArticleCard
             article={item}
             onPress={handleArticlePress}
             showAudioPlayer={true}
@@ -348,8 +373,8 @@ export default function HomeScreen() {
         )}
         keyExtractor={(item) => item.id}
         refreshControl={
-          <RefreshControl 
-            refreshing={refreshing || loading} 
+          <RefreshControl
+            refreshing={refreshing}
             onRefresh={onRefresh}
             tintColor="#007bff"
             colors={['#007bff']}
@@ -358,8 +383,8 @@ export default function HomeScreen() {
         ListHeaderComponent={
           <View>
             {/* 元のヘッダー */}
-            <UnifiedHeader 
-              onSearchPress={() => setShowSearchModal(true)} 
+            <UnifiedHeader
+              onSearchPress={() => setShowSearchModal(true)}
             />
 
             {/* カテゴリータブ */}
@@ -435,10 +460,6 @@ export default function HomeScreen() {
         onClose={handleCloseArticleModal}
       />
 
-      {/* 開発用リセットボタン */}
-      <DevResetButton onReset={() => {
-        console.log('🧹 認証状態がリセットされました');
-      }} />
     </View>
   );
 }

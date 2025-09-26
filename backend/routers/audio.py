@@ -5,7 +5,10 @@ Audio router for managing audio creation, playback, and library operations.
 import logging
 from typing import List, Dict, Any, Optional
 from fastapi import APIRouter, HTTPException, status, Depends, Query
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
+from datetime import datetime
+import uuid
 
 from models.user import User
 from models.audio import AudioCreation, AudioCreationRequest, RenameRequest
@@ -26,6 +29,7 @@ from services.user_service import record_audio_interaction
 from utils.errors import handle_database_error, handle_generic_error, handle_not_found_error
 
 router = APIRouter(prefix="/api", tags=["Audio"])
+security = HTTPBearer()
 
 class AudioStatusResponse(BaseModel):
     audio_id: str
@@ -109,17 +113,18 @@ async def create_audio(request: AudioCreationRequest, current_user: User = Depen
         raise handle_generic_error(e, "audio creation")
 
 @router.get("/audio/library", response_model=List[AudioCreation])
-async def get_audio_library(current_user: User = Depends(get_current_user)):
+async def get_audio_library(credentials: HTTPAuthorizationCredentials = Depends(security)):
     """
     Get user's audio library.
-    
+
     Args:
-        current_user: Current authenticated user
-        
+        credentials: HTTP Bearer credentials containing JWT token
+
     Returns:
         List[AudioCreation]: User's audio library
     """
     try:
+        current_user = await get_current_user(credentials)
         library = await get_user_audio_library(current_user.id)
         return library
         

@@ -9,12 +9,14 @@ from typing import Optional
 from fastapi import HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials
 from bson import ObjectId
+from pydantic import ValidationError
 
 from config.settings import JWT_SECRET_KEY, JWT_ALGORITHM
 from config.database import get_database, is_database_connected
 from models.user import User
 from utils.errors import handle_authentication_error, handle_database_error
 from utils.helpers import hash_password, verify_password
+from services.rss_defaults import setup_default_rss_sources
 
 def create_jwt_token(user_id: str, email: str) -> str:
     """
@@ -136,8 +138,15 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials) -> User:
         # Convert to User model
         user_data["id"] = str(user_data["_id"])
         del user_data["_id"]
-        
-        return User(**user_data)
+
+        try:
+            return User(**user_data)
+        except ValidationError as e:
+            logging.error(f"[AUTH] User model validation failed for user_id {user_id}: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"User data for user {user_id} is corrupted or missing required fields: {e}"
+            )
         
     except HTTPException:
         raise
@@ -221,7 +230,15 @@ async def create_user(email: str, password: str) -> Optional[User]:
         # Insert user
         result = await db.users.insert_one(user_data)
         user_id = str(result.inserted_id)
-        
+
+        # Setup default RSS sources for new user
+        try:
+            await setup_default_rss_sources(user_id)
+            logging.info(f"✅ Default RSS sources setup completed for user: {email}")
+        except Exception as e:
+            logging.warning(f"⚠️ Failed to setup default RSS sources for user {email}: {e}")
+            # Continue with user creation even if RSS setup fails
+
         # Return user (without password)
         return User(
             id=user_id,

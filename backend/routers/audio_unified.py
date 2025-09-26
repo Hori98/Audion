@@ -84,6 +84,8 @@ class AutoPickRequest(BaseModel):
     custom_prompt: Optional[str] = None
     preferred_genres: Optional[List[str]] = None
     excluded_genres: Optional[List[str]] = None
+    # NEW: source scope selection (fixed: curated RSS, user: user-managed RSS)
+    source_scope: Optional[str] = Field(default="user", description="fixed | user")
 
 class ManualPickRequest(BaseModel):
     """Manual選択専用リクエスト"""
@@ -202,16 +204,14 @@ def _calculate_next_generation_at(
                 return candidate_utc
         return None
     except Exception as e:
-        logger.error(f"Failed to calculate next_generation_at: {e}
-generation_time={generation_time}, days={generation_days}, tz={timezone_name}")
+        logger.error(f"Failed to calculate next_generation_at: {e}, generation_time={generation_time}, days={generation_days}, tz={timezone_name}")
         return None
 
 @router.post("/autopick", response_model=UnifiedAudioResponse)
 async def generate_autopick_audio(
     request: AutoPickRequest,
     http_request: Request,
-    current_user: User = Depends(get_current_user),
-    user_plan: str = Depends(get_user_subscription_plan),
+    credentials: HTTPAuthorizationCredentials = Depends(security),
     audio_service: UnifiedAudioService = Depends(get_unified_audio_service)
 ):
     """
@@ -227,13 +227,17 @@ async def generate_autopick_audio(
     - Premium: 20 articles, comprehensive scripts
     """
     
+    # Get current user and subscription plan
+    current_user = await get_current_user(credentials)
+    user_plan = await get_user_subscription_plan(current_user, await get_database())
+
     logger.info(f"🎯 AUTOPICK: Starting for user {current_user.id}, plan {user_plan}")
-    
+
     try:
         # Handle debug mode override
         debug_bypass = http_request.headers.get("X-Debug-Bypass-Limits") == "true"
         debug_mode = http_request.headers.get("X-Debug-Mode") == "true"
-        
+
         if debug_bypass and debug_mode:
             user_plan = "premium"
             logger.info(f"🔍 DEBUG: Forced premium plan for autopick")
@@ -246,7 +250,10 @@ async def generate_autopick_audio(
             voice_name=request.voice_name,
             prompt_style=request.prompt_style,
             custom_prompt=request.custom_prompt,
-            user_plan=user_plan
+            user_plan=user_plan,
+            # pass through scope and genre preferences
+            source_scope=request.source_scope or "user",
+            preferred_genres=request.preferred_genres
         )
         
         # Generate audio using unified service
@@ -281,8 +288,7 @@ async def generate_autopick_audio(
 @router.post("/manual", response_model=UnifiedAudioResponse)
 async def generate_manual_audio(
     request: ManualPickRequest,
-    current_user: User = Depends(get_current_user),
-    user_plan: str = Depends(get_user_subscription_plan),
+    credentials: HTTPAuthorizationCredentials = Depends(security),
     audio_service: UnifiedAudioService = Depends(get_unified_audio_service)
 ):
     """
@@ -299,8 +305,12 @@ async def generate_manual_audio(
     - article_summaries/contents: 推奨（品質向上）
     """
     
+    # Get current user and subscription plan
+    current_user = await get_current_user(credentials)
+    user_plan = await get_user_subscription_plan(current_user, await get_database())
+
     logger.info(f"📋 MANUAL: Starting for user {current_user.id}, {len(request.article_ids)} articles")
-    
+
     try:
         # Validate required fields
         if not request.article_ids or not request.article_titles:
