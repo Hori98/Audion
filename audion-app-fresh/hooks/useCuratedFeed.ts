@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import ArticleService, { Article } from '../services/ArticleService';
 import { Genre } from '../types/rss';
 import { HOME_FIXED_RSS_SOURCES } from '../data/rss-sources';
+import { getAvailableGenresForHome, applyGenreFilterForHome, generateGenreTabs } from '../utils/genreUtils';
 
 interface UseCuratedFeedState {
   articles: Article[];
@@ -10,6 +11,7 @@ interface UseCuratedFeedState {
   error: string | null;
   refreshing: boolean;
   selectedGenre: Genre;
+  availableGenres: Genre[];
 }
 
 interface UseCuratedFeedActions {
@@ -31,17 +33,11 @@ export function useCuratedFeed(): UseCuratedFeedState & UseCuratedFeedActions {
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedGenre, setSelectedGenre] = useState<Genre>('すべて');
+  const [availableGenres, setAvailableGenres] = useState<Genre[]>(['すべて']);
 
-  // クライアントサイドフィルタリング
+  // Home専用ユーティリティを使用したフィルタリング（ソースフィルタなし）
   const applyFilters = useCallback((sourceArticles: Article[], genre: Genre) => {
-    let filtered = [...sourceArticles];
-
-    // ジャンルフィルタ
-    if (genre !== 'すべて') {
-      filtered = filtered.filter(article => article.genre === genre);
-    }
-
-    return filtered;
+    return applyGenreFilterForHome(sourceArticles, genre);
   }, []);
 
   // キュレーション記事取得
@@ -54,8 +50,8 @@ export function useCuratedFeed(): UseCuratedFeedState & UseCuratedFeedActions {
         selectedGenre !== 'すべて' ? selectedGenre : undefined,
         50
       );
-      
       setArticles(curatedArticles);
+      setAvailableGenres(getAvailableGenresForHome(curatedArticles));
       setFilteredArticles(applyFilters(curatedArticles, selectedGenre));
       
     } catch (err) {
@@ -77,8 +73,8 @@ export function useCuratedFeed(): UseCuratedFeedState & UseCuratedFeedActions {
         selectedGenre !== 'すべて' ? selectedGenre : undefined,
         50
       );
-      
       setArticles(curatedArticles);
+      setAvailableGenres(getAvailableGenresForHome(curatedArticles));
       setFilteredArticles(applyFilters(curatedArticles, selectedGenre));
       
     } catch (err) {
@@ -109,6 +105,7 @@ export function useCuratedFeed(): UseCuratedFeedState & UseCuratedFeedActions {
     error,
     refreshing,
     selectedGenre,
+    availableGenres,
     
     // Actions
     fetchArticles,

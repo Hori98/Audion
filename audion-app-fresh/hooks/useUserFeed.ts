@@ -1,7 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
+import { AppState } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Genre } from '../types/rss';
 import ArticleService, { Article } from '../services/ArticleService';
 import RSSSourceService, { UserRSSSource } from '../services/RSSSourceService';
+import RSSChangeNotifier from '../services/RSSChangeNotifier';
+import { getAvailableGenres, applyGenreFilter, handleSourceChange } from '../utils/genreUtils';
 
 interface UseUserFeedState {
   articles: Article[];
@@ -11,24 +15,28 @@ interface UseUserFeedState {
   refreshing: boolean;
   sourcesLoading: boolean;
   error: string | null;
-  
+
   // Filter states
   selectedGenre: Genre;
   selectedSource: string;
-  selectedReadStatus: 'all' | 'unread' | 'read' | 'saved';
+  selectedReadStatus: 'all' | 'unread' | 'read';
+  availableGenres: Genre[];
 }
 
 interface UseUserFeedActions {
   fetchArticles: () => Promise<void>;
   refreshArticles: () => Promise<void>;
   fetchUserSources: () => Promise<void>;
-  
+
   // Filtering
   setSelectedGenre: (genre: Genre) => void;
   setSelectedSource: (source: string) => void;
-  setSelectedReadStatus: (status: 'all' | 'unread' | 'read' | 'saved') => void;
-  
-  // Source management  
+  setSelectedReadStatus: (status: 'all' | 'unread' | 'read') => void;
+
+  // Read status management
+  markArticleAsRead: (articleId: string) => void;
+
+  // Source management
   addRSSSource: (name: string, url: string) => Promise<boolean>;
   deleteRSSSource: (sourceId: string) => Promise<boolean>;
   toggleRSSSource: (sourceId: string, isActive: boolean) => Promise<boolean>;
@@ -48,35 +56,38 @@ export function useUserFeed(): UseUserFeedState & UseUserFeedActions {
   const [refreshing, setRefreshing] = useState(false);
   const [sourcesLoading, setSourcesLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  
+
   // Filter states
   const [selectedGenre, setSelectedGenre] = useState<Genre>('すべて');
   const [selectedSource, setSelectedSource] = useState<string>('all');
-  const [selectedReadStatus, setSelectedReadStatus] = useState<'all' | 'unread' | 'read' | 'saved'>('all');
+  const [selectedReadStatus, setSelectedReadStatus] = useState<'all' | 'unread' | 'read'>('all');
+  const [availableGenres, setAvailableGenres] = useState<Genre[]>(['すべて']);
 
-  // クライアントサイドフィルタリング
+  // 既読記事IDのセット（30日間保持、シンプルなクライアントサイド管理）
+  const [readArticleIds, setReadArticleIds] = useState<Set<string>>(new Set());
+
+  // 既読データの有効期限（30日間）
+  const READ_DATA_TTL = 30 * 24 * 60 * 60 * 1000; // 30日をミリ秒で表現
+
+  // 共通ユーティリティを使用した利用可能ジャンル計算
+  const getAvailableGenresForFeed = useCallback((sourceArticles: Article[], currentSource: string) => {
+    return getAvailableGenres(sourceArticles, currentSource);
+  }, []);
+
+  // 共通ユーティリティを使用したフィルタリング（既読状態追加）
   const applyFilters = useCallback((sourceArticles: Article[]) => {
-    let filtered = [...sourceArticles];
+    // 1. ソース・ジャンルフィルタを共通ユーティリティで適用
+    let filtered = applyGenreFilter(sourceArticles, selectedGenre, selectedSource);
 
-    // ジャンルフィルタ
-    if (selectedGenre !== 'すべて') {
-      filtered = filtered.filter(article => article.genre === selectedGenre);
-    }
-
-    // ソースフィルタ
-    if (selectedSource !== 'all') {
-      filtered = filtered.filter(article => 
-        article.source_name === selectedSource || article.source_id === selectedSource
-      );
-    }
-
-    // 既読状態フィルタ
-    if (selectedReadStatus !== 'all') {
-      filtered = filtered.filter(article => article.read_status === selectedReadStatus);
+    // 2. 既読状態フィルタ（最後に適用）
+    if (selectedReadStatus === 'read') {
+      filtered = filtered.filter(article => readArticleIds.has(article.id));
+    } else if (selectedReadStatus === 'unread') {
+      filtered = filtered.filter(article => !readArticleIds.has(article.id));
     }
 
     return filtered;
-  }, [selectedGenre, selectedSource, selectedReadStatus]);
+  }, [selectedGenre, selectedSource, selectedReadStatus, readArticleIds]);
 
   // ユーザー登録RSS記事取得
   const fetchArticles = useCallback(async () => {
@@ -84,12 +95,11 @@ export function useUserFeed(): UseUserFeedState & UseUserFeedActions {
       setLoading(true);
       setError(null);
 
-      // FEEDタブ用：ユーザー登録RSSからの記事取得
-      const response = await ArticleService.getArticlesWithReadStatus({
+      // FEEDタブ用：ユーザー登録RSSからの記事取得（シンプルバージョン）
+      const response = await ArticleService.getArticles({
         per_page: 50,
         genre: selectedGenre !== 'すべて' ? selectedGenre : undefined,
-        source: selectedSource !== 'all' ? selectedSource : undefined,
-        read_filter: selectedReadStatus
+        source: selectedSource !== 'all' ? selectedSource : undefined
       });
 
       // レスポンス安全性チェック
@@ -99,9 +109,9 @@ export function useUserFeed(): UseUserFeedState & UseUserFeedActions {
 
       const articles = response.articles || [];
       setArticles(articles);
+      setAvailableGenres(getAvailableGenresForFeed(articles, selectedSource));
       setFilteredArticles(applyFilters(articles));
       
-      console.log(`✅ [useUserFeed] Fetched ${articles.length} articles successfully`);
       
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to fetch user RSS articles';
@@ -114,7 +124,7 @@ export function useUserFeed(): UseUserFeedState & UseUserFeedActions {
     } finally {
       setLoading(false);
     }
-  }, [selectedGenre, selectedSource, selectedReadStatus, applyFilters]);
+  }, [selectedGenre, selectedSource, applyFilters]);
 
   // プルツーリフレッシュ
   const refreshArticles = useCallback(async () => {
@@ -122,11 +132,10 @@ export function useUserFeed(): UseUserFeedState & UseUserFeedActions {
       setRefreshing(true);
       setError(null);
       
-      const response = await ArticleService.getArticlesWithReadStatus({
+      const response = await ArticleService.getArticles({
         per_page: 50,
         genre: selectedGenre !== 'すべて' ? selectedGenre : undefined,
-        source: selectedSource !== 'all' ? selectedSource : undefined,
-        read_filter: selectedReadStatus
+        source: selectedSource !== 'all' ? selectedSource : undefined
       });
 
       if (!response) {
@@ -135,9 +144,9 @@ export function useUserFeed(): UseUserFeedState & UseUserFeedActions {
       
       const articles = response.articles || [];
       setArticles(articles);
+      setAvailableGenres(getAvailableGenresForFeed(articles, selectedSource));
       setFilteredArticles(applyFilters(articles));
       
-      console.log(`✅ [useUserFeed] Refreshed ${articles.length} articles successfully`);
       
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to refresh articles';
@@ -150,7 +159,7 @@ export function useUserFeed(): UseUserFeedState & UseUserFeedActions {
     } finally {
       setRefreshing(false);
     }
-  }, [selectedGenre, selectedSource, selectedReadStatus, applyFilters]);
+  }, [selectedGenre, selectedSource, applyFilters]);
 
   // ユーザーRSSソース取得
   const fetchUserSources = useCallback(async () => {
@@ -204,27 +213,137 @@ export function useUserFeed(): UseUserFeedState & UseUserFeedActions {
     }
   }, [fetchUserSources, fetchArticles]);
 
-  // フィルター変更時の記事更新
+  // 期限切れの既読データを削除
+  const cleanupExpiredReadData = useCallback(async () => {
+    try {
+      const stored = await AsyncStorage.getItem('@audion_read_articles');
+      if (!stored) return;
+
+      const readData = JSON.parse(stored);
+      const now = Date.now();
+
+      const validData = readData.filter((item: any) => {
+        const readTime = new Date(item.timestamp || item.read_at || 0).getTime();
+        return (now - readTime) < READ_DATA_TTL;
+      });
+
+      if (validData.length !== readData.length) {
+        await AsyncStorage.setItem('@audion_read_articles', JSON.stringify(validData));
+        const validIds = new Set(validData.map((item: any) => item.id));
+        setReadArticleIds(validIds);
+      }
+    } catch (error) {
+      console.error('既読データのクリーンアップに失敗:', error);
+    }
+  }, [READ_DATA_TTL]);
+
+  // 既読記事をマーク（30日間保持）
+  const markArticleAsRead = useCallback(async (articleId: string) => {
+    const timestamp = new Date().toISOString();
+
+    try {
+      const stored = await AsyncStorage.getItem('@audion_read_articles');
+      const existingData = stored ? JSON.parse(stored) : [];
+
+      const newData = [
+        ...existingData.filter((item: any) => item.id !== articleId),
+        { id: articleId, timestamp, read_at: timestamp }
+      ];
+
+      await AsyncStorage.setItem('@audion_read_articles', JSON.stringify(newData));
+
+      setReadArticleIds(prev => {
+        const newSet = new Set(prev);
+        newSet.add(articleId);
+        return newSet;
+      });
+    } catch (error) {
+      console.error('既読状態の保存に失敗:', error);
+      // フォールバック：メモリ内のみの更新
+      setReadArticleIds(prev => {
+        const newSet = new Set(prev);
+        newSet.add(articleId);
+        return newSet;
+      });
+    }
+  }, []);
+
+  // アプリ起動時に既読データを復元
+  const loadReadArticles = useCallback(async () => {
+    try {
+      await cleanupExpiredReadData(); // まず期限切れデータを削除
+
+      const stored = await AsyncStorage.getItem('@audion_read_articles');
+      if (stored) {
+        const readData = JSON.parse(stored);
+        const readIds = new Set(readData.map((item: any) => item.id));
+        setReadArticleIds(readIds);
+      }
+    } catch (error) {
+      console.error('既読データの読み込みに失敗:', error);
+    }
+  }, [cleanupExpiredReadData]);
+
+  // フィルター変更時の記事更新（useEffectで自動更新）
   const handleSetSelectedGenre = useCallback((genre: Genre) => {
     setSelectedGenre(genre);
-    setFilteredArticles(applyFilters(articles));
-  }, [articles, applyFilters]);
+  }, []);
 
   const handleSetSelectedSource = useCallback((source: string) => {
-    setSelectedSource(source);
-    setFilteredArticles(applyFilters(articles));
-  }, [articles, applyFilters]);
+    handleSourceChange(
+      source,
+      articles,
+      setSelectedSource,
+      setSelectedGenre,
+      setAvailableGenres
+    );
+  }, [articles]);
 
-  const handleSetSelectedReadStatus = useCallback((status: 'all' | 'unread' | 'read' | 'saved') => {
+  const handleSetSelectedReadStatus = useCallback((status: 'all' | 'unread' | 'read') => {
     setSelectedReadStatus(status);
+  }, []);
+
+  // RSS変更監視とアプリフォアグラウンド復帰時のリロード
+  useEffect(() => {
+
+    // RSS変更イベントリスナー
+    const unsubscribeRSSChanges = RSSChangeNotifier.subscribeToRSSChanges((event) => {
+
+      // RSS変更時は両方の情報を更新
+      fetchUserSources();
+      fetchArticles();
+    });
+
+    // アプリがフォアグラウンドに復帰したときのリロード
+    const handleAppStateChange = (nextAppState: string) => {
+      if (nextAppState === 'active') {
+
+        // フォアグラウンド復帰時は最新データを取得
+        fetchUserSources();
+        fetchArticles();
+      }
+    };
+
+    const subscription = AppState.addEventListener('change', handleAppStateChange);
+
+    // クリーンアップ
+    return () => {
+      unsubscribeRSSChanges();
+      subscription?.remove();
+    };
+  }, [fetchUserSources, fetchArticles]);
+
+  // フィルター状態が変更された時にフィルタリングを更新
+  useEffect(() => {
     setFilteredArticles(applyFilters(articles));
-  }, [articles, applyFilters]);
+  }, [readArticleIds, articles, selectedGenre, selectedSource, selectedReadStatus, applyFilters]);
 
   // 初期化
   useEffect(() => {
+    loadReadArticles(); // 既読データを復元
     fetchUserSources();
     fetchArticles();
-  }, []);
+  }, [loadReadArticles]);
 
   return {
     // State
@@ -238,6 +357,7 @@ export function useUserFeed(): UseUserFeedState & UseUserFeedActions {
     selectedGenre,
     selectedSource,
     selectedReadStatus,
+    availableGenres,
     
     // Actions
     fetchArticles,
@@ -246,6 +366,7 @@ export function useUserFeed(): UseUserFeedState & UseUserFeedActions {
     setSelectedGenre: handleSetSelectedGenre,
     setSelectedSource: handleSetSelectedSource,
     setSelectedReadStatus: handleSetSelectedReadStatus,
+    markArticleAsRead,
     addRSSSource,
     deleteRSSSource,
     toggleRSSSource,
