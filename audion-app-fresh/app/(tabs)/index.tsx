@@ -1,7 +1,9 @@
 /**
- * Home Screen - ニュースアプリ風UI
- * 既存ニュースアプリ（SmartNews/Yahoo!ニュース）のUI/UX完全コピー
- * スイッチングコスト最小化でユーザー獲得を目指す
+ * Home Screen (index.tsx)
+ * ホームタブ - キュレーション記事とAuto-Pick機能
+ *
+ * 機能: 厳選記事表示、Auto-Pick音声生成、ニュースアプリ風UI
+ * Note: 既存ニュースアプリとの差別化を図るプレミアムコンテンツ
  */
 
 import React, { useState, useEffect } from 'react';
@@ -35,19 +37,9 @@ import ArticleDetailModal from '../../components/ArticleDetailModal';
 import { Article } from '../../services/ArticleService';
 import { API_CONFIG } from '../../config/api';
 import { useGlobalAudio } from '../../context/GlobalAudioContext';
+import { generateGenreTabs } from '../../utils/genreUtils';
 
 const { width: screenWidth } = Dimensions.get('window');
-
-// MECE分類に統一（バックエンドとフロントエンドの一貫性確保）
-const NEWS_CATEGORIES = [
-  { id: 'すべて', name: 'トップ' },
-  { id: 'テクノロジー', name: 'テクノロジー' },
-  { id: '経済・ビジネス', name: 'ビジネス' },
-  { id: '国際・社会', name: '社会' },
-  { id: 'ライフスタイル', name: 'ライフ' },
-  { id: 'エンタメ・スポーツ', name: 'エンタメ' },
-  { id: 'その他', name: 'その他' },
-];
 
 export default function HomeScreen() {
   const { user, token } = useAuth();
@@ -83,10 +75,11 @@ export default function HomeScreen() {
   }, []);
   
   // HOMEタブ専用：システム固定RSSからのキュレーション記事取得
-  const { 
-    filteredArticles: articles, 
-    loading, 
+  const {
+    filteredArticles: articles,
+    loading,
     selectedGenre,
+    availableGenres,
     setSelectedGenre,
     refreshArticles
   } = useCuratedFeed();
@@ -127,7 +120,7 @@ export default function HomeScreen() {
       return;
     }
 
-    const genreName = NEWS_CATEGORIES.find(c => c.id === selectedGenre)?.name || 'トップ';
+    const genreName = selectedGenre === 'すべて' ? 'トップ' : selectedGenre;
     
     Alert.alert(
       'AutoPick音声生成', 
@@ -420,7 +413,7 @@ export default function HomeScreen() {
 
             {/* カテゴリータブ */}
             <HorizontalTabs
-              tabs={NEWS_CATEGORIES}
+              tabs={generateGenreTabs(availableGenres)}
               selectedTab={selectedGenre}
               onTabSelect={setSelectedGenre}
               style={styles.categoryTabs}
