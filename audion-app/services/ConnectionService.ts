@@ -28,7 +28,7 @@ class ConnectionService {
   private connectionStatus: ConnectionStatus;
   private healthCheckInterval: NodeJS.Timeout | null = null;
   private readonly HEALTH_CHECK_INTERVAL = 60000; // 60 seconds (reduced frequency)
-  private readonly CONNECTION_TIMEOUT = 30000; // 30 seconds (increased for slow networks)
+  private readonly CONNECTION_TIMEOUT = parseInt(process.env.EXPO_PUBLIC_API_TIMEOUT || '60000', 10); // Configurable timeout for slow networks
   private readonly BACKEND_URLS = [
     process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:8003',
     'http://localhost:8003', // Primary development server (uvicorn)
