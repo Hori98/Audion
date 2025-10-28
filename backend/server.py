@@ -122,14 +122,17 @@ app = FastAPI(lifespan=lifespan)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # Log critical configuration at startup
-from config.settings import JWT_SECRET_KEY, JWT_ALGORITHM
+JWT_SECRET_KEY = os.environ.get('JWT_SECRET_KEY', 'dev-secret-key-do-not-use-in-production')
+JWT_ALGORITHM = "HS256"
 logging.info("=" * 80)
 logging.info("🚀 AUDION BACKEND STARTUP")
 logging.info("=" * 80)
 logging.info(f"🔐 JWT_SECRET_KEY configured: {bool(JWT_SECRET_KEY)}")
-if JWT_SECRET_KEY:
+if JWT_SECRET_KEY and JWT_SECRET_KEY != 'dev-secret-key-do-not-use-in-production':
     logging.info(f"🔐 JWT_SECRET_KEY (first 20 chars): {JWT_SECRET_KEY[:20]}...")
     logging.info(f"🔐 JWT_SECRET_KEY length: {len(JWT_SECRET_KEY)}")
+elif JWT_SECRET_KEY == 'dev-secret-key-do-not-use-in-production':
+    logging.warning("⚠️  JWT_SECRET_KEY using DEFAULT DEV KEY - Do NOT use in production!")
 else:
     logging.error("❌ JWT_SECRET_KEY NOT SET - Authentication will fail!")
 logging.info(f"🔐 JWT_ALGORITHM: {JWT_ALGORITHM}")
