@@ -58,6 +58,7 @@ import { Genre } from '../../types/rss';
 import { commonStyles, SPACING } from '../../styles/commonStyles';
 import UnifiedArticleList from '../../components/common/UnifiedArticleList';
 import SectionDivider from '../../components/common/SectionDivider';
+import SectionPlaceholder from '../../components/common/SectionPlaceholder';
 import { UI_FLAGS } from '../../config/uiFlags';
 
 const { width: screenWidth } = Dimensions.get('window');
@@ -767,27 +768,30 @@ export default function HomeScreen() {
             {/* Unified 5-Section Structure */}
             
             {/* Hero セクション */}
-            {heroArticles.length > 0 && (
-              <View style={[styles.sectionContainer, styles.heroSectionContainer]}>
+            <View style={[styles.sectionContainer, styles.heroSectionContainer]}>
+              {loading ? (
+                <SectionPlaceholder message="読み込み中…" lines={2} />
+              ) : heroArticles.length > 0 ? (
                 <HeroCarousel
                   articles={heroArticles}
                   onArticlePress={handleArticlePress}
                   onPlayPress={handlePlayPress}
                 />
-              </View>
-            )}
+              ) : null}
+            </View>
 
-            {/* Breaking セクション */}
-            {breakingArticles.length > 0 && (
-              <View style={styles.sectionContainer}>
-                <SectionHeader
-                  type="emergency"
-                  title="速報"
-                  articleCount={breakingArticles.length}
-                  divider="none"
-                />
+            {/* Breaking セクション（枠は常時表示） */}
+            <View style={styles.sectionContainer}>
+              <SectionHeader
+                type="emergency"
+                title="速報"
+                articleCount={breakingArticles.length}
+                divider="none"
+              />
+              {(sectionsLoading || loading) ? (
+                <SectionPlaceholder message="読み込み中…" lines={1} />
+              ) : breakingArticles.length > 0 ? (
                 <View style={[styles.breakingContainer, { paddingHorizontal: SPACING.SCREEN_HORIZONTAL }]}>
-                  {/* デフォルト3件表示 */}
                   {breakingArticles.slice(0, 3).map((article, index) => (
                     <View key={article.id} style={styles.breakingItem}>
                       <BreakingNewsCard
@@ -797,8 +801,6 @@ export default function HomeScreen() {
                       />
                     </View>
                   ))}
-                  
-                  {/* 展開時の追加表示 */}
                   {breakingExpanded && breakingArticles.slice(3).map((article, index) => (
                     <View key={article.id} style={styles.breakingItem}>
                       <BreakingNewsCard
@@ -808,8 +810,6 @@ export default function HomeScreen() {
                       />
                     </View>
                   ))}
-                  
-                  {/* 展開/縮小ボタン */}
                   {breakingArticles.length > 3 && (
                     <TouchableOpacity
                       style={styles.expandButton}
@@ -829,35 +829,40 @@ export default function HomeScreen() {
                     </TouchableOpacity>
                   )}
                 </View>
-                {/* セクションフッターの区切り線（必要時のみ） */}
-                {UI_FLAGS.USE_SECTION_FOOTER_DIVIDERS && (
-                  <SectionDivider inset={8} topMargin={6} />
-                )}
-              </View>
-            )}
+              ) : (
+                <SectionPlaceholder message="現在表示できる速報はありません" lines={0} />
+              )}
+              {UI_FLAGS.USE_SECTION_FOOTER_DIVIDERS && (
+                <SectionDivider inset={8} topMargin={6} />
+              )}
+            </View>
 
-            {/* Trending セクション */}
-            {trendingArticles.length > 0 && (
-              <View style={styles.sectionContainer}>
-                <SectionHeader
-                  type="trending"
-                  title="トレンド"
-                  articleCount={trendingArticles.length}
-                  showSeeMore={true}
-                  onSeeMorePress={() => router.push('/trending')}
-                  divider="none"
-                />
+            {/* Trending セクション（枠は常時表示） */}
+            <View style={styles.sectionContainer}>
+              <SectionHeader
+                type="trending"
+                title="トレンド"
+                articleCount={trendingArticles.length}
+                showSeeMore={trendingArticles.length > 0}
+                onSeeMorePress={() => router.push('/trending')}
+                divider="none"
+              />
+              {sectionsLoading ? (
+                <SectionPlaceholder message="読み込み中…" lines={1} />
+              ) : trendingArticles.length > 0 ? (
                 <TrendingCarousel
                   articles={trendingArticles}
                   onArticlePress={handleArticlePress}
                   onSeeMore={() => router.push('/trending')}
                   maxItems={10}
                 />
-                {UI_FLAGS.USE_SECTION_FOOTER_DIVIDERS && (
-                  <SectionDivider inset={8} topMargin={6} />
-                )}
-              </View>
-            )}
+              ) : (
+                <SectionPlaceholder message="現在表示できるトレンドはありません" lines={0} />
+              )}
+              {UI_FLAGS.USE_SECTION_FOOTER_DIVIDERS && (
+                <SectionDivider inset={8} topMargin={6} />
+              )}
+            </View>
 
             {/* Audio Recommendations セクション - NEW */}
             <View
@@ -885,28 +890,32 @@ export default function HomeScreen() {
               )}
             </View>
 
-            {/* Personalized セクション */}
-            {personalizedArticles.length > 0 && (
-              <View style={styles.sectionContainer}>
-                <SectionHeader
-                  type="personalized"
-                  title="おすすめ"
-                  articleCount={personalizedArticles.length}
-                  showSeeMore={true}
-                  onSeeMorePress={() => router.push('/personalized')}
-                  divider="none"
-                />
+            {/* Personalized セクション（枠は常時表示） */}
+            <View style={styles.sectionContainer}>
+              <SectionHeader
+                type="personalized"
+                title="おすすめ"
+                articleCount={personalizedArticles.length}
+                showSeeMore={personalizedArticles.length > 0}
+                onSeeMorePress={() => router.push('/personalized')}
+                divider="none"
+              />
+              {sectionsLoading ? (
+                <SectionPlaceholder message="読み込み中…" lines={1} />
+              ) : personalizedArticles.length > 0 ? (
                 <PersonalizedGrid
                   articles={personalizedArticles}
                   onArticlePress={handleArticlePress}
                   onSeeMore={() => router.push('/personalized')}
                   maxItems={4}
                 />
-                {UI_FLAGS.USE_SECTION_FOOTER_DIVIDERS && (
-                  <SectionDivider inset={8} topMargin={6} />
-                )}
-              </View>
-            )}
+              ) : (
+                <SectionPlaceholder message="現在表示できるおすすめはありません" lines={0} />
+              )}
+              {UI_FLAGS.USE_SECTION_FOOTER_DIVIDERS && (
+                <SectionDivider inset={8} topMargin={6} />
+              )}
+            </View>
 
             {/* Latest セクション with Genre Filtering */}
             <View
