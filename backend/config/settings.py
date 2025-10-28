@@ -34,7 +34,14 @@ MAX_FILE_SIZE_MB = 50
 
 # JWT Configuration
 JWT_ALGORITHM = "HS256"
-JWT_SECRET_KEY = os.environ.get('JWT_SECRET_KEY', 'your-secret-key-here')
+# CRITICAL: JWT_SECRET_KEY MUST be set in environment variables (Render Dashboard)
+# Never use the default value in production
+JWT_SECRET_KEY = os.environ.get('JWT_SECRET_KEY')
+if not JWT_SECRET_KEY:
+    if os.environ.get('ENVIRONMENT') == 'production':
+        raise RuntimeError('JWT_SECRET_KEY must be set in production environment')
+    # Development only: use a default key
+    JWT_SECRET_KEY = 'dev-only-key-not-for-production'
 
 # Logging Configuration
 LOG_LEVEL = os.environ.get('LOG_LEVEL', 'INFO')

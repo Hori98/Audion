@@ -44,27 +44,35 @@ def create_jwt_token(user_id: str, email: str) -> str:
 def verify_jwt_token(token: str) -> dict:
     """
     Verify and decode JWT token.
-    
+
     Args:
         token: JWT token to verify
-        
+
     Returns:
         dict: Token payload
-        
+
     Raises:
         HTTPException: If token is invalid or expired
     """
     try:
+        # Debug logging
+        logging.debug(f"🔐 [JWT_VERIFY] Token (first 50): {token[:50]}...")
+        logging.debug(f"🔐 [JWT_VERIFY] JWT_SECRET_KEY (first 20): {JWT_SECRET_KEY[:20] if JWT_SECRET_KEY else 'NOT SET'}...")
+        logging.debug(f"🔐 [JWT_VERIFY] JWT_ALGORITHM: {JWT_ALGORITHM}")
+
         payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
+        logging.info(f"✅ [JWT_VERIFY] Token successfully verified, sub: {payload.get('sub')}")
         return payload
-        
+
     except jwt.ExpiredSignatureError:
+        logging.error(f"❌ [JWT_VERIFY] Token has expired")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token has expired"
         )
     except jwt.InvalidTokenError as e:
-        logging.error(f"Invalid token: {e}")
+        logging.error(f"❌ [JWT_VERIFY] Invalid token error: {type(e).__name__}: {str(e)}")
+        logging.error(f"❌ [JWT_VERIFY] JWT_SECRET_KEY set: {bool(JWT_SECRET_KEY)}, length: {len(JWT_SECRET_KEY) if JWT_SECRET_KEY else 0}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token"
