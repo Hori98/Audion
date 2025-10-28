@@ -115,6 +115,20 @@ app = FastAPI(lifespan=lifespan)
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
+# Log critical configuration at startup
+from config.settings import JWT_SECRET_KEY, JWT_ALGORITHM
+logging.info("=" * 80)
+logging.info("🚀 AUDION BACKEND STARTUP")
+logging.info("=" * 80)
+logging.info(f"🔐 JWT_SECRET_KEY configured: {bool(JWT_SECRET_KEY)}")
+if JWT_SECRET_KEY:
+    logging.info(f"🔐 JWT_SECRET_KEY (first 20 chars): {JWT_SECRET_KEY[:20]}...")
+    logging.info(f"🔐 JWT_SECRET_KEY length: {len(JWT_SECRET_KEY)}")
+else:
+    logging.error("❌ JWT_SECRET_KEY NOT SET - Authentication will fail!")
+logging.info(f"🔐 JWT_ALGORITHM: {JWT_ALGORITHM}")
+logging.info("=" * 80)
+
 # Health check endpoint (outside /api prefix for ConnectionService)
 @app.get("/health")
 async def health_check():
