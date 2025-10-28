@@ -26,12 +26,22 @@ audion-app-fresh/
 │   │   ├── discover.tsx             ← Discover 画面
 │   │   ├── two.tsx                  ← その他画面
 │   │   ├── trending.tsx             ← トレンド
-│   │   ├── personalized.tsx         ← パーソナライズ
-│   │   ├── settings/                ← 設定関連
-│   │   └── auth/                    ← 認証関連
+│   │   └── personalized.tsx         ← パーソナライズ
+│   ├── settings/                    ← 設定関連ページ（直下）
+│   │   ├── index.tsx
+│   │   ├── autopick.tsx
+│   │   ├── content-playback.tsx
+│   │   ├── rss-sources.tsx
+│   │   └── schedule.tsx
+│   ├── auth/                        ← 認証ページ（直下）
+│   │   ├── login.tsx
+│   │   └── register.tsx
 │   ├── _layout.tsx                  ← Root レイアウト
 │   ├── modal.tsx
 │   ├── player.tsx
+│   ├── article-webview.tsx
+│   ├── dev-test.tsx
+│   ├── test-api.tsx
 │   └── +not-found.tsx
 │
 ├── components/
@@ -83,8 +93,8 @@ audion-app-fresh/
 
 ```typescript
 import React from 'react';
-import { View, Text } from 'react-native';
-import { useTheme } from '@react-navigation/native';
+import { View, Text, StyleSheet } from 'react-native';
+import { COLORS, SPACING } from '../../styles/commonStyles';
 
 interface SectionPlaceholderProps {
   message?: string;         // 読み込み中メッセージ（オプション）
@@ -97,37 +107,33 @@ export default function SectionPlaceholder({
   lines = 1,
   insetHorizontal = 0
 }: SectionPlaceholderProps) {
-  const theme = useTheme();
-
-  const styles = {
-    container: {
-      paddingVertical: 12,
-      paddingHorizontal: insetHorizontal,
-      gap: 8,
-    },
-    message: {
-      fontSize: 14,
-      color: theme.colors.text,
-      opacity: 0.7,
-      marginBottom: 4,
-    },
-    band: {
-      height: 12,
-      backgroundColor: theme.colors.notification,
-      borderRadius: 4,
-      opacity: 0.6,
-    },
-  };
-
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, insetHorizontal ? { paddingHorizontal: insetHorizontal } : null]}>
       {message ? <Text style={styles.message}>{message}</Text> : null}
-      {Array.from({ length: Math.max(0, lines) }).map((_, idx) => (
-        <View key={idx} style={styles.band} />
+      {Array.from({ length: Math.max(0, lines) }).map((_, i) => (
+        <View key={i} style={styles.band} />
       ))}
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    paddingHorizontal: SPACING.SCREEN_HORIZONTAL,
+    paddingVertical: SPACING[2],
+  },
+  message: {
+    color: COLORS.TEXT_MUTED,
+    fontSize: 12,
+    marginBottom: SPACING[1],
+  },
+  band: {
+    height: 10,
+    backgroundColor: 'rgba(255,255,255,0.10)',
+    borderRadius: 5,
+    marginTop: SPACING[1],
+  },
+});
 ```
 
 ---
@@ -146,122 +152,145 @@ export default function SectionPlaceholder({
 - Latest Articles（最新記事）
 - AudioRecommendationCarousel（音声推奨）
 
-### 実装パターン（3種類）
+### 実装パターン（2種類）
 
-#### パターン1: セクション全体が読み込み中
+#### パターン1: セクションコンテナを常時表示、読み込み中はプレースホルダー
+
+このパターンは、セクションのコンテナを常時表示して、読み込み中はスケルトンを表示します。
 
 ```typescript
-// Before: セクションが表示されない
-{trendingArticlesData.length === 0 && (
-  // 何も表示しない
-)}
-
-// After: プレースホルダー表示
-{sectionsLoading ? (
-  <SectionPlaceholder
-    message="トレンド記事を読み込み中..."
-    lines={3}
-    insetHorizontal={16}
+// 実装例：Trending セクション
+<View style={styles.sectionContainer}>
+  <SectionHeader
+    type="trending"
+    title="トレンド"
+    articleCount={trendingArticles.length}
+    showSeeMore={trendingArticles.length > 0}
+    onSeeMorePress={() => router.push('/trending')}
+    divider="none"
   />
-) : (
-  <TrendingCarousel articles={trendingArticles} />
-)}
+  {sectionsLoading ? (
+    <SectionPlaceholder message="読み込み中…" lines={1} />
+  ) : trendingArticles.length > 0 ? (
+    <TrendingCarousel
+      articles={trendingArticles}
+      onArticlePress={handleArticlePress}
+      onSeeMore={() => router.push('/trending')}
+      maxItems={10}
+    />
+  ) : (
+    <SectionPlaceholder message="現在表示できるトレンドはありません" lines={0} />
+  )}
+  {UI_FLAGS.USE_SECTION_FOOTER_DIVIDERS && (
+    <SectionDivider inset={8} topMargin={6} />
+  )}
+</View>
 ```
 
-#### パターン2: セクションタイトル + プレースホルダー
+#### パターン2: セクションコンテナを常時表示、3状態管理
+
+このパターンは、セクションの3つの状態（読み込み中・データあり・データなし）を明確に分離します。
 
 ```typescript
-// Before: タイトルなし、セクション非表示
-{articleCount === 0 && null}
-
-// After: タイトル常時表示、読み込み中はプレースホルダー
-<SectionHeader title="パーソナライズ記事" />
-{sectionsLoading ? (
-  <SectionPlaceholder
-    message="記事を準備中..."
-    lines={2}
-    insetHorizontal={16}
+// 実装例：Personalized セクション
+<View style={styles.sectionContainer}>
+  <SectionHeader
+    type="personalized"
+    title="おすすめ"
+    articleCount={personalizedArticles.length}
+    showSeeMore={personalizedArticles.length > 0}
+    onSeeMorePress={() => router.push('/personalized')}
+    divider="none"
   />
-) : (
-  <PersonalizedGrid articles={personalizedArticles} />
-)}
-```
-
-#### パターン3: 複数アイテムの段階的読み込み
-
-```typescript
-// Before: リストが完成するまで待機
-{displayedArticles.map((article) => (
-  <ArticleCard key={article.id} article={article} />
-))}
-
-// After: 枠は常時表示、不足分はプレースホルダー
-const allSlots = 10; // 常に10件の枠を表示
-const placeholderCount = Math.max(0, allSlots - displayedArticles.length);
-
-{displayedArticles.map((article) => (
-  <ArticleCard key={article.id} article={article} />
-))}
-
-{placeholderCount > 0 && (
-  Array.from({ length: placeholderCount }).map((_, idx) => (
-    <SectionPlaceholder key={`placeholder-${idx}`} lines={2} />
-  ))
-)}
+  {sectionsLoading ? (
+    <SectionPlaceholder message="読み込み中…" lines={1} />
+  ) : personalizedArticles.length > 0 ? (
+    <PersonalizedGrid
+      articles={personalizedArticles}
+      onArticlePress={handleArticlePress}
+      onSeeMore={() => router.push('/personalized')}
+      maxItems={4}
+    />
+  ) : (
+    <SectionPlaceholder message="現在表示できるおすすめはありません" lines={0} />
+  )}
+  {UI_FLAGS.USE_SECTION_FOOTER_DIVIDERS && (
+    <SectionDivider inset={8} topMargin={6} />
+  )}
+</View>
 ```
 
 ---
 
-## 📋 実装チェックリスト
+## 📋 実装状態（2025-10-28 時点）
 
-### 【ステップ1】ファイル確認
+### ✅ 実装完了
 
-```
-index.tsx の場所を確認:
-  ✓ audion-app-fresh/app/(tabs)/index.tsx
-  ✓ ブランチが main
-  ✓ ファイルサイズ約 48KB
-```
+SectionPlaceholder は全セクションで統合済みです。
 
-### 【ステップ2】インポート追加
-
-`index.tsx` の先頭（他のインポートの近くに）に以下を追加：
+#### インポート確認
 
 ```typescript
+// audion-app-fresh/app/(tabs)/index.tsx（Line 62）
 import SectionPlaceholder from '../../components/common/SectionPlaceholder';
 ```
 
-### 【ステップ3】読み込み状態の確認
+#### 実装済みセクション
 
-既存の state を確認（すでに存在する可能性が高い）：
+| セクション | 状態 | 読み込み状態 | 空状態 |
+|-----------|------|-----------|-------|
+| Hero | ✅ | あり（lines=2） | なし |
+| Breaking | ✅ | あり（lines=1） | あり |
+| Trending | ✅ | あり（lines=1） | あり |
+| Personalized | ✅ | あり（lines=1） | あり |
+| Audio | ✅ | 組込み（AudioRecommendationCarousel） | なし |
 
-```typescript
-// Line 93: 既存
-const [sectionsLoading, setSectionsLoading] = useState(false);
+#### コミット履歴
 
-// その他の state
-const [trendingArticlesData, setTrendingArticlesData] = useState<Article[]>([]);
-const [personalizedArticlesData, setPersonalizedArticlesData] = useState<Article[]>([]);
+```
+Commit: 6103108
+Message: feat(ui): integrate SectionPlaceholder loading states into Home screen sections
+Date: 2025-10-28 13:42:22 JST
 ```
 
-### 【ステップ4】UI に統合
+### 📝 新規セクション追加時のチェックリスト
 
-各セクション毎に以下のパターンで統合（例：HeroCarousel セクション）：
+新しいセクションにSectionPlaceholderを統合する場合：
+
+#### 【ステップ1】インポート確認
+
+SectionPlaceholder が既にインポートされていることを確認：
 
 ```typescript
-// 既存コード付近（Line 772 あたり）
-{heroLoading ? (
-  <SectionPlaceholder
-    message="ヒーロー記事を読み込み中..."
-    lines={3}
-    insetHorizontal={16}
-  />
+// audion-app-fresh/app/(tabs)/index.tsx（Line 62）
+import SectionPlaceholder from '../../components/common/SectionPlaceholder';
+```
+
+#### 【ステップ2】読み込み状態の確認
+
+セクション用の state が存在することを確認：
+
+```typescript
+const [sectionsLoading, setSectionsLoading] = useState(false);
+// または section 固有の state
+const [myCustomLoading, setMyCustomLoading] = useState(false);
+```
+
+#### 【ステップ3】UI に統合
+
+上記の「実装パターン」を参照して、3状態管理を実装：
+
+```typescript
+{myLoading ? (
+  <SectionPlaceholder message="読み込み中…" lines={1} />
+) : myArticles.length > 0 ? (
+  <MyCustomCarousel articles={myArticles} />
 ) : (
-  <HeroCarousel articles={heroArticles} onArticlePress={handleArticleSelect} />
+  <SectionPlaceholder message="データがありません" lines={0} />
 )}
 ```
 
-### 【ステップ5】テスト
+#### 【ステップ4】テスト
 
 ```bash
 # ローカルで起動
@@ -270,81 +299,75 @@ npx expo start --clear --tunnel
 # 確認項目:
 # 1. 画面初期化時にプレースホルダーが表示される
 # 2. データ読み込み完了後に実データが表示される
-# 3. スクロール時の下部セクションもプレースホルダーが表示される
-# 4. テーマ色がプレースホルダーに反映されている
+# 3. データがない場合に空状態メッセージが表示される
 ```
 
 ---
 
 ## ⚠️ 実装時の注意点
 
-### 注意1: state 管理
+### 注意1: State 管理での3状態設計
+
+SectionPlaceholder を効果的に使用するには、読み込み中・データあり・データなしの3つの状態を明確に分離する必要があります。
 
 ```typescript
-// ❌ しない: 単にデータ有無で判定
-{articles.length === 0 && <SectionPlaceholder />}
+// ❌ 不適切: データ有無のみで判定
+{articles.length === 0 ? null : <SectionPlaceholder />}
 
-// ✅ する: 明示的に読み込み状態を管理
-const [isLoading, setIsLoading] = useState(true);
-useEffect(() => {
-  fetchArticles().finally(() => setIsLoading(false));
-}, []);
-
-{isLoading && !articles.length && <SectionPlaceholder />}
-{isLoading && articles.length > 0 && <ArticleList />}
-{!isLoading && articles.length === 0 && <EmptyState />}
-```
-
-### 注意2: useTheme の使用
-
-```typescript
-// SectionPlaceholder は useTheme() を使用
-// 必ず NavigationContainer または同等の Provider 内で使用
-
-// ✅ 正しい: _layout.tsx か NavigationContainer 内コンポーネント
-export default function TabLayout() {
-  return (
-    <NavigationContainer>
-      <SectionPlaceholder ... />  // OK
-    </NavigationContainer>
-  );
-}
-
-// ❌ 間違い: Provider の外
-<View>
-  <SectionPlaceholder ... />  // useTheme がエラー
-</View>
-```
-
-### 注意3: パフォーマンス
-
-```typescript
-// ❌ しない: 毎回新しいスタイルを作成
-<SectionPlaceholder style={{ paddingHorizontal: 16 }} />
-
-// ✅ する: スタイルを定数化
-const placeholderStyle = { paddingHorizontal: 16 };
-<SectionPlaceholder style={placeholderStyle} />
-
-// または useCallback で関数メモ化
-const renderPlaceholder = useCallback(() => (
-  <SectionPlaceholder lines={3} />
-), []);
-```
-
-### 注意4: セクションサイズの統一
-
-```typescript
-// プレースホルダーの高さが実データの高さと近いようにする
-// 例: HeroCarousel が 200px なら、プレースホルダーも約 200px に
-
-{isLoading ? (
-  <View style={{ height: 200 }}>  // HeroCarousel と同じ高さ
-    <SectionPlaceholder lines={3} />
-  </View>
+// ✅ 推奨: 3状態を明示的に管理
+{sectionsLoading ? (
+  <SectionPlaceholder message="読み込み中…" lines={1} />
+) : articles.length > 0 ? (
+  <ArticleCarousel articles={articles} />
 ) : (
-  <HeroCarousel articles={articles} />  // 高さ 200px
+  <SectionPlaceholder message="データがありません" lines={0} />
 )}
+```
+
+### 注意2: lines パラメータの値
+
+`lines` パラメータは、プレースホルダーに表示する骨組みバー（スケルトン）の数です。データ構造に合わせて適切に設定してください。
+
+```typescript
+// lines の推奨値
+<SectionPlaceholder lines={0} />  // メッセージのみ、バーなし（空状態用）
+<SectionPlaceholder lines={1} />  // 1行プレースホルダー（カルーセル用）
+<SectionPlaceholder lines={2} />  // 2行プレースホルダー（複雑なレイアウト用）
+<SectionPlaceholder lines={3} />  // 3行以上（大きなセクション用）
+```
+
+### 注意3: insetHorizontal パラメータの使用
+
+`insetHorizontal` は水平方向のパディングを追加します。デフォルト値は `SPACING.SCREEN_HORIZONTAL`（8px） です。
+
+```typescript
+// ❌ 不要: 両側パディングを重複設定
+<View style={{ paddingHorizontal: 16 }}>
+  <SectionPlaceholder insetHorizontal={16} />
+</View>
+
+// ✅ 推奨: 親要素か SectionPlaceholder のどちらかで設定
+// 親要素で設定している場合
+<SectionPlaceholder insetHorizontal={0} />
+
+// または SectionPlaceholder で設定
+<SectionPlaceholder insetHorizontal={16} />
+```
+
+### 注意4: COLORS と SPACING の確認
+
+SectionPlaceholder は `commonStyles` から `COLORS` と `SPACING` をインポートしています。プロジェクトでこれらが正しく定義されていることを確認してください。
+
+```typescript
+// audion-app-fresh/styles/commonStyles.ts で確認
+import { COLORS, SPACING } from '../../styles/commonStyles';
+
+// 必須の SPACING キー
+// SPACING.SCREEN_HORIZONTAL
+// SPACING[1], SPACING[2]
+
+// 必須の COLORS キー
+// COLORS.TEXT_MUTED
 ```
 
 ---
