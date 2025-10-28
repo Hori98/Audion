@@ -203,9 +203,166 @@ npm run build                       # Must build successfully
 npm run dev                         # Must start dev server
 ```
 
+## Render Production Deployment Checklist
+
+### Pre-Deployment (Render Configuration)
+
+#### Environment Setup
+- [ ] **MongoDB Atlas**
+  - [ ] Database created: audion_atlas_DB
+  - [ ] Network access configured for Render IPs
+  - [ ] Connection string obtained and verified
+  - [ ] Test connection from local machine works
+
+- [ ] **AWS S3 Bucket**
+  - [ ] Bucket created: audion-audio-files
+  - [ ] Region: ap-southeast-2
+  - [ ] IAM user created with S3 permissions
+  - [ ] Access keys generated and stored securely
+  - [ ] Bucket policy allows public read access
+
+- [ ] **OpenAI API**
+  - [ ] API key obtained from platform.openai.com
+  - [ ] Billing configured and credits available
+
+#### Render Dashboard Configuration
+- [ ] Service created: audion-backend
+- [ ] GitHub repository connected
+- [ ] Build Command: `pip install -r backend/requirements.txt`
+- [ ] Start Command: `cd backend && uvicorn server:app --host 0.0.0.0 --port $PORT`
+- [ ] Branch set to: `main`
+- [ ] Region selected (Oregon recommended for US)
+- [ ] Plan tier selected (Starter minimum for production)
+
+#### Environment Variables Set in Render Dashboard
+- [ ] PYTHON_VERSION=3.13
+- [ ] ENVIRONMENT=production
+- [ ] MONGO_URL=`mongodb+srv://...`
+- [ ] DB_NAME=audion_atlas_DB
+- [ ] JWT_SECRET_KEY=`<strong-random-key>` (generated via: `python3 -c "import secrets; print(secrets.token_urlsafe(32))"`)
+- [ ] OPENAI_API_KEY=`sk-...`
+- [ ] AWS_ACCESS_KEY_ID=`AKIA...`
+- [ ] AWS_SECRET_ACCESS_KEY=`...`
+- [ ] AWS_REGION=ap-southeast-2
+- [ ] S3_BUCKET_NAME=audion-audio-files
+- [ ] LOG_LEVEL=INFO
+
+#### Generate Production JWT Secret
+```bash
+python3 -c "import secrets; print('JWT_SECRET_KEY=' + secrets.token_urlsafe(32))"
+# Copy output and paste into Render Dashboard
+```
+
+### Deployment Verification
+
+#### Build Success
+- [ ] Render build logs show "successfully installed" for all packages
+- [ ] No Python version conflicts
+- [ ] Build completes in < 5 minutes
+- [ ] No error messages in build output
+
+#### Startup Logs
+- [ ] "🚀 AUDION BACKEND STARTUP" appears
+- [ ] "🔐 JWT_SECRET_KEY configured: True" appears
+- [ ] "Connected to MongoDB successfully" appears
+- [ ] "Uvicorn running on 0.0.0.0:xxxxx" appears
+- [ ] No exceptions or errors in startup output
+
+#### Health Check Endpoints
+- [ ] GET `https://audion.onrender.com/health` returns 200 OK
+- [ ] Response body: `{"status": "healthy", "database": "connected"}`
+- [ ] Render health check shows as "Passing"
+
+#### API Authentication
+- [ ] POST `/api/auth/register` works with valid credentials
+- [ ] POST `/api/auth/login` returns access token
+- [ ] Invalid credentials return 401 error
+- [ ] Protected endpoints require valid JWT token
+- [ ] Expired tokens return 401 error
+
+#### File Storage (S3)
+- [ ] Audio files can be uploaded to S3
+- [ ] Files are accessible via public URLs
+- [ ] S3 bucket size increases after upload
+- [ ] No AWS credential errors in logs
+
+### Frontend Configuration
+
+#### React Native (audion-app-fresh)
+- [ ] `.env.development` has: `EXPO_PUBLIC_API_BASE_URL=https://audion.onrender.com`
+- [ ] API timeout set to 60000ms
+- [ ] Expo app can register new user
+- [ ] Expo app can login successfully
+- [ ] Expo app can fetch articles
+- [ ] Expo app can generate audio
+- [ ] No "Network Error - No response from server" messages
+
+#### Web UI (src/)
+- [ ] `.env` or config has: `VITE_API_URL=https://audion.onrender.com/api`
+- [ ] Web app can login successfully
+- [ ] Web app can fetch data from Render backend
+- [ ] Web app can generate audio files
+- [ ] No CORS errors in browser console
+
+### Production Monitoring
+
+#### Render Metrics
+- [ ] CPU usage is stable (< 80%)
+- [ ] Memory usage is stable (< 512MB)
+- [ ] Restart count is 0
+- [ ] HTTP response time is normal (< 2s)
+- [ ] Error rate is 0 or very low
+
+#### Database Monitoring
+- [ ] MongoDB Atlas shows active connections
+- [ ] Query response times are acceptable
+- [ ] No slow queries (> 100ms) in logs
+- [ ] Connection pool is healthy
+
+#### Storage Monitoring
+- [ ] S3 bucket size is as expected
+- [ ] Upload success rate is 100%
+- [ ] No failed requests in S3 logs
+
+### Post-Deployment Documentation
+
+- [ ] Update README.md with Render production URL
+- [ ] Update CLAUDE.md with production deployment info
+- [ ] Document any custom configurations
+- [ ] Store JWT_SECRET_KEY in secure location (not in code)
+- [ ] Document AWS S3 bucket policy
+- [ ] Document MongoDB Atlas network access rules
+
+### Troubleshooting Checklist
+
+**If 502 Bad Gateway:**
+- [ ] Check Render build logs for errors
+- [ ] Verify all environment variables are set
+- [ ] Check if database connection string is correct
+- [ ] Verify Python dependencies install without errors
+
+**If 401 Errors:**
+- [ ] Verify JWT_SECRET_KEY is set in Render Dashboard
+- [ ] Check logs for "JWT_SECRET_KEY configured: True"
+- [ ] Ensure ENVIRONMENT=production is set
+
+**If S3 Uploads Fail:**
+- [ ] Verify AWS credentials are correct
+- [ ] Check S3 bucket permissions
+- [ ] Verify S3_BUCKET_NAME matches actual bucket
+- [ ] Check AWS IAM policy allows S3:PutObject
+
+**If Database Connection Fails:**
+- [ ] Verify MONGO_URL format is correct
+- [ ] Check MongoDB Atlas network access includes Render IPs
+- [ ] Test connection locally with mongosh
+
+---
+
 ## Sign-Off
 
 - [ ] All applicable checklist items completed
 - [ ] No blockers or known issues remaining
 - [ ] Code is ready for production deployment
 - [ ] Changes are merged and pushed to main branch
+- [ ] Render production backend is verified and working

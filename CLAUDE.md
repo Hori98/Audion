@@ -17,11 +17,12 @@ Audion is a full-stack podcast generation application that uses AI to convert RS
 
 ### Backend (backend/)
 - **Technology**: FastAPI with async/await patterns
-- **Database**: MongoDB with Motor (async driver)
-- **Authentication**: JWT tokens with Bearer authentication
-- **AI Integration**: OpenAI GPT for script generation, Google Text-to-Speech for audio
-- **File Storage**: Vercel Blob for audio file storage
-- **RSS Processing**: Feedparser for RSS feed ingestion with caching
+- **Database**: MongoDB Atlas (cloud-hosted MongoDB)
+- **Authentication**: JWT tokens with Bearer authentication (production: strong random key required)
+- **AI Integration**: OpenAI GPT for script generation, text-to-speech for audio generation
+- **File Storage**: AWS S3 for audio file storage (production), local filesystem fallback (development)
+- **Deployment**: Render.com for production hosting with automatic deployment from main branch
+- **RSS Processing**: Feedparser for RSS feed ingestion with 5-minute caching
 
 ## Development Commands
 
@@ -58,6 +59,58 @@ cd backend
 uvicorn server:app --reload --port 8002   # Start development server (Claude - port 8002)
 ```
 
+### Production Deployment (Render)
+
+**For complete Render deployment guide, see: [docs/DEPLOYMENT_ATLAS_RENDER.md](docs/DEPLOYMENT_ATLAS_RENDER.md)**
+
+#### Quick Deploy Checklist
+```bash
+# 1. Generate production JWT secret
+python3 -c "import secrets; print('JWT_SECRET_KEY=' + secrets.token_urlsafe(32))"
+
+# 2. Ensure render.yaml exists in project root
+ls -la render.yaml
+
+# 3. Push to main branch (Render auto-deploys)
+git add .
+git commit -m "chore: production deployment configuration"
+git push origin main
+
+# 4. Monitor deployment
+# Visit: https://dashboard.render.com → audion-backend → Events
+```
+
+#### Required Environment Variables (Set in Render Dashboard)
+- `ENVIRONMENT=production`
+- `MONGO_URL=<mongodb-atlas-connection-string>`
+- `DB_NAME=audion_atlas_DB`
+- `JWT_SECRET_KEY=<generated-secret>`
+- `OPENAI_API_KEY=<your-api-key>`
+- `AWS_ACCESS_KEY_ID=<aws-access-key>`
+- `AWS_SECRET_ACCESS_KEY=<aws-secret-key>`
+- `AWS_REGION=ap-southeast-2`
+- `S3_BUCKET_NAME=audion-audio-files`
+- `BACKEND_URL=https://audion.onrender.com`
+- `LOG_LEVEL=INFO`
+- `PYTHON_VERSION=3.13`
+
+#### Verify Production Deployment
+```bash
+# Health check
+curl https://audion.onrender.com/health
+
+# Test login
+curl -X POST https://audion.onrender.com/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"test@example.com","password":"TestPassword123"}'
+```
+
+#### Update Frontend Configuration
+```bash
+# audion-app-fresh/.env.development
+EXPO_PUBLIC_API_BASE_URL=https://audion.onrender.com
+```
+
 ### Testing
 ```bash
 python backend_test.py        # Run comprehensive API tests
@@ -78,10 +131,24 @@ python backend_test.py        # Run comprehensive API tests
 ## Environment Variables
 
 ### Backend (.env in backend/)
-- `MONGO_URL` - MongoDB connection string
-- `DB_NAME` - MongoDB database name
+
+**Development**:
+- `MONGO_URL` - MongoDB Atlas connection string
+- `DB_NAME` - MongoDB database name (audion_atlas_DB)
 - `OPENAI_API_KEY` - OpenAI API key for script generation
-- `GOOGLE_TTS_KEY` - Google Text-to-Speech API key
+- `JWT_SECRET_KEY` - Secret key for JWT token signing
+- `ENVIRONMENT` - Set to "development" (defaults to "development")
+- `AWS_ACCESS_KEY_ID` - (Optional) AWS S3 access key
+- `AWS_SECRET_ACCESS_KEY` - (Optional) AWS S3 secret key
+- `AWS_REGION` - AWS region for S3 (default: us-east-1)
+- `S3_BUCKET_NAME` - S3 bucket name (default: audion-audio-files)
+- `BACKEND_URL` - Backend URL for audio file URLs (default: http://localhost:8000)
+
+**Production** (see `.env.production` template):
+- All development variables required
+- `ENVIRONMENT=production` - Enables security features (strict CORS)
+- `JWT_SECRET_KEY` - Must be a strong random key (generate with: `python3 -c "import secrets; print(secrets.token_urlsafe(32))"`)
+- AWS credentials required (S3 storage is mandatory in production)
 
 ## API Endpoints
 
@@ -205,12 +272,23 @@ Use `backend_test.py` to run comprehensive API tests including authentication, R
   - Advanced authentication methods (2FA, biometric)
 
 ### 📊 Current Architecture Status
-- **Frontend**: Expo React Native - Production ready
-- **Backend**: FastAPI Python - MVP complete, needs scaling
-- **Database**: MongoDB - Optimized for current load
-- **AI Integration**: OpenAI GPT + Google TTS - Stable
-- **Storage**: Vercel Blob - Suitable for current scale
-- **Deployment**: Development environment only
+- **Frontend**: Expo React Native (audion-app-fresh) - Production ready
+  - URL: https://audion.onrender.com (configured in .env.development)
+  - Tunnel mode for development: `npx expo start --tunnel`
+- **Backend**: FastAPI Python - Production deployed on Render
+  - URL: https://audion.onrender.com
+  - Auto-deploys from main branch via Render
+  - Render health check: `/health` endpoint
+- **Database**: MongoDB Atlas - Cloud-hosted, production-grade
+  - Database: audion_atlas_DB
+  - Network access configured for Render IPs
+- **AI Integration**: OpenAI GPT - Stable
+- **Storage**: AWS S3 - Production storage for audio files
+  - Bucket: audion-audio-files (ap-southeast-2 region)
+  - Fallback: Local filesystem in development
+- **Deployment**: Render.com - Automated production deployment
+  - Configuration: render.yaml in project root
+  - Environment variables: Set in Render Dashboard
 
 ### 🎯 Next Immediate Actions
 1. **Production Deployment Pipeline Setup**

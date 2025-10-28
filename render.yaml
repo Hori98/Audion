@@ -1,0 +1,32 @@
+services:
+  - type: web
+    name: audion-backend
+    env: python
+    region: oregon
+    plan: starter
+    branch: main
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: cd backend && uvicorn server:app --host 0.0.0.0 --port $PORT
+
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.13
+      - key: ENVIRONMENT
+        value: production
+
+    # Note: These environment variables should be set in Render Dashboard for security:
+    # - MONGO_URL (MongoDB Atlas connection string)
+    # - DB_NAME (database name)
+    # - JWT_SECRET_KEY (production-grade secret - generate with: python3 -c "import secrets; print(secrets.token_urlsafe(32))")
+    # - OPENAI_API_KEY (OpenAI API key)
+    # - AWS_ACCESS_KEY_ID (AWS IAM access key)
+    # - AWS_SECRET_ACCESS_KEY (AWS IAM secret key)
+    # - AWS_REGION (e.g., ap-southeast-2)
+    # - S3_BUCKET_NAME (e.g., audion-audio-files)
+    # - LOG_LEVEL (INFO, DEBUG, ERROR)
+
+    autoDeploy: true
+
+    # Health check endpoint
+    healthCheckPath: /health
+    healthCheckInterval: 10

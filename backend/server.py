@@ -46,6 +46,12 @@ AWS_SECRET_ACCESS_KEY = os.environ.get('AWS_SECRET_ACCESS_KEY')
 AWS_REGION = os.environ.get('AWS_REGION', 'us-east-1')
 S3_BUCKET_NAME = os.environ.get('S3_BUCKET_NAME', 'audion-audio-files')
 
+# Backend URL Configuration (for audio file URLs)
+# Use BACKEND_URL for production (e.g., https://audion.onrender.com)
+# Falls back to localhost:8000 for local development
+BACKEND_URL = os.environ.get('BACKEND_URL', 'http://localhost:8000')
+MOCK_AUDIO_URL_BASE = os.environ.get('MOCK_AUDIO_URL_BASE', 'http://localhost:8001')
+
 # Global database connection variable
 db = None
 db_connected = False
@@ -162,9 +168,25 @@ async def health_check():
         }
 
 # Add CORS Middleware
+# Production: restrict to specific domains
+# Development: allow all origins for testing
+ENVIRONMENT = os.environ.get('ENVIRONMENT', 'development')
+ALLOWED_ORIGINS = [
+    "https://audion.onrender.com",          # Production backend
+    "http://localhost:3000",                # Web dev
+    "http://localhost:5173",                # Web Vite dev
+    "http://127.0.0.1:5173",                # Web Vite dev (127.0.0.1 variant)
+    "exp://localhost:19000",                # Expo Go
+    "exp://localhost:19001",                # Expo Go alt port
+    "http://localhost:8003",                # React Native dev
+    "http://localhost:8004",                # React Native dev alt
+]
+
+cors_origins = ALLOWED_ORIGINS if ENVIRONMENT == 'production' else ["*"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins for debugging
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
@@ -650,7 +672,7 @@ async def summarize_articles_with_openai(articles_content: List[str], prompt_sty
         return "An error occurred during summarization. We apologize for the technical difficulty and are working to resolve the issue. Please try again shortly for the latest news updates."
 
 def create_mock_audio_file() -> tuple[str, int]:
-    dummy_audio_url = "http://localhost:8001/audio_files/SampleAudio_0.4mb.mp3"
+    dummy_audio_url = f"{MOCK_AUDIO_URL_BASE}/audio_files/SampleAudio_0.4mb.mp3"
     dummy_duration = 30
     return dummy_audio_url, dummy_duration
 
@@ -742,8 +764,8 @@ async def convert_text_to_speech(text: str) -> dict:
                 audio_path = audio_dir / audio_filename
                 with open(audio_path, 'wb') as f:
                     f.write(audio_content)
-                
-                public_url = f"http://localhost:8000/audio/{audio_filename}"
+
+                public_url = f"{BACKEND_URL}/audio/{audio_filename}"
                 logging.info(f"Fallback: Audio saved locally at {public_url}")
         else:
             logging.info(f"AWS condition failed - KEY:{bool(AWS_ACCESS_KEY_ID)} SECRET:{bool(AWS_SECRET_ACCESS_KEY)} NOT_DEFAULT:{AWS_ACCESS_KEY_ID != 'your-aws-access-key' if AWS_ACCESS_KEY_ID else False}")
@@ -755,8 +777,8 @@ async def convert_text_to_speech(text: str) -> dict:
             audio_path = audio_dir / audio_filename
             with open(audio_path, 'wb') as f:
                 f.write(audio_content)
-            
-            public_url = f"http://localhost:8000/audio/{audio_filename}"
+
+            public_url = f"{BACKEND_URL}/audio/{audio_filename}"
             logging.info(f"Audio saved locally: {public_url}")
         
         return {"url": public_url, "duration": duration}
