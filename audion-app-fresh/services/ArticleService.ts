@@ -110,10 +110,14 @@ class ArticleService {
     return result;
   }
 
-  async getCuratedArticles(genre?: string, maxArticles?: number): Promise<Article[]> {
-    // Getting curated articles
+  async getCuratedArticles(genre?: string, maxArticles?: number, section?: string): Promise<Article[]> {
+    // Getting curated articles from dynamic backend sources
+    // Supports section-specific source filtering (hero, breaking, trending, science, etc.)
 
     const requestParams: Record<string, any> = {};
+    if (section) {
+      requestParams.section = section;
+    }
     if (genre && genre !== 'すべて') {
       requestParams.genre = genre;
     }
@@ -130,7 +134,7 @@ class ArticleService {
       id: article.id || `${article.source_id || 'unknown'}-${Date.now()}-${Math.random()}`,
     }));
 
-    // Curated articles fetched
+    // Curated articles fetched successfully from dynamic sources
     return normalizedArticles;
   }
 

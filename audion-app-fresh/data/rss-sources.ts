@@ -1,15 +1,29 @@
 /**
  * RSS Sources Configuration
  * HomeタブとFeedタブのRSSソース設定
+ *
+ * NOTE: This file now primarily serves as a type definition and fallback.
+ * RSS sources are loaded dynamically from the backend via API endpoints:
+ * - GET /api/rss-sources/system - All system sources
+ * - GET /api/rss-sources/sections/{section} - Section-specific sources
+ * - GET /api/articles/curated - Articles from curated sources
  */
 
 export interface RSSSourceConfig {
+  id?: string;
   name: string;
   url: string;
   category: string;
   description?: string;
   language: string;
   country: string;
+  license?: string;
+  commercial_use?: boolean;
+  podcast_allowed?: boolean;
+  credit_required?: boolean;
+  source_type?: string;
+  is_active?: boolean;
+  priority?: number;
 }
 
 /**
