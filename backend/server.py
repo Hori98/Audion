@@ -35,6 +35,31 @@ CACHE_EXPIRY_SECONDS = 300  # Cache for 5 minutes
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
+# Load RSS sources configuration from shared config
+RSS_SOURCES_CONFIG = {}
+RSS_SECTIONS_CONFIG = {}
+try:
+    config_path = ROOT_DIR.parent / 'shared-config' / 'rss-sources.json'
+    if config_path.exists():
+        with open(config_path, 'r', encoding='utf-8') as f:
+            RSS_SOURCES_CONFIG = json.load(f)
+        logging.info(f"Loaded {len(RSS_SOURCES_CONFIG.get('sources', []))} RSS sources from config")
+    else:
+        logging.warning(f"RSS sources config not found at {config_path}")
+except Exception as e:
+    logging.error(f"Error loading RSS sources config: {e}")
+
+try:
+    sections_config_path = ROOT_DIR.parent / 'shared-config' / 'rss-sections-mapping.json'
+    if sections_config_path.exists():
+        with open(sections_config_path, 'r', encoding='utf-8') as f:
+            RSS_SECTIONS_CONFIG = json.load(f)
+        logging.info(f"Loaded {len(RSS_SECTIONS_CONFIG.get('sections', {}))} section mappings from config")
+    else:
+        logging.warning(f"RSS sections config not found at {sections_config_path}")
+except Exception as e:
+    logging.error(f"Error loading RSS sections config: {e}")
+
 # MongoDB and API configuration
 MONGO_URL = os.environ['MONGO_URL']
 DB_NAME = os.environ['DB_NAME']
@@ -1413,22 +1438,55 @@ async def get_articles_internal(current_user: User, genre: Optional[str] = None,
     return sorted(all_articles, key=lambda x: x.published, reverse=True)[:50]
 
 @app.get("/api/articles/curated", response_model=List[Article], tags=["Articles"])
-async def get_curated_articles(genre: Optional[str] = None, max_articles: Optional[int] = None):
+async def get_curated_articles(section: Optional[str] = None, genre: Optional[str] = None, max_articles: Optional[int] = None):
     """
     Get curated articles from default/public RSS sources.
     This endpoint doesn't require authentication.
     Useful for home page and trending/personalized sections.
+
+    Parameters:
+    - section: Optional section name ('hero', 'breaking', 'trending', etc.) to filter sources
+    - genre: Optional genre filter
+    - max_articles: Maximum articles to return (default: 50)
     """
     try:
-        # Get default/public RSS sources (from admin or system)
-        # For now, we'll use a hardcoded list of popular news sources
-        default_sources = [
-            {"url": "https://feeds.bloomberg.com/markets/news.rss", "name": "Bloomberg Markets"},
-            {"url": "https://feeds.techcrunch.com/", "name": "TechCrunch"},
-            {"url": "https://feeds.arstechnica.com/arstechnica/index", "name": "Ars Technica"},
-            {"url": "https://feeds.theverge.com/vergecast", "name": "The Verge"},
-            {"url": "http://feeds.bbc.co.uk/news/rss.xml", "name": "BBC News"},
-        ]
+        # Get default/public RSS sources from configuration
+        default_sources = []
+
+        # Load sources based on section or use all active sources
+        if section and RSS_SECTIONS_CONFIG and 'sections' in RSS_SECTIONS_CONFIG:
+            section_config = RSS_SECTIONS_CONFIG['sections'].get(section, {})
+            source_ids = section_config.get('sources', [])
+            logging.info(f"[Curated] Loading sources for section: {section} ({len(source_ids)} sources)")
+
+            # Map source IDs to actual sources
+            sources_by_id = {src['id']: src for src in RSS_SOURCES_CONFIG.get('sources', [])}
+            for source_id in source_ids:
+                if source_id in sources_by_id:
+                    source = sources_by_id[source_id]
+                    if source.get('is_active', True):
+                        default_sources.append({
+                            "url": source['url'],
+                            "name": source['name'],
+                            "id": source['id']
+                        })
+        else:
+            # Use all active sources from config
+            for source in RSS_SOURCES_CONFIG.get('sources', []):
+                if source.get('is_active', True):
+                    default_sources.append({
+                        "url": source['url'],
+                        "name": source['name'],
+                        "id": source['id']
+                    })
+
+        # Fallback to default sources if config is empty
+        if not default_sources:
+            logging.warning("[Curated] No sources loaded from config, using fallback sources")
+            default_sources = [
+                {"url": "https://www.nasa.gov/rss/dyn/breaking_news.rss", "name": "NASA Breaking News", "id": "nasa_breaking"},
+                {"url": "https://en.wikipedia.org/wiki/Wikipedia:Current_events", "name": "Wikipedia Current Events", "id": "wikipedia_current_events"},
+            ]
 
         all_articles = []
         current_time = time.time()
@@ -1482,6 +1540,64 @@ async def get_curated_articles(genre: Optional[str] = None, max_articles: Option
     except Exception as e:
         logging.error(f"[Curated] Error fetching curated articles: {e}")
         return []
+
+@app.get("/api/rss-sources/system", tags=["RSS Sources"])
+async def get_system_rss_sources():
+    """
+    Get all active system RSS sources.
+    Returns the list of system-wide RSS sources that can be used for curated content.
+    """
+    try:
+        sources = [src for src in RSS_SOURCES_CONFIG.get('sources', []) if src.get('is_active', True)]
+        logging.info(f"[RSS Sources] Returning {len(sources)} system sources")
+        return {
+            "count": len(sources),
+            "version": RSS_SOURCES_CONFIG.get('version', '1.0'),
+            "last_updated": RSS_SOURCES_CONFIG.get('last_updated', ''),
+            "sources": sources
+        }
+    except Exception as e:
+        logging.error(f"[RSS Sources] Error fetching system sources: {e}")
+        return {"count": 0, "sources": []}
+
+@app.get("/api/rss-sources/sections/{section_name}", tags=["RSS Sources"])
+async def get_section_rss_sources(section_name: str):
+    """
+    Get RSS sources specific to a section.
+    Parameters:
+    - section_name: Section name (e.g., 'hero', 'breaking', 'trending', 'science')
+    """
+    try:
+        if not RSS_SECTIONS_CONFIG or 'sections' not in RSS_SECTIONS_CONFIG:
+            raise HTTPException(status_code=404, detail="Section configuration not found")
+
+        section_config = RSS_SECTIONS_CONFIG['sections'].get(section_name)
+        if not section_config:
+            raise HTTPException(status_code=404, detail=f"Section '{section_name}' not found")
+
+        # Map source IDs to actual sources
+        sources_by_id = {src['id']: src for src in RSS_SOURCES_CONFIG.get('sources', [])}
+        section_sources = []
+
+        for source_id in section_config.get('sources', []):
+            if source_id in sources_by_id:
+                source = sources_by_id[source_id]
+                if source.get('is_active', True):
+                    section_sources.append(source)
+
+        logging.info(f"[RSS Sources] Returning {len(section_sources)} sources for section: {section_name}")
+        return {
+            "section": section_name,
+            "count": len(section_sources),
+            "max_articles": section_config.get('max_articles', 50),
+            "refresh_interval_minutes": section_config.get('refresh_interval_minutes', 30),
+            "sources": section_sources
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"[RSS Sources] Error fetching section sources for {section_name}: {e}")
+        raise HTTPException(status_code=500, detail="Error fetching section sources")
 
 @app.post("/api/audio/create", response_model=AudioCreation, tags=["Audio"])
 async def create_audio(request: AudioCreationRequest, current_user: User = Depends(get_current_user)):
