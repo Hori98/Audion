@@ -12,7 +12,7 @@ import uuid
 
 from config.settings import (
     AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION,
-    S3_BUCKET_NAME, PROFILE_IMAGES_PATH
+    S3_BUCKET_NAME, PROFILE_IMAGES_PATH, FILE_SERVER_URL
 )
 from utils.errors import handle_external_service_error
 
@@ -175,8 +175,8 @@ async def save_profile_image(image_data: str, user_id: str) -> str:
         with open(image_path, 'wb') as f:
             f.write(image_bytes)
         
-        # Return local URL
-        local_url = f"http://localhost:8001/profile-images/{image_filename}"
+        # Return local URL (using configurable FILE_SERVER_URL from environment)
+        local_url = f"{FILE_SERVER_URL}/profile-images/{image_filename}"
         logging.info(f"Profile image saved locally: {local_url}")
         
         return local_url

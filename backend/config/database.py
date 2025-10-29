@@ -7,7 +7,7 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 from motor.motor_asyncio import AsyncIOMotorClient
-from .settings import MONGO_URL, DB_NAME
+from .settings import MONGO_URL, DB_NAME, DB_PING_TIMEOUT, DB_OPERATION_TIMEOUT, DB_BATCH_TIMEOUT
 
 # Global database connection variables
 db = None
@@ -25,9 +25,9 @@ async def connect_to_database():
     try:
         client = AsyncIOMotorClient(MONGO_URL)
         db = client[DB_NAME]
-        
-        # Test the connection with timeout
-        await asyncio.wait_for(db.command('ping'), timeout=5.0)
+
+        # Test the connection with configurable timeout
+        await asyncio.wait_for(db.command('ping'), timeout=DB_PING_TIMEOUT)
         db_connected = True
         logging.info("Connected to MongoDB successfully")
         

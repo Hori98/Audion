@@ -11,7 +11,10 @@ from pathlib import Path
 import openai
 from mutagen.mp3 import MP3
 
-from config.settings import OPENAI_API_KEY, AUDIO_STORAGE_PATH
+from config.settings import (
+    OPENAI_API_KEY, AUDIO_STORAGE_PATH, OPENAI_CHAT_MODEL, OPENAI_TTS_MODEL,
+    OPENAI_TTS_VOICE, MOCK_AUDIO_URL_BASE
+)
 from services.storage_service import upload_to_s3
 from utils.errors import handle_external_service_error
 
@@ -55,7 +58,7 @@ async def generate_audio_title_with_openai(articles_content: List[str]) -> str:
                 {"role": "system", "content": system_message},
                 {"role": "user", "content": user_message}
             ],
-            model="gpt-4o",
+            model=OPENAI_CHAT_MODEL,
         )
         
         generated_title = chat_completion.choices[0].message.content.strip()
@@ -109,7 +112,7 @@ async def summarize_articles_with_openai(articles_content: List[str]) -> str:
                 {"role": "system", "content": system_message},
                 {"role": "user", "content": user_message}
             ],
-            model="gpt-4o",
+            model=OPENAI_CHAT_MODEL,
         )
         
         script = chat_completion.choices[0].message.content
@@ -143,8 +146,8 @@ async def convert_text_to_speech(text: str) -> Dict[str, Any]:
         
         # Generate speech
         response = await client.audio.speech.create(
-            model="tts-1",
-            voice="alloy",
+            model=OPENAI_TTS_MODEL,
+            voice=OPENAI_TTS_VOICE,
             input=text,
         )
         
@@ -211,7 +214,7 @@ async def save_audio_locally(audio_content: bytes, filename: str) -> str:
             f.write(audio_content)
         
         # Return local URL
-        public_url = f"http://localhost:8001/audio/{filename}"
+        public_url = f"{MOCK_AUDIO_URL_BASE}/audio/{filename}"
         logging.info(f"Audio saved locally: {public_url}")
         
         return public_url
@@ -227,7 +230,7 @@ def create_mock_audio_file() -> tuple[str, int]:
     Returns:
         tuple: (url, duration) for mock audio
     """
-    dummy_audio_url = "http://localhost:8001/audio_files/SampleAudio_0.4mb.mp3"
+    dummy_audio_url = f"{MOCK_AUDIO_URL_BASE}/audio_files/SampleAudio_0.4mb.mp3"
     dummy_duration = 30
     return dummy_audio_url, dummy_duration
 

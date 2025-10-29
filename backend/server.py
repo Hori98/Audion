@@ -30,10 +30,15 @@ import math
 
 # Global cache for RSS feeds
 RSS_CACHE = {}
-CACHE_EXPIRY_SECONDS = 300  # Cache for 5 minutes
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
+
+# Import configuration after loading .env
+from config.settings import (
+    RSS_CACHE_EXPIRY_SECONDS, RECOMMENDED_WORD_COUNT, INSIGHT_WORD_COUNT,
+    ALLOWED_ORIGINS
+)
 
 # Load RSS sources configuration from shared config
 RSS_SOURCES_CONFIG = {}
@@ -200,20 +205,8 @@ async def health_check():
         }
 
 # Add CORS Middleware
-# Production: restrict to specific domains
-# Development: allow all origins for testing
+# CORS origins are configured via environment variables in settings.py
 ENVIRONMENT = os.environ.get('ENVIRONMENT', 'development')
-ALLOWED_ORIGINS = [
-    "https://audion.onrender.com",          # Production backend
-    "http://localhost:3000",                # Web dev
-    "http://localhost:5173",                # Web Vite dev
-    "http://127.0.0.1:5173",                # Web Vite dev (127.0.0.1 variant)
-    "exp://localhost:19000",                # Expo Go
-    "exp://localhost:19001",                # Expo Go alt port
-    "http://localhost:8003",                # React Native dev
-    "http://localhost:8004",                # React Native dev alt
-]
-
 cors_origins = ALLOWED_ORIGINS if ENVIRONMENT == 'production' else ["*"]
 
 app.add_middleware(
@@ -678,10 +671,10 @@ def get_system_message_by_prompt_style(prompt_style: str = "recommended", custom
     """Get system message based on prompt style"""
     prompt_styles = {
         "strict": "正確で事実に基づいたニュース原稿を作成してください。推測や主観は避け、確認された情報のみを報告し、200-250語で簡潔にまとめてください。単一ナレーター向けに、スピーカーラベルや対話形式は使用せず、自然な話し言葉で構成してください。",
-        "recommended": "専門的でクリアなニュース原稿を単一ナレーター向けに作成してください。重要情報を分かりやすく整理し、200-300語で自然な話し言葉で構成してください。スピーカーラベルや対話形式は使用せず、音声ナレーション用の原稿として作成してください。",
+        "recommended": f"専門的でクリアなニュース原稿を単一ナレーター向けに作成してください。重要情報を分かりやすく整理し、{RECOMMENDED_WORD_COUNT}語で自然な話し言葉で構成してください。スピーカーラベルや対話形式は使用せず、音声ナレーション用の原稿として作成してください。",
         "friendly": "分かりやすく親しみやすいニュース原稿を作成してください。専門用語は簡単に説明し、背景情報も含めて初心者でも理解できるよう250-350語で丁寧に解説してください。単一ナレーター向けに、スピーカーラベルは使用せず、自然で親しみやすい話し言葉で構成してください。",
-        "insight": "ニュースの背景分析と今後への影響を重視した原稿を作成してください。事実に加えて、専門的な洞察や市場・社会への意味も含め、300-400語で深い理解を提供してください。単一ナレーター向けに、分析的で洞察に富んだ話し言葉で構成してください。",
-        "custom": custom_prompt or "専門的でクリアなニュース原稿を単一ナレーター向けに作成してください。重要情報を分かりやすく整理し、200-300語で自然な話し言葉で構成してください。"
+        "insight": f"ニュースの背景分析と今後への影響を重視した原稿を作成してください。事実に加えて、専門的な洞察や市場・社会への意味も含め、{INSIGHT_WORD_COUNT}語で深い理解を提供してください。単一ナレーター向けに、分析的で洞察に富んだ話し言葉で構成してください。",
+        "custom": custom_prompt or f"専門的でクリアなニュース原稿を単一ナレーター向けに作成してください。重要情報を分かりやすく整理し、{RECOMMENDED_WORD_COUNT}語で自然な話し言葉で構成してください。"
     }
     
     return prompt_styles.get(prompt_style, prompt_styles["recommended"])
@@ -1408,7 +1401,7 @@ async def get_articles_internal(current_user: User, genre: Optional[str] = None,
             cache_key = source_doc["url"]
             current_time = time.time()
 
-            if cache_key in RSS_CACHE and (current_time - RSS_CACHE[cache_key]['timestamp'] < CACHE_EXPIRY_SECONDS):
+            if cache_key in RSS_CACHE and (current_time - RSS_CACHE[cache_key]['timestamp'] < RSS_CACHE_EXPIRY_SECONDS):
                 feed = RSS_CACHE[cache_key]['feed']
                 logging.info(f"Using cached feed for {source_doc['name']}")
             else:
@@ -1500,7 +1493,7 @@ async def get_curated_articles(section: Optional[str] = None, genre: Optional[st
                 cache_key = source["url"]
 
                 # Use cache if available
-                if cache_key in RSS_CACHE and (current_time - RSS_CACHE[cache_key]['timestamp'] < CACHE_EXPIRY_SECONDS):
+                if cache_key in RSS_CACHE and (current_time - RSS_CACHE[cache_key]['timestamp'] < RSS_CACHE_EXPIRY_SECONDS):
                     feed = RSS_CACHE[cache_key]['feed']
                     logging.info(f"[Curated] Using cached feed for {source['name']}")
                 else:
@@ -1918,7 +1911,7 @@ async def get_auto_picked_articles(request: AutoPickRequest, current_user: User 
                 cache_key = source["url"]
                 current_time = time.time()
 
-                if cache_key in RSS_CACHE and (current_time - RSS_CACHE[cache_key]['timestamp'] < CACHE_EXPIRY_SECONDS):
+                if cache_key in RSS_CACHE and (current_time - RSS_CACHE[cache_key]['timestamp'] < RSS_CACHE_EXPIRY_SECONDS):
                     feed = RSS_CACHE[cache_key]['feed']
                 else:
                     feed = feedparser.parse(source["url"])
@@ -2124,7 +2117,7 @@ async def create_auto_picked_audio(request: AutoPickRequest, current_user: User 
                 cache_key = source["url"]
                 current_time = time.time()
 
-                if cache_key in RSS_CACHE and (current_time - RSS_CACHE[cache_key]['timestamp'] < CACHE_EXPIRY_SECONDS):
+                if cache_key in RSS_CACHE and (current_time - RSS_CACHE[cache_key]['timestamp'] < RSS_CACHE_EXPIRY_SECONDS):
                     feed = RSS_CACHE[cache_key]['feed']
                 else:
                     feed = feedparser.parse(source["url"])
