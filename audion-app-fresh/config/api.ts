@@ -41,12 +41,13 @@ const detectBackendUrl = (): string => {
 
   // Production fallback
   if (!__DEV__) {
-    return 'https://api.audion.app';
+    return process.env.EXPO_PUBLIC_PROD_API_URL || 'https://audion.onrender.com';
   }
 
   // Development sensible default: match current backend port
+  const devPort = process.env.EXPO_PUBLIC_DEV_API_PORT || '8005';
   const host = resolveDevHost();
-  return `http://${host || 'localhost'}:8003`;
+  return `http://${host || 'localhost'}:${devPort}`;
 };
 
 // API Base Configuration
