@@ -11,10 +11,34 @@ import base64
 import uuid
 
 from config.settings import (
-    AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION, 
+    AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION,
     S3_BUCKET_NAME, PROFILE_IMAGES_PATH
 )
 from utils.errors import handle_external_service_error
+
+# CRITICAL: Validate AWS credentials at module load time
+def _validate_aws_credentials():
+    """Validate that AWS credentials are properly configured"""
+    if not AWS_ACCESS_KEY_ID or AWS_ACCESS_KEY_ID == "your-aws-access-key":
+        raise RuntimeError(
+            'AWS_ACCESS_KEY_ID environment variable must be set to a valid AWS key. '
+            'Get your credentials from: https://console.aws.amazon.com/iam/home'
+        )
+    if not AWS_SECRET_ACCESS_KEY:
+        raise RuntimeError(
+            'AWS_SECRET_ACCESS_KEY environment variable must be set.'
+        )
+    if not S3_BUCKET_NAME:
+        raise RuntimeError(
+            'S3_BUCKET_NAME environment variable must be set.'
+        )
+    if not AWS_REGION:
+        raise RuntimeError(
+            'AWS_REGION environment variable must be set.'
+        )
+
+# Validate at startup
+_validate_aws_credentials()
 
 async def upload_to_s3(content: bytes, filename: str, content_type: str = 'audio/mpeg') -> str:
     """
@@ -32,13 +56,8 @@ async def upload_to_s3(content: bytes, filename: str, content_type: str = 'audio
         Exception: If upload fails
     """
     try:
-        # Validate AWS credentials
-        if not all([AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, S3_BUCKET_NAME]):
-            raise ValueError("AWS credentials or bucket name not configured")
-        
-        if AWS_ACCESS_KEY_ID == "your-aws-access-key":
-            raise ValueError("AWS credentials not properly configured")
-        
+        # AWS credentials are validated at module load time, safe to use
+
         # Initialize S3 client
         s3_client = boto3.client(
             's3',

@@ -15,6 +15,18 @@ from config.settings import OPENAI_API_KEY, AUDIO_STORAGE_PATH
 from services.storage_service import upload_to_s3
 from utils.errors import handle_external_service_error
 
+# CRITICAL: Validate OpenAI API key at module load time
+def _validate_openai_api_key():
+    """Validate that OpenAI API key is properly configured"""
+    if not OPENAI_API_KEY or OPENAI_API_KEY == "your-openai-key":
+        raise RuntimeError(
+            'OPENAI_API_KEY environment variable must be set to a valid OpenAI API key. '
+            'Get your key from: https://platform.openai.com/api-keys'
+        )
+
+# Validate at startup
+_validate_openai_api_key()
+
 async def generate_audio_title_with_openai(articles_content: List[str]) -> str:
     """
     Generate an engaging title for the audio based on article content.
@@ -26,9 +38,7 @@ async def generate_audio_title_with_openai(articles_content: List[str]) -> str:
         str: Generated title or fallback title
     """
     try:
-        if not OPENAI_API_KEY or OPENAI_API_KEY == "your-openai-key":
-            return f"AI News Summary - {datetime.now().strftime('%Y-%m-%d')}"
-        
+        # API key is validated at module load time, safe to use
         client = openai.AsyncOpenAI(api_key=OPENAI_API_KEY)
         
         system_message = (
