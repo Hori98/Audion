@@ -1,101 +1,167 @@
 /**
  * おすすめRSSソース（ランダム選択用）
- * 手動追加と同じ挙動で追加される高品質なRSSソース集
+ * LEGAL SOURCES ONLY - 商用利用可能なソースのみ
+ *
+ * NOTE: All sources are:
+ * - Public domain / Government works / Open Access
+ * - Commercial use permitted
+ * - Podcast-friendly
+ *
+ * REMOVED: Asahi Shimbun (prohibits commercial/podcast use)
  */
 
 export interface RecommendedRSSSource {
+  id?: string;
   name: string;
   url: string;
   category: string;
   description?: string;
   language: string;
   country: string;
+  license?: string;
+  commercial_use?: boolean;
+  podcast_allowed?: boolean;
 }
 
 /**
  * おすすめRSSソース一覧（10選）
- * ユーザー指定の信頼性の高いソースを厳選
+ * ユーザー指定の信頼性の高い合法的なソースを厳選
  */
 export const RECOMMENDED_RSS_SOURCES: RecommendedRSSSource[] = [
+  // 日本政府ソース
   {
-    name: 'Yahoo!ニュース',
-    url: 'https://news.yahoo.co.jp/rss/topics/top-picks.xml',
-    category: '国際・社会',
-    description: 'Yahoo!の厳選トップニュース',
+    id: 'jp_kantei',
+    name: '総理大臣官邸',
+    url: 'https://japan.kantei.go.jp/rss.html',
+    category: '政治',
+    description: '日本首相官邸公式ニュース',
     language: 'ja',
-    country: 'JP'
+    country: 'JP',
+    license: 'jp-government',
+    commercial_use: true,
+    podcast_allowed: true
   },
   {
-    name: 'ITmedia 総合',
-    url: 'https://rss.itmedia.co.jp/rss/2.0/itmedia_all.xml',
+    id: 'jp_meti',
+    name: '経済産業省',
+    url: 'https://www.meti.go.jp/rss/',
+    category: '経済',
+    description: 'METI産業・経済ニュース',
+    language: 'ja',
+    country: 'JP',
+    license: 'jp-government',
+    commercial_use: true,
+    podcast_allowed: true
+  },
+  {
+    id: 'jp_cao',
+    name: '内閣府',
+    url: 'https://www.cao.go.jp/rss/',
+    category: '政治',
+    description: '日本内閣府公式ニュース',
+    language: 'ja',
+    country: 'JP',
+    license: 'jp-government',
+    commercial_use: true,
+    podcast_allowed: true
+  },
+  // 学術・研究ソース
+  {
+    id: 'arxiv_cs',
+    name: 'ArXiv Computer Science',
+    url: 'https://rss.arxiv.org/rss/cs',
     category: 'テクノロジー',
-    description: 'ITに特化した日本最大級のメディア',
-    language: 'ja',
-    country: 'JP'
+    description: 'コンピュータ科学研究論文',
+    language: 'en',
+    country: 'US',
+    license: 'open-access',
+    commercial_use: true,
+    podcast_allowed: true
   },
   {
-    name: '朝日新聞デジタル',
-    url: 'http://www.asahi.com/rss/asahi/newsheadlines.rdf',
+    id: 'plos_one',
+    name: 'PLOS ONE',
+    url: 'http://www.plosone.org/article/feed?representation=RSS',
+    category: 'サイエンス',
+    description: 'オープンアクセス研究誌',
+    language: 'en',
+    country: 'US',
+    license: 'cc-by-4.0',
+    commercial_use: true,
+    podcast_allowed: true
+  },
+  // クリエイティブコモンズ / パブリック
+  {
+    id: 'wikipedia_current_events',
+    name: 'Wikipedia Current Events',
+    url: 'https://en.wikipedia.org/wiki/Wikipedia:Current_events',
     category: '国際・社会',
-    description: '日本の主要新聞社による総合ニュース',
-    language: 'ja',
-    country: 'JP'
+    description: 'ウィキペディア時事ニュース',
+    language: 'en',
+    country: 'Multi',
+    license: 'cc-by-sa-3.0',
+    commercial_use: true,
+    podcast_allowed: true
   },
   {
-    name: 'はてなブックマーク',
-    url: 'https://b.hatena.ne.jp/hotentry.rss',
-    category: 'ライフスタイル',
-    description: '注目の記事・話題のまとめ',
-    language: 'ja',
-    country: 'JP'
+    id: 'nasa_breaking',
+    name: 'NASA Breaking News',
+    url: 'https://www.nasa.gov/rss/dyn/breaking_news.rss',
+    category: 'サイエンス',
+    description: 'NASA公式ニュース (公開ドメイン)',
+    language: 'en',
+    country: 'US',
+    license: 'public-domain',
+    commercial_use: true,
+    podcast_allowed: true
   },
   {
-    name: 'ハフポスト日本版',
-    url: 'https://www.huffingtonpost.jp/feeds/index.xml',
-    category: '国際・社会',
-    description: '国際ニュース・社会問題の報道',
-    language: 'ja',
-    country: 'JP'
+    id: 'noaa_weather',
+    name: 'NOAA National Weather Service',
+    url: 'https://www.weather.gov/rss/',
+    category: 'サイエンス',
+    description: '米国気象局ニュース (公開ドメイン)',
+    language: 'en',
+    country: 'US',
+    license: 'public-domain',
+    commercial_use: true,
+    podcast_allowed: true
   },
   {
-    name: 'ライフハッカー日本版',
-    url: 'https://www.lifehacker.jp/feed/index.xml',
-    category: 'ライフスタイル',
-    description: '仕事・生活の効率化情報',
-    language: 'ja',
-    country: 'JP'
+    id: 'usgs_news',
+    name: 'USGS News',
+    url: 'https://www.usgs.gov/news/news-releases/feed.xml',
+    category: 'サイエンス',
+    description: '米国地質調査所ニュース (公開ドメイン)',
+    language: 'en',
+    country: 'US',
+    license: 'public-domain',
+    commercial_use: true,
+    podcast_allowed: true
   },
   {
-    name: 'デイリーポータルZ',
-    url: 'https://dailyportalz.jp/feed/headline',
-    category: 'エンタメ・スポーツ',
-    description: 'ユニークな視点の記事・エンタメ',
-    language: 'ja',
-    country: 'JP'
+    id: 'nih_news',
+    name: 'NIH News Releases',
+    url: 'https://www.nih.gov/news-releases/feed.xml',
+    category: 'サイエンス',
+    description: '米国医療科学ニュース (公開ドメイン)',
+    language: 'en',
+    country: 'US',
+    license: 'public-domain',
+    commercial_use: true,
+    podcast_allowed: true
   },
   {
-    name: 'GIGAZINE',
-    url: 'https://gigazine.net/news/rss_2.0/',
-    category: 'テクノロジー',
-    description: 'テック・サイエンス情報の人気メディア',
-    language: 'ja',
-    country: 'JP'
-  },
-  {
-    name: 'ロケットニュース24',
-    url: 'https://rocketnews24.com/feed/',
-    category: 'エンタメ・スポーツ',
-    description: '世界のオモシロニュース',
-    language: 'ja',
-    country: 'JP'
-  },
-  {
-    name: 'ギズモード・ジャパン',
-    url: 'http://www.gizmodo.jp/atom.xml',
-    category: 'テクノロジー',
-    description: 'ガジェット・テクノロジー情報',
-    language: 'ja',
-    country: 'JP'
+    id: 'nature_communications',
+    name: 'Nature Communications',
+    url: 'http://feeds.nature.com/ncomms/rss/current',
+    category: 'サイエンス',
+    description: 'ネイチャー・コミュニケーション (CC BY 4.0)',
+    language: 'en',
+    country: 'UK',
+    license: 'cc-by-4.0',
+    commercial_use: true,
+    podcast_allowed: true
   }
 ];
 

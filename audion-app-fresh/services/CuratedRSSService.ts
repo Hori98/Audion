@@ -44,99 +44,186 @@ class CuratedRSSService {
   private readonly CACHE_DURATION = 30 * 60 * 1000; // 30分
   private sourceCache: Map<string, { articles: Article[]; ts: number }> = new Map();
 
-  // 厳選されたRSSソース一覧
+  // 厳選されたRSSソース一覧 - LEGAL SOURCES ONLY
   private readonly curatedSources: CuratedSource[] = [
-    // 総合ニュース
+    // 科学・技術（公共ドメイン・オープンアクセス）
     {
-      id: 'nhk_news',
-      name: 'NHK News',
-      displayName: 'NHKニュース',
-      url: 'https://www3.nhk.or.jp/rss/news/cat0.xml',
+      id: 'nasa_breaking',
+      name: 'NASA Breaking News',
+      displayName: 'NASA 最新ニュース',
+      url: 'https://www.nasa.gov/rss/dyn/breaking_news.rss',
       category: 'news',
-      language: 'ja',
+      language: 'en',
       trustScore: 10,
       updateFrequency: 'realtime',
       enabled: true,
       featured: true,
-      description: '日本放送協会による信頼性の高い総合ニュース',
+      description: 'NASA公式の宇宙開発・科学技術ニュース（パブリックドメイン）',
       articleCount: 0,
       errorCount: 0,
       metadata: {
-        publisher: '日本放送協会',
-        country: 'JP',
-        founded: '1925',
-        website: 'https://www.nhk.or.jp',
-        tags: ['公共放送', '速報', '信頼性']
+        publisher: 'NASA',
+        country: 'US',
+        founded: '1958',
+        website: 'https://www.nasa.gov',
+        tags: ['宇宙', '科学', 'パブリックドメイン']
       }
     },
     {
-      id: 'asahi_news',
-      name: 'Asahi Shimbun',
-      displayName: '朝日新聞デジタル',
-      url: 'https://www.asahi.com/rss/asahi/newsheadlines.rdf',
+      id: 'arxiv_cs',
+      name: 'arXiv Computer Science',
+      displayName: 'arXiv コンピュータサイエンス',
+      url: 'https://rss.arxiv.org/rss/cs',
+      category: 'tech',
+      language: 'en',
+      trustScore: 9,
+      updateFrequency: 'daily',
+      enabled: true,
+      featured: true,
+      description: '最新のコンピュータサイエンス研究論文（オープンアクセス）',
+      articleCount: 0,
+      errorCount: 0,
+      metadata: {
+        publisher: 'Cornell University',
+        country: 'US',
+        founded: '1991',
+        website: 'https://arxiv.org',
+        tags: ['研究', 'AI', 'オープンアクセス']
+      }
+    },
+    {
+      id: 'plos_one',
+      name: 'PLOS ONE',
+      displayName: 'PLOS ONE 科学誌',
+      url: 'https://journals.plos.org/plosone/feed/atom',
+      category: 'news',
+      language: 'en',
+      trustScore: 9,
+      updateFrequency: 'daily',
+      enabled: true,
+      featured: true,
+      description: 'オープンアクセス科学ジャーナル（CC BY 4.0）',
+      articleCount: 0,
+      errorCount: 0,
+      metadata: {
+        publisher: 'Public Library of Science',
+        country: 'US',
+        founded: '2006',
+        website: 'https://journals.plos.org/plosone/',
+        tags: ['科学', 'オープンアクセス', 'CC-BY']
+      }
+    },
+
+    // 政府・公共機関
+    {
+      id: 'nih_news',
+      name: 'NIH News',
+      displayName: 'NIH 医療ニュース',
+      url: 'https://www.nih.gov/news-releases/feed.xml',
+      category: 'news',
+      language: 'en',
+      trustScore: 10,
+      updateFrequency: 'daily',
+      enabled: true,
+      featured: true,
+      description: 'アメリカ国立衛生研究所の医療・健康研究ニュース（パブリックドメイン）',
+      articleCount: 0,
+      errorCount: 0,
+      metadata: {
+        publisher: 'National Institutes of Health',
+        country: 'US',
+        founded: '1887',
+        website: 'https://www.nih.gov',
+        tags: ['医療', '健康', 'パブリックドメイン']
+      }
+    },
+    {
+      id: 'usgs_news',
+      name: 'USGS News',
+      displayName: 'USGS 地球科学ニュース',
+      url: 'https://www.usgs.gov/news/news-releases/feed.xml',
+      category: 'news',
+      language: 'en',
+      trustScore: 10,
+      updateFrequency: 'daily',
+      enabled: true,
+      featured: false,
+      description: 'アメリカ地質調査所の地球科学・自然災害情報（パブリックドメイン）',
+      articleCount: 0,
+      errorCount: 0,
+      metadata: {
+        publisher: 'U.S. Geological Survey',
+        country: 'US',
+        website: 'https://www.usgs.gov',
+        tags: ['地球科学', '災害', 'パブリックドメイン']
+      }
+    },
+    {
+      id: 'epa_news',
+      name: 'EPA News',
+      displayName: 'EPA 環境ニュース',
+      url: 'https://www.epa.gov/newsreleases/search/rss',
+      category: 'news',
+      language: 'en',
+      trustScore: 10,
+      updateFrequency: 'daily',
+      enabled: true,
+      featured: false,
+      description: 'アメリカ環境保護庁の環境・気候ニュース（パブリックドメイン）',
+      articleCount: 0,
+      errorCount: 0,
+      metadata: {
+        publisher: 'U.S. Environmental Protection Agency',
+        country: 'US',
+        founded: '1970',
+        website: 'https://www.epa.gov',
+        tags: ['環境', '気候', 'パブリックドメイン']
+      }
+    },
+    {
+      id: 'kantei_jp',
+      name: 'Prime Minister of Japan',
+      displayName: '首相官邸（日本）',
+      url: 'https://www.kantei.go.jp/jp/headline/feed/index.rss',
       category: 'news',
       language: 'ja',
-      trustScore: 9,
-      updateFrequency: 'hourly',
+      trustScore: 10,
+      updateFrequency: 'daily',
       enabled: true,
       featured: true,
-      description: '朝日新聞社による幅広いニュース報道',
+      description: '日本国首相官邸の公式情報・政策ニュース',
       articleCount: 0,
       errorCount: 0,
       metadata: {
-        publisher: '朝日新聞社',
+        publisher: '内閣官房',
         country: 'JP',
-        founded: '1879',
-        website: 'https://www.asahi.com',
-        tags: ['新聞', '政治', '社会']
+        website: 'https://www.kantei.go.jp',
+        tags: ['政治', '政府', '日本']
       }
     },
     {
-      id: 'nikkei_news',
-      name: 'Nikkei',
-      displayName: '日経電子版',
-      url: 'https://www.nikkei.com/news/feed/',
+      id: 'meti_jp',
+      name: 'METI Japan',
+      displayName: '経済産業省',
+      url: 'https://www.meti.go.jp/rss/press_release.rss',
       category: 'business',
       language: 'ja',
-      trustScore: 9,
-      updateFrequency: 'hourly',
+      trustScore: 10,
+      updateFrequency: 'daily',
       enabled: true,
-      featured: true,
-      description: '日本経済新聞による経済・ビジネスニュース',
+      featured: false,
+      description: '経済産業省の産業・経済政策ニュース',
       articleCount: 0,
       errorCount: 0,
       metadata: {
-        publisher: '日本経済新聞社',
+        publisher: '経済産業省',
         country: 'JP',
-        founded: '1876',
-        website: 'https://www.nikkei.com',
-        tags: ['経済', 'ビジネス', '市場']
+        website: 'https://www.meti.go.jp',
+        tags: ['経済', '産業', '政府']
       }
     },
 
     // テクノロジー
-    {
-      id: 'techcrunch_jp',
-      name: 'TechCrunch Japan',
-      displayName: 'TechCrunch Japan',
-      url: 'https://jp.techcrunch.com/feed/',
-      category: 'tech',
-      language: 'ja',
-      trustScore: 8,
-      updateFrequency: 'hourly',
-      enabled: true,
-      featured: true,
-      description: 'テクノロジー業界の最新ニュースとトレンド',
-      articleCount: 0,
-      errorCount: 0,
-      metadata: {
-        publisher: 'TechCrunch',
-        country: 'US',
-        founded: '2005',
-        website: 'https://jp.techcrunch.com',
-        tags: ['スタートアップ', 'AI', 'ガジェット']
-      }
-    },
     {
       id: 'itmedia_news',
       name: 'ITmedia NEWS',
@@ -229,13 +316,13 @@ class CuratedRSSService {
     }
   ];
 
-  // ソースグループ定義
+  // ソースグループ定義 - LEGAL SOURCES ONLY
   private readonly sourceGroups: SourceGroup[] = [
     {
       id: 'breaking_news',
       name: '速報ニュース',
-      description: 'リアルタイム速報に特化したソース群',
-      sources: ['nhk_news', 'asahi_news'],
+      description: 'リアルタイム速報に特化したソース群（政府・研究機関）',
+      sources: ['nasa_breaking', 'kantei_jp', 'usgs_news'],
       priority: 10,
       enabled: true
     },
@@ -243,7 +330,7 @@ class CuratedRSSService {
       id: 'business_tech',
       name: 'ビジネス・テック',
       description: '経済・技術関連の専門情報',
-      sources: ['nikkei_news', 'techcrunch_jp', 'itmedia_news'],
+      sources: ['meti_jp', 'arxiv_cs', 'itmedia_news'],
       priority: 8,
       enabled: true
     },
@@ -259,7 +346,7 @@ class CuratedRSSService {
       id: 'quality_analysis',
       name: '高品質分析記事',
       description: '深い分析と国際的視点の記事',
-      sources: ['newsweek_jp'],
+      sources: ['newsweek_jp', 'plos_one'],
       priority: 7,
       enabled: true
     }

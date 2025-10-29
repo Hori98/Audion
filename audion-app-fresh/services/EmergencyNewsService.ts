@@ -71,13 +71,13 @@ class EmergencyNewsService {
       errorCount: 0
     },
     {
-      id: 'nhk_news',
-      name: 'NHK ニュース',
+      id: 'usgs_earthquakes',
+      name: 'USGS 地震情報（グローバル）',
       type: 'rss',
-      url: 'https://www3.nhk.or.jp/rss/news/cat0.xml',
+      url: 'https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_hour.atom',
       enabled: true,
-      priority: 7,
-      updateInterval: 3,
+      priority: 8,
+      updateInterval: 5,
       errorCount: 0
     },
     {
