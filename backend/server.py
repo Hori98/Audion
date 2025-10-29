@@ -1412,6 +1412,77 @@ async def get_articles_internal(current_user: User, genre: Optional[str] = None,
 
     return sorted(all_articles, key=lambda x: x.published, reverse=True)[:50]
 
+@app.get("/api/articles/curated", response_model=List[Article], tags=["Articles"])
+async def get_curated_articles(genre: Optional[str] = None, max_articles: Optional[int] = None):
+    """
+    Get curated articles from default/public RSS sources.
+    This endpoint doesn't require authentication.
+    Useful for home page and trending/personalized sections.
+    """
+    try:
+        # Get default/public RSS sources (from admin or system)
+        # For now, we'll use a hardcoded list of popular news sources
+        default_sources = [
+            {"url": "https://feeds.bloomberg.com/markets/news.rss", "name": "Bloomberg Markets"},
+            {"url": "https://feeds.techcrunch.com/", "name": "TechCrunch"},
+            {"url": "https://feeds.arstechnica.com/arstechnica/index", "name": "Ars Technica"},
+            {"url": "https://feeds.theverge.com/vergecast", "name": "The Verge"},
+            {"url": "http://feeds.bbc.co.uk/news/rss.xml", "name": "BBC News"},
+        ]
+
+        all_articles = []
+        current_time = time.time()
+
+        for source in default_sources:
+            try:
+                cache_key = source["url"]
+
+                # Use cache if available
+                if cache_key in RSS_CACHE and (current_time - RSS_CACHE[cache_key]['timestamp'] < CACHE_EXPIRY_SECONDS):
+                    feed = RSS_CACHE[cache_key]['feed']
+                    logging.info(f"[Curated] Using cached feed for {source['name']}")
+                else:
+                    feed = feedparser.parse(source["url"])
+                    RSS_CACHE[cache_key] = {'feed': feed, 'timestamp': current_time}
+                    logging.info(f"[Curated] Fetched new feed for {source['name']}")
+
+                # Extract articles from feed
+                for entry in feed.entries[:5]:  # Limit to 5 per source
+                    article_title = getattr(entry, 'title', "No Title")
+                    article_summary = getattr(entry, 'summary', getattr(entry, 'description', "No summary available"))
+                    article_genre = classify_genre(article_title, article_summary)
+
+                    all_articles.append(Article(
+                        id=str(uuid.uuid4()),
+                        title=article_title,
+                        summary=article_summary,
+                        link=getattr(entry, 'link', ""),
+                        source_name=source["name"],
+                        content=getattr(entry, 'summary', getattr(entry, 'description', "No content available")),
+                        genre=article_genre,
+                        published=getattr(entry, 'published', datetime.now().isoformat())
+                    ))
+            except Exception as e:
+                logging.warning(f"[Curated] Error parsing RSS feed {source['url']}: {e}")
+                continue
+
+        # Filter by genre if specified
+        if genre and genre != 'すべて':  # 'すべて' means 'all' in Japanese
+            all_articles = [article for article in all_articles if article.genre and article.genre.lower() == genre.lower()]
+            logging.info(f"[Curated] Filtered to {len(all_articles)} articles for genre: {genre}")
+
+        # Sort and limit
+        sorted_articles = sorted(all_articles, key=lambda x: x.published, reverse=True)
+        limit = max_articles if max_articles else 50
+        result = sorted_articles[:limit]
+
+        logging.info(f"[Curated] Returning {len(result)} curated articles")
+        return result
+
+    except Exception as e:
+        logging.error(f"[Curated] Error fetching curated articles: {e}")
+        return []
+
 @app.post("/api/audio/create", response_model=AudioCreation, tags=["Audio"])
 async def create_audio(request: AudioCreationRequest, current_user: User = Depends(get_current_user)):
     logging.info(f"=== AUDIO CREATION REQUEST RECEIVED ===")
