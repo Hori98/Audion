@@ -6,48 +6,42 @@
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 
-// Helper function to resolve development host
-const resolveDevHost = (): string | null => {
-  try {
-    const m: any = (Constants as any);
-    const dbg = m.manifest2?.extra?.expoGo?.debuggerHost || m.manifest?.debuggerHost || m.expoConfig?.hostUri;
-    if (!dbg) return null;
-    const host = String(dbg).split(':')[0];
-    return host || null;
-  } catch {
-    return null;
-  }
-};
-
-// Dynamic Backend Detection
+// Helper function to get the correct backend URL based on connection mode
 const detectBackendUrl = (): string => {
-  // Prefer explicit env vars
-  let envUrl = process.env.EXPO_PUBLIC_API_BASE_URL || process.env.EXPO_PUBLIC_BACKEND_URL;
-  if (envUrl) {
-    console.log('🔧 Found env URL:', envUrl);
-    // Normalize by removing trailing /api to avoid duplication
-    envUrl = envUrl.replace(/\/api\/?$/, '');
-    // Port validation for development - Allow both 8003 and 8004
-    // No automatic port correction needed
-    // Only replace localhost with dev host IP on native (Expo Go/Dev Client), not on web
-    if (__DEV__ && envUrl.includes('localhost') && Platform.OS !== 'web') {
-      const host = resolveDevHost();
-      if (host && /^(?:\d{1,3}\.){3}\d{1,3}$/.test(host)) {
-        envUrl = envUrl.replace('localhost', host);
-      }
-    }
-    return envUrl;
-  }
+  // Development mode
+  if (__DEV__) {
+    const devPort = process.env.EXPO_PUBLIC_DEV_API_PORT || '8005';
 
-  // Production fallback
-  if (!__DEV__) {
+    try {
+      // Try to detect if we're in Expo Tunnel mode
+      const m: any = (Constants as any);
+      const hostUri = m.manifest2?.extra?.expoGo?.debuggerHost ||
+                      m.manifest?.debuggerHost ||
+                      m.expoConfig?.hostUri;
+
+      if (hostUri) {
+        // Extract host from debuggerHost format (usually "192.168.x.x:19000" or similar)
+        const host = String(hostUri).split(':')[0];
+
+        // Check if it's a valid IP address (not a tunnel URL)
+        if (host && /^(?:\d{1,3}\.){3}\d{1,3}$/.test(host)) {
+          // It's a local IP address - we're in LAN mode
+          console.log('🔧 LAN mode detected - using local IP:', host);
+          return `http://${host}:${devPort}`;
+        }
+      }
+    } catch (e) {
+      console.warn('⚠️ Could not detect host:', e);
+    }
+
+    // Fallback: For Tunnel mode, use Render backend (more reliable than localhost)
+    // Tunnel mode cannot reliably access localhost:8005 from the simulator
+    console.log('🔧 Tunnel mode detected - using Render backend');
     return process.env.EXPO_PUBLIC_PROD_API_URL || 'https://audion.onrender.com';
   }
 
-  // Development sensible default: match current backend port
-  const devPort = process.env.EXPO_PUBLIC_DEV_API_PORT || '8005';
-  const host = resolveDevHost();
-  return `http://${host || 'localhost'}:${devPort}`;
+  // Production fallback
+  return process.env.EXPO_PUBLIC_PROD_API_URL || 'https://audion.onrender.com';
 };
 
 // API Base Configuration
