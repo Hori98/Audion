@@ -73,12 +73,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const initializeAuth = async () => {
     try {
       setIsLoading(true);
-      
+
       // Silent initialization for cleaner output
-      
+
       // 🔥 CRITICAL: Clear all old format storage keys
       await clearOldStorageKeys();
-      
+
       const [storedToken, storedUser] = await Promise.all([
         AuthService.getStoredToken(),
         AuthService.getStoredUser(),
@@ -87,29 +87,38 @@ export function AuthProvider({ children }: AuthProviderProps) {
       // Auth data loaded from storage
 
       if (storedToken && storedUser) {
+        // Set stored data temporarily
         setToken(storedToken);
         setUser(storedUser);
         // Using stored authentication
-        
-        // Optionally refresh user data from server (with better error handling)
+
+        // CRITICAL: Refresh user data from server to validate token
         try {
+          console.log('[Auth] Validating stored token with server...');
           const currentUser = await AuthService.getCurrentUser();
           setUser(currentUser);
+          console.log('[Auth] Token validation successful - user authenticated');
           // User data refreshed from server
         } catch (error: any) {
-          // Failed to refresh user data (using stored)
-          
+          console.warn('[Auth] Token validation failed:', error?.message);
+
           // If token is invalid, clear stored auth and force re-login
-          if (error?.message?.includes('token') || error?.status === 401) {
-            // Clearing invalid authentication
+          if (error?.message?.includes('token') || error?.status === 401 || error?.message?.includes('Invalid') || error?.message?.includes('Not Found')) {
+            console.log('[Auth] Clearing invalid authentication - forcing re-login');
+            await AuthService.clearStoredAuth();
+            setToken(null);
+            setUser(null);
+          } else {
+            // For other errors, also clear to be safe
+            console.log('[Auth] Clearing auth due to error:', error?.message);
             await AuthService.clearStoredAuth();
             setToken(null);
             setUser(null);
           }
-          // Otherwise, keep using stored user data
         }
       } else {
         // No stored authentication found
+        console.log('[Auth] No stored authentication - starting fresh');
       }
     } catch (error) {
       console.error('🚨 [AuthContext] Failed to initialize auth:', error);

@@ -1121,6 +1121,33 @@ async def login(user_data: UserLogin):
             raise HTTPException(status_code=503, detail="Database connection failed. Please check your internet connection and try again.")
         raise HTTPException(status_code=500, detail="Login failed")
 
+@app.get("/api/auth/me", tags=["Auth"])
+async def get_current_user_info(current_user: User = Depends(get_current_user)):
+    """Get current authenticated user's information"""
+    if not db_connected:
+        raise HTTPException(status_code=503, detail="Database unavailable. Server is running in limited mode.")
+
+    try:
+        # Fetch full user data from database to ensure we have the latest information
+        user = await asyncio.wait_for(
+            db.users.find_one({"id": current_user.id}),
+            timeout=10.0
+        )
+
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        return User(**user)
+
+    except asyncio.TimeoutError:
+        logging.error("Database timeout while fetching current user")
+        raise HTTPException(status_code=503, detail="Database temporarily unavailable. Please try again later.")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error fetching current user: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch user information")
+
 @app.put("/api/auth/change-password", tags=["Auth"])
 async def change_password(password_data: UserPasswordChange, current_user: User = Depends(get_current_user)):
     """Change user password"""
