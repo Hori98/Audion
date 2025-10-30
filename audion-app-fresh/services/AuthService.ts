@@ -119,11 +119,17 @@ export class AuthService {
     try {
       const requestData: LoginRequest = { email, password };
 
+      console.log('[Auth] Attempting login...');
+      console.log('[Auth] API_ENDPOINTS.AUTH.LOGIN:', API_ENDPOINTS.AUTH.LOGIN);
+      console.log('[Auth] apiClient.defaults.baseURL:', (apiClient as any).defaults?.baseURL);
+      console.log('[Auth] Full URL will be:', `${(apiClient as any).defaults?.baseURL}${API_ENDPOINTS.AUTH.LOGIN}`);
+
       const response: AxiosResponse<{access_token: string, token_type: string}> = await apiClient.post(
         API_ENDPOINTS.AUTH.LOGIN,
         requestData
       );
 
+      console.log('[Auth] Login response received:', response.status);
       const { data } = response;
 
       // Decode user info from JWT token (fallback to minimal user if decoding fails)

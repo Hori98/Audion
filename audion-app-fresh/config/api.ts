@@ -45,10 +45,21 @@ const detectBackendUrl = (): string => {
 };
 
 // API Base Configuration
+const detectedUrl = detectBackendUrl();
 export const API_CONFIG = {
-  BASE_URL: detectBackendUrl(),
+  BASE_URL: detectedUrl,
   TIMEOUT: parseInt(process.env.EXPO_PUBLIC_API_TIMEOUT || '30000'),
 } as const;
+
+// Debug: Log API configuration for troubleshooting
+if (__DEV__) {
+  console.log('=== API Configuration Debug ===');
+  console.log('BASE_URL:', detectedUrl);
+  console.log('TIMEOUT:', API_CONFIG.TIMEOUT);
+  console.log('EXPO_PUBLIC_PROD_API_URL:', process.env.EXPO_PUBLIC_PROD_API_URL);
+  console.log('EXPO_PUBLIC_DEV_API_PORT:', process.env.EXPO_PUBLIC_DEV_API_PORT);
+  console.log('================================');
+}
 
 // API Endpoints - All paths include /api prefix to avoid duplication
 export const API_ENDPOINTS = {
