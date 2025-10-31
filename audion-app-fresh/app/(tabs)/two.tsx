@@ -41,6 +41,7 @@ import NewsCard from '../../components/NewsCard';
 import BottomSheet from '../../components/BottomSheet';
 import GlobalMiniPlayer from '../../components/GlobalMiniPlayer';
 import { Feather } from '@expo/vector-icons';
+import Placeholder from '../../components/common/SectionPlaceholder';
 
 interface Chapter {
   id: string;
@@ -563,15 +564,6 @@ export default function LibraryScreen() {
     }
   };
 
-  if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#007bff" />
-        <Text style={styles.loadingText}>Loading library...</Text>
-      </View>
-    );
-  }
-
   return (
     <View style={styles.container}>
       {/* 固定ヘッダー */}
@@ -608,15 +600,17 @@ export default function LibraryScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
       >
-        {activeTab === 'mylist' ? (
+        {loading ? (
+          <Placeholder message="ライブラリを読み込み中…" lines={2} />
+        ) : activeTab === 'mylist' ? (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>マイオーディオ</Text>
             {audioContent.length === 0 ? (
               <View style={styles.emptyState}>
                 <Text style={styles.emptyIcon}>🎧</Text>
-                <Text style={styles.emptyStateTitle}>オーディオコンテンツがありません</Text>
+                <Text style={styles.emptyStateTitle}>現在表示できるオーディオはありません</Text>
                 <Text style={styles.emptyStateDescription}>
-                  記事からオーディオを生成してライブラリを構築しましょう
+                  記事から音声を生成するとここに表示されます
                 </Text>
               </View>
             ) : (
@@ -671,9 +665,9 @@ export default function LibraryScreen() {
             {playlists.length === 0 ? (
               <View style={styles.emptyState}>
                 <Text style={styles.emptyIcon}>📚</Text>
-                <Text style={styles.emptyStateTitle}>プレイリストがありません</Text>
+                <Text style={styles.emptyStateTitle}>現在表示できるプレイリストはありません</Text>
                 <Text style={styles.emptyStateDescription}>
-                  プレイリストを作成してオーディオコンテンツを整理しましょう
+                  プレイリストを作成してオーディオを整理できます
                 </Text>
                 <TouchableOpacity 
                   style={styles.createPlaylistButton}

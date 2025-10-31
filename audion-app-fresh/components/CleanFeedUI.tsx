@@ -23,7 +23,8 @@ import HorizontalTabs from './HorizontalTabs';
 import UnifiedHeader from './UnifiedHeader';
 import ArticleCard from './ArticleCard';
 import ArticleDetailModal from './ArticleDetailModal';
-import { commonStyles, getArticleListStyles } from '../styles/commonStyles';
+import { commonStyles, getArticleListStyles, COLORS } from '../styles/commonStyles';
+import SectionPlaceholder from './common/SectionPlaceholder';
 import UnifiedArticleList from './common/UnifiedArticleList';
 import { UI_FLAGS } from '../config/uiFlags';
 import { useArticle } from '../context/ArticleContext';
@@ -152,14 +153,6 @@ export const CleanFeedUI: React.FC<CleanFeedUIProps> = ({
     setSelectedGenre(tabId as Genre);
   };
 
-  if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <Text style={styles.loadingText}>読み込み中...</Text>
-      </View>
-    );
-  }
-
   return (
     <View style={styles.container}>
       {/* 固定ヘッダー */}
@@ -190,7 +183,9 @@ export const CleanFeedUI: React.FC<CleanFeedUIProps> = ({
 
       {/* スクロール可能な記事一覧エリア */}
       <View style={styles.contentContainer}>
-        {articles.length === 0 ? (
+        {loading ? (
+          <SectionPlaceholder message="読み込み中…" lines={2} />
+        ) : articles.length === 0 ? (
           <View style={styles.emptyContainer}>
             <Text style={styles.emptyText}>
               {activeUserSources.length === 0

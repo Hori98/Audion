@@ -65,7 +65,8 @@ class ServerManager {
     
     const workDir = type === 'backend' ? 
       path.join(__dirname, 'backend') : 
-      path.join(__dirname, 'audion-app');
+      // Prefer fresh app; legacy audion-app is deprecated
+      path.join(__dirname, 'audion-app-fresh');
 
     // Create log files
     const logFile = path.join(this.logDir, `${serverId}.log`);

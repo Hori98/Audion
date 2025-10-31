@@ -126,6 +126,8 @@ npx expo start --lan
 
 ## Environment Variables Status ✅
 
+> 注: 旧 `audion-app/` は削除され、React Native は `audion-app-fresh/` に統一されています。
+
 Your environment variables are loading correctly:
 
 ```

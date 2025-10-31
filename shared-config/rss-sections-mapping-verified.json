@@ -1,0 +1,107 @@
+{
+  "version": "2.0",
+  "description": "Verified RSS Section Mapping for Home Screen - Optimized for fast loading and content diversity",
+  "last_updated": "2025-10-30",
+  "sections": {
+    "hero": {
+      "name": "Hero Stories",
+      "description": "High-priority breaking news and major announcements",
+      "sources": [
+        "nasa_news_releases",
+        "reuters_world_news",
+        "bbc_world_news"
+      ],
+      "max_articles": 5,
+      "cache_duration_minutes": 15,
+      "priority": 1
+    },
+    "breaking": {
+      "name": "Breaking News",
+      "description": "Latest urgent updates and developments",
+      "sources": [
+        "reuters_world_news",
+        "bbc_world_news",
+        "nasa_news_releases",
+        "usgs_earthquakes"
+      ],
+      "max_articles": 8,
+      "cache_duration_minutes": 10,
+      "priority": 1
+    },
+    "trending": {
+      "name": "Trending",
+      "description": "Popular science, technology, and research updates",
+      "sources": [
+        "nasa_feed_general",
+        "nasa_technology",
+        "reuters_tech_news",
+        "bbc_technology",
+        "github_blog"
+      ],
+      "max_articles": 10,
+      "cache_duration_minutes": 30,
+      "priority": 2
+    },
+    "science": {
+      "name": "Science & Research",
+      "description": "Latest scientific discoveries and research",
+      "sources": [
+        "nasa_feed_general",
+        "nasa_artemis",
+        "arxiv_cs_new",
+        "arxiv_physics_new",
+        "nih_news"
+      ],
+      "max_articles": 12,
+      "cache_duration_minutes": 60,
+      "priority": 2
+    },
+    "technology": {
+      "name": "Technology",
+      "description": "Tech innovations and industry updates",
+      "sources": [
+        "nasa_technology",
+        "reuters_tech_news",
+        "bbc_technology",
+        "github_blog",
+        "arxiv_cs_new"
+      ],
+      "max_articles": 10,
+      "cache_duration_minutes": 45,
+      "priority": 2
+    },
+    "daily_brief": {
+      "name": "Daily Brief",
+      "description": "Curated daily highlights across all categories",
+      "sources": [
+        "nasa_image_of_day",
+        "reuters_world_news",
+        "bbc_world_news",
+        "nasa_news_releases"
+      ],
+      "max_articles": 6,
+      "cache_duration_minutes": 120,
+      "priority": 3
+    }
+  },
+  "performance_config": {
+    "concurrent_fetches": 3,
+    "timeout_per_feed_ms": 5000,
+    "total_timeout_ms": 15000,
+    "retry_failed_feeds": true,
+    "fallback_on_timeout": true
+  },
+  "content_filtering": {
+    "min_article_length": 100,
+    "max_article_length": 5000,
+    "exclude_duplicate_titles": true,
+    "prefer_recent_articles": true,
+    "max_age_hours": 48
+  },
+  "error_handling": {
+    "skip_failed_sources": true,
+    "log_feed_errors": true,
+    "provide_fallback_content": true,
+    "minimum_articles_per_section": 2
+  }
+}

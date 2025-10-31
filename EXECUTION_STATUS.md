@@ -68,7 +68,6 @@
 - [ ] Task 4-3: コード品質確認
 
 ### Phase 5: フロントエンド修正（4タスク）
-- [ ] Task 5-1: audion-app/.env.user修正
 - [ ] Task 5-2: audion-app-fresh/config/api.ts修正
 - [ ] Task 5-3: audion-app-fresh/.env.development更新
 - [ ] Task 5-4: 追加修正

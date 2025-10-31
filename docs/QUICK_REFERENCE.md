@@ -17,11 +17,10 @@
 - `backend/services/auth_service.py` - トークン検証エラー詳細ログ
 - `backend/config/settings.py` - 本番環境での JWT_SECRET_KEY 必須化
 
-**Frontend**:
-- `audion-app/services/ApiService.ts` - タイムアウト 30s → 60s (環境変数対応)
-- `audion-app/services/ConnectionService.ts` - CONNECTION_TIMEOUT 環境変数対応
-- `audion-app/.env` - `EXPO_PUBLIC_API_TIMEOUT=60000` 追加
-- `audion-app/.env.user` - `EXPO_PUBLIC_API_TIMEOUT=60000` 追加
+**Frontend (Fresh)**:
+- `audion-app-fresh/config/api.ts` - API URL, 開発ポート, タイムアウトの環境変数対応
+- `audion-app-fresh/.env.development` - `EXPO_PUBLIC_*` 変数を管理
+> 注: 旧 `audion-app/` は削除済み（Fresh に一本化）。
 
 ## ✅ ローカル検証（開発環境）
 
@@ -37,13 +36,13 @@ uvicorn server:app --reload --log-level debug
 # 🔐 JWT_ALGORITHM: HS256
 ```
 
-### Frontend 起動確認
+### Frontend 起動確認（Fresh）
 ```bash
-cd audion-app
-npx expo start
+cd audion-app-fresh
+npx expo start --tunnel
 
 # ⏳ ログで以下を確認:
-# ⏱️ API_TIMEOUT: 60000
+# BASE_URL / TIMEOUT の設定
 ```
 
 ### AutoPick API テスト
@@ -136,4 +135,3 @@ f4da09c  fix: increase API timeout from 30s to 60s to prevent premature request 
 **最終確認**: ✅ すべての修正は main ブランチに適用されています
 **ブランチ状態**: ✅ 統一済み（main のみ）
 **Repository**: ✅ クリーン状態
-

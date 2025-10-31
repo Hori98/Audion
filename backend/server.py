@@ -44,18 +44,27 @@ from config.settings import (
 RSS_SOURCES_CONFIG = {}
 RSS_SECTIONS_CONFIG = {}
 try:
-    config_path = ROOT_DIR.parent / 'shared-config' / 'rss-sources.json'
+    # TEMPORARY: Use minimal RSS sources for testing
+    config_path = ROOT_DIR.parent / 'shared-config' / 'rss-sources-minimal.json'
     if config_path.exists():
         with open(config_path, 'r', encoding='utf-8') as f:
             RSS_SOURCES_CONFIG = json.load(f)
-        logging.info(f"Loaded {len(RSS_SOURCES_CONFIG.get('sources', []))} RSS sources from config")
+        logging.info(f"Loaded {len(RSS_SOURCES_CONFIG.get('sources', []))} VERIFIED RSS sources from config")
     else:
-        logging.warning(f"RSS sources config not found at {config_path}")
+        # Fallback to original
+        config_path = ROOT_DIR.parent / 'shared-config' / 'rss-sources.json'
+        if config_path.exists():
+            with open(config_path, 'r', encoding='utf-8') as f:
+                RSS_SOURCES_CONFIG = json.load(f)
+            logging.info(f"Loaded {len(RSS_SOURCES_CONFIG.get('sources', []))} RSS sources from config")
+        else:
+            logging.warning(f"RSS sources config not found at {config_path}")
 except Exception as e:
     logging.error(f"Error loading RSS sources config: {e}")
 
 try:
-    sections_config_path = ROOT_DIR.parent / 'shared-config' / 'rss-sections-mapping.json'
+    # TEMPORARY: Use minimal sections mapping for testing
+    sections_config_path = ROOT_DIR.parent / 'shared-config' / 'rss-sections-mapping-minimal.json'
     if sections_config_path.exists():
         with open(sections_config_path, 'r', encoding='utf-8') as f:
             RSS_SECTIONS_CONFIG = json.load(f)
@@ -294,6 +303,7 @@ class Article(BaseModel):
     source_name: str
     content: Optional[str] = None
     genre: Optional[str] = None
+    thumbnail_url: Optional[str] = None
 
 class AudioCreation(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -1440,6 +1450,36 @@ async def get_articles_internal(current_user: User, genre: Optional[str] = None,
                 article_title = getattr(entry, 'title', "No Title")
                 article_summary = getattr(entry, 'summary', getattr(entry, 'description', "No summary available"))
                 article_genre = classify_genre(article_title, article_summary)
+                
+                # Extract thumbnail from various RSS feed formats
+                thumbnail_url = None
+                
+                # Check for media:thumbnail (common in RSS feeds)
+                if hasattr(entry, 'media_thumbnail') and entry.media_thumbnail:
+                    thumbnail_url = entry.media_thumbnail[0]['url'] if isinstance(entry.media_thumbnail, list) else entry.media_thumbnail.get('url')
+                
+                # Check for media:content
+                elif hasattr(entry, 'media_content') and entry.media_content:
+                    for media in entry.media_content:
+                        if media.get('type', '').startswith('image/'):
+                            thumbnail_url = media.get('url')
+                            break
+                
+                # Check for enclosures (common in RSS feeds)
+                elif hasattr(entry, 'enclosures') and entry.enclosures:
+                    for enclosure in entry.enclosures:
+                        if enclosure.get('type', '').startswith('image/'):
+                            thumbnail_url = enclosure.get('href')
+                            break
+                
+                # Check for image in content (basic HTML parsing)
+                elif hasattr(entry, 'content') and entry.content:
+                    import re
+                    content_text = entry.content[0].value if isinstance(entry.content, list) else str(entry.content)
+                    img_match = re.search(r'<img[^>]+src=["\']([^"\']+)["\']', content_text)
+                    if img_match:
+                        thumbnail_url = img_match.group(1)
+                
                 all_articles.append(Article(
                     id=str(uuid.uuid4()),
                     title=article_title,
@@ -1448,7 +1488,8 @@ async def get_articles_internal(current_user: User, genre: Optional[str] = None,
                     published=time.strftime('%Y-%m-%dT%H:%M:%SZ', entry.published_parsed) if hasattr(entry, 'published_parsed') and entry.published_parsed else "",
                     source_name=source_doc["name"],
                     content=getattr(entry, 'summary', getattr(entry, 'description', "No content available")),
-                    genre=article_genre
+                    genre=article_genre,
+                    thumbnail_url=thumbnail_url
                 ))
         except Exception as e:
             logging.warning(f"Error parsing RSS feed {source_doc['url']}: {e}")
@@ -1533,6 +1574,35 @@ async def get_curated_articles(section: Optional[str] = None, genre: Optional[st
                     article_title = getattr(entry, 'title', "No Title")
                     article_summary = getattr(entry, 'summary', getattr(entry, 'description', "No summary available"))
                     article_genre = classify_genre(article_title, article_summary)
+                    
+                    # Extract thumbnail from various RSS feed formats
+                    thumbnail_url = None
+                    
+                    # Check for media:thumbnail (common in RSS feeds)
+                    if hasattr(entry, 'media_thumbnail') and entry.media_thumbnail:
+                        thumbnail_url = entry.media_thumbnail[0]['url'] if isinstance(entry.media_thumbnail, list) else entry.media_thumbnail.get('url')
+                    
+                    # Check for media:content
+                    elif hasattr(entry, 'media_content') and entry.media_content:
+                        for media in entry.media_content:
+                            if media.get('type', '').startswith('image/'):
+                                thumbnail_url = media.get('url')
+                                break
+                    
+                    # Check for enclosures (common in RSS feeds)
+                    elif hasattr(entry, 'enclosures') and entry.enclosures:
+                        for enclosure in entry.enclosures:
+                            if enclosure.get('type', '').startswith('image/'):
+                                thumbnail_url = enclosure.get('href')
+                                break
+                    
+                    # Check for image in content (basic HTML parsing)
+                    elif hasattr(entry, 'content') and entry.content:
+                        import re
+                        content_text = entry.content[0].value if isinstance(entry.content, list) else str(entry.content)
+                        img_match = re.search(r'<img[^>]+src=["\']([^"\']+)["\']', content_text)
+                        if img_match:
+                            thumbnail_url = img_match.group(1)
 
                     all_articles.append(Article(
                         id=str(uuid.uuid4()),
@@ -1542,7 +1612,8 @@ async def get_curated_articles(section: Optional[str] = None, genre: Optional[st
                         source_name=source["name"],
                         content=getattr(entry, 'summary', getattr(entry, 'description', "No content available")),
                         genre=article_genre,
-                        published=getattr(entry, 'published', datetime.now().isoformat())
+                        published=getattr(entry, 'published', datetime.now().isoformat()),
+                        thumbnail_url=thumbnail_url
                     ))
             except Exception as e:
                 logging.warning(f"[Curated] Error parsing RSS feed {source['url']}: {e}")

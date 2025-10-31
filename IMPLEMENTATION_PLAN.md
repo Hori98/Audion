@@ -56,7 +56,7 @@ uvicorn server:app --reload
 API設定, IP削除
 ├─ audion-app-fresh/config/api.ts
 ├─ audion-app-fresh/.env.development
-├─ audion-app/.env.user
+├─ audion-app-fresh/.env.development
 └─ → テスト可能
 ```
 
@@ -313,22 +313,9 @@ uvicorn server:app --reload --port 8001
 
 ### Phase 5: フロントエンド修正
 
-#### Step 5-1: audion-app/.env.user 修正
-**ファイル:** `audion-app/.env.user:2`
-
-修正内容:
-```bash
-# ❌ 現在
-EXPO_PUBLIC_BACKEND_URL=http://192.168.11.60:8000
-
-# ✅ 修正後
-EXPO_PUBLIC_BACKEND_URL=http://localhost:8000
-# または削除（動的解決に任せる）
-```
-
-**確認:**
-- [ ] ローカルホストで接続確認
-- [ ] IPアドレスが削除されている
+#### Step 5-1: Legacy RN app の扱い（変更）
+旧 `audion-app/` は削除済み。React Native 開発は `audion-app-fresh/` を使用。
+本ステップは不要となりました（ドキュメントのみ更新）。
 
 ---
 
@@ -498,7 +485,7 @@ git push
 - [ ] backend/services/storage_service.py
 - [ ] audion-app-fresh/config/api.ts
 - [ ] audion-app-fresh/.env.development
-- [ ] audion-app/.env.user
+- [ ] audion-app-fresh/.env.development
 
 ### テスト完了
 - [ ] `python backend_test.py` - 全テスト合格

@@ -36,7 +36,7 @@ echo "- Health endpoint: $(curl -s http://localhost:8003/health 2>/dev/null | he
 
 echo ""
 echo "📱 Starting frontend..."
-cd audion-app
+cd audion-app-fresh
 
 # Set environment for debugging
 export DEBUG=1

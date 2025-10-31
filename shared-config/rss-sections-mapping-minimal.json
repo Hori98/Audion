@@ -1,0 +1,18 @@
+{
+  "version": "2.0-minimal",
+  "description": "Minimal RSS Section Mapping - Only hero section for testing",
+  "last_updated": "2025-10-30",
+  "sections": {
+    "hero": {
+      "name": "Hero Stories",
+      "description": "High-priority breaking news and major announcements",
+      "sources": [
+        "nasa_news_releases",
+        "github_blog"
+      ],
+      "max_articles": 3,
+      "cache_duration_minutes": 15,
+      "priority": 1
+    }
+  }
+}

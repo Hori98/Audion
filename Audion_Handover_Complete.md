@@ -432,7 +432,8 @@ Audion is a full-stack podcast generation application that uses AI to convert RS
 
 ## Architecture
 
-### Frontend (audion-app/)
+### Frontend (audion-app-fresh/)
+- Legacy `audion-app/` は削除済み。以降は Fresh を参照してください。
 - **Technology**: React Native with Expo Router for file-based routing
 - **Navigation**: Tab-based navigation with feed, library, sources, and explore tabs
 - **Authentication**: Context-based auth system with AsyncStorage persistence
@@ -451,14 +452,12 @@ Audion is a full-stack podcast generation application that uses AI to convert RS
 
 ### Frontend Development
 ```bash
-cd audion-app
-npm install                    # Install dependencies
-npx expo start                # Start development server
-npx expo start --android     # Start with Android emulator
-npx expo start --ios         # Start with iOS simulator
-npx expo start --web         # Start web version
-npm run lint                  # Run ESLint
-npm run reset-project        # Reset to blank project
+cd audion-app-fresh
+npm install                      # Install dependencies
+npx expo start --tunnel         # Start development server
+npx expo start --android        # Start with Android emulator
+npx expo start --ios            # Start with iOS simulator
+npm run lint                     # Run ESLint
 ```
 
 ### Backend Development
@@ -478,11 +477,10 @@ python backend_test.py        # Run comprehensive API tests
 
 ## Key File Locations
 
-### Frontend Structure
-- `audion-app/app/(tabs)/` - Main tab screens (feed, library, sources, explore)
-- `audion-app/context/AuthContext.tsx` - Authentication state management
-- `audion-app/components/` - Reusable UI components
-- `audion-app/constants/Colors.ts` - Theme colors
+### Frontend Structure (Fresh)
+- `audion-app-fresh/app/(tabs)/` - Main tab screens (feed, library, sources, explore)
+- `audion-app-fresh/context/` - Auth/Audio/Settings contexts
+- `audion-app-fresh/components/` - Reusable UI components
 
 ### Backend Structure
 - `backend/server.py` - Main FastAPI application with all endpoints
@@ -1314,4 +1312,3 @@ agent_communication:
     message: "Successfully tested the upgraded AI integration features. Verified that the system correctly detects demo API keys and falls back to mock responses. The generated scripts have the expected conversational format with HOST 1 and HOST 2 dialogue structure. Scripts are properly stored in the database and returned in API responses. All AI pipeline components are working correctly, including OpenAI summarization and Google Cloud TTS integration."
 
 ---
-

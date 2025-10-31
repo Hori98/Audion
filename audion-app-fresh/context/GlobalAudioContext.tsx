@@ -13,6 +13,12 @@ import { UI_FLAGS } from '../config/uiFlags';
 import { useAuth } from './AuthContext';
 import { AudioMetadataService, AudioMetadata } from '../services/AudioMetadataService';
 import audioPlayHistoryService from '../services/AudioPlayHistoryService';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { AUDIO_FLAGS } from '../config/audio';
+
+// 🔥 CRITICAL: Prevent web bundler from trying to import react-native-track-player
+// This is explicitly web-safe and prevents the shaka-player error in Expo bundler
+const isWeb = Platform.OS === 'web';
 
 interface AudioTrack {
   id: string;
@@ -86,21 +92,31 @@ export const GlobalAudioProvider: React.FC<{ children: ReactNode }> = ({ childre
   const [currentIndex, setCurrentIndex] = useState(-1);
   // Detect if running in Expo Go (no custom native modules available)
   const isExpoGo = (Constants as any)?.appOwnership === 'expo';
-  const USE_TRACK_PLAYER = !isExpoGo; // TrackPlayerはExpo Goでは未対応
+  const USE_TRACK_PLAYER = AUDIO_FLAGS.ENABLE_TRACK_PLAYER && !isExpoGo; // TrackPlayerはExpo Goでは未対応
 
   // バックグラウンド再生の設定 + OSメディアコントロール統合
   useEffect(() => {
     const configureAudio = async () => {
       try {
+        const iosInterruption =
+          AUDIO_FLAGS.DUCK_OTHERS === 'duck'
+            ? InterruptionModeIOS.DuckOthers
+            : AUDIO_FLAGS.DUCK_OTHERS === 'mix'
+            ? InterruptionModeIOS.MixWithOthers
+            : InterruptionModeIOS.DoNotMix;
+        const androidInterruption =
+          AUDIO_FLAGS.DUCK_OTHERS === 'duck'
+            ? InterruptionModeAndroid.DuckOthers
+            : InterruptionModeAndroid.DoNotMix;
+
         await Audio.setAudioModeAsync({
           allowsRecordingIOS: false,
-          playsInSilentModeIOS: true, // サイレントモードでも再生
-          shouldDuckAndroid: true,
-          playThroughEarpieceAndroid: false,
-          staysActiveInBackground: true, // バックグラウンドでアクティブ
-          // OSメディアコントロール統合
-          interruptionModeIOS: InterruptionModeIOS.DuckOthers,
-          interruptionModeAndroid: InterruptionModeAndroid.DuckOthers,
+          playsInSilentModeIOS: AUDIO_FLAGS.PLAY_IN_SILENT_IOS,
+          shouldDuckAndroid: AUDIO_FLAGS.DUCK_OTHERS === 'duck',
+          playThroughEarpieceAndroid: AUDIO_FLAGS.PLAY_THROUGH_EARPIECE_ANDROID,
+          staysActiveInBackground: AUDIO_FLAGS.STAYS_ACTIVE_BG,
+          interruptionModeIOS: iosInterruption,
+          interruptionModeAndroid: androidInterruption,
         });
         console.log('🎵 [GLOBAL] Audio mode configured for background playback + OS media controls');
       } catch (error) {
@@ -115,13 +131,10 @@ export const GlobalAudioProvider: React.FC<{ children: ReactNode }> = ({ childre
   useEffect(() => {
     const setupTrackPlayer = async () => {
       if (!USE_TRACK_PLAYER) {
-        // Expo Go環境ではTrackPlayerを初期化しない
+        // Expo Go環境やフラグ無効時はTrackPlayerを初期化しない
+        console.log('🎵 [GLOBAL] TrackPlayer not enabled (Expo Go or flag disabled)');
         return;
       }
-
-      // TEMPORARY FIX: Disable TrackPlayer completely to avoid native module errors in Expo Go
-      console.log('🎵 [GLOBAL] TrackPlayer disabled (Expo Go compatibility)');
-      return;
 
       try {
         // 動的インポート（Expo Go回避）
@@ -193,10 +206,7 @@ export const GlobalAudioProvider: React.FC<{ children: ReactNode }> = ({ childre
 
   // OSメディアコントロール: Now Playing情報を更新（TrackPlayer実装版）
   const updateNowPlayingInfo = async (track: AudioTrack, positionMs: number, durationMs: number, isPlaying: boolean) => {
-    if (!USE_TRACK_PLAYER) return; // Expo Goではスキップ
-
-    // TEMPORARY FIX: Disable TrackPlayer completely
-    return;
+    if (!USE_TRACK_PLAYER || !AUDIO_FLAGS.NOW_PLAYING_METADATA) return; // スキップ条件
 
     try {
       // 動的インポート（Expo Go回避）
@@ -355,9 +365,9 @@ export const GlobalAudioProvider: React.FC<{ children: ReactNode }> = ({ childre
         // SDK 54 / expo-av 16: createAsync(source, initialStatus, onPlaybackStatusUpdate, downloadFirst)
         const created = await Audio.Sound.createAsync(
           { uri: playableUri },
-          { shouldPlay: false },  // ← 変更: 自動再生しない
+          { shouldPlay: false },
           undefined,
-          true  // downloadFirst: true
+          AUDIO_FLAGS.BUFFER_DOWNLOAD_FIRST
         );
         newSound = created.sound;
         console.log('🎵 [GLOBAL] Audio.Sound.createAsync successful (shouldPlay: false)');
@@ -371,6 +381,17 @@ export const GlobalAudioProvider: React.FC<{ children: ReactNode }> = ({ childre
           const st = await newSound.getStatusAsync();
           if (st.isLoaded && !st.isBuffering && st.durationMillis && st.durationMillis > 0) {
             setDurationMs(st.durationMillis);
+            // Resume last position if enabled
+            let startPos = 0;
+            if (AUDIO_FLAGS.RESUME_LAST_POSITION) {
+              try {
+                const saved = await AsyncStorage.getItem(`@audion_last_position:${track.id}`);
+                const savedMs = saved ? Math.max(0, parseInt(saved, 10) || 0) : 0;
+                if (savedMs > 0 && savedMs < st.durationMillis) {
+                  startPos = savedMs;
+                }
+              } catch {}
+            }
             console.log('🎵 [GLOBAL] Buffer ready:', {
               duration: `${Math.floor(st.durationMillis / 1000)}s`,
               isBuffering: st.isBuffering
@@ -379,9 +400,10 @@ export const GlobalAudioProvider: React.FC<{ children: ReactNode }> = ({ childre
             // プレロール: OS出力準備のため150ms待機
             await new Promise(resolve => setTimeout(resolve, 150));
 
-            // 位置0から再生開始
-            console.log('🎵 [GLOBAL] Starting playback from position 0...');
-            await newSound.playFromPositionAsync(0);
+            // 保存位置から再生開始（なければ0）
+            console.log('🎵 [GLOBAL] Starting playback from position', startPos, 'ms');
+            await newSound.playFromPositionAsync(startPos);
+            if (startPos > 0) setPositionMs(startPos);
 
             // 位置ずれ補正（端末差吸収）
             const st2 = await newSound.getStatusAsync();
@@ -405,15 +427,27 @@ export const GlobalAudioProvider: React.FC<{ children: ReactNode }> = ({ childre
               duration: st.isLoaded ? st.durationMillis : 'unknown'
             });
 
-            // 再試行: 250ms待ってもう一度
-            await new Promise(resolve => setTimeout(resolve, 250));
-            const st3 = await newSound.getStatusAsync();
-            if (st3.isLoaded && !st3.isBuffering && st3.durationMillis && st3.durationMillis > 0) {
-              setDurationMs(st3.durationMillis);
-              await new Promise(resolve => setTimeout(resolve, 150));
-              await newSound.playFromPositionAsync(0);
-              setIsPlaying(true);
-              console.log('🎵 [GLOBAL] Playback started (after retry)');
+          // 再試行: 250ms待ってもう一度
+          await new Promise(resolve => setTimeout(resolve, 250));
+          const st3 = await newSound.getStatusAsync();
+          if (st3.isLoaded && !st3.isBuffering && st3.durationMillis && st3.durationMillis > 0) {
+            setDurationMs(st3.durationMillis);
+            await new Promise(resolve => setTimeout(resolve, 150));
+            // 2回目も保存位置を考慮
+            let startPos2 = 0;
+            if (AUDIO_FLAGS.RESUME_LAST_POSITION) {
+              try {
+                const saved = await AsyncStorage.getItem(`@audion_last_position:${track.id}`);
+                const savedMs = saved ? Math.max(0, parseInt(saved, 10) || 0) : 0;
+                if (savedMs > 0 && savedMs < st3.durationMillis) {
+                  startPos2 = savedMs;
+                }
+              } catch {}
+            }
+            await newSound.playFromPositionAsync(startPos2);
+            if (startPos2 > 0) setPositionMs(startPos2);
+            setIsPlaying(true);
+            console.log('🎵 [GLOBAL] Playback started (after retry)');
               
               // 再生履歴を記録（非同期、エラーでも再生は継続）
               audioPlayHistoryService.recordPlay(track.id).catch(error => {
@@ -527,6 +561,17 @@ export const GlobalAudioProvider: React.FC<{ children: ReactNode }> = ({ childre
           // OSメディアコントロール: Now Playing情報を更新
           updateNowPlayingInfo(track, currentPosition, totalDuration, status.isPlaying || false);
 
+          // 保存: 最終再生位置（一定頻度で上書き）
+          if (AUDIO_FLAGS.RESUME_LAST_POSITION && track?.id) {
+            // 1秒以上進んだ時だけ保存してIOを抑制
+            if (currentPosition % 1000 < 250) {
+              AsyncStorage.setItem(
+                `@audion_last_position:${track.id}`,
+                String(Math.floor(currentPosition))
+              ).catch(() => {});
+            }
+          }
+
           // 再生終了時の処理
           if (status.didJustFinish) {
             setIsPlaying(false);
@@ -534,6 +579,10 @@ export const GlobalAudioProvider: React.FC<{ children: ReactNode }> = ({ childre
             setPositionMs(0);
             setProgress(0);
             console.log('🎵 [GLOBAL] Playback finished');
+            // 再生完了で保存位置クリア
+            if (AUDIO_FLAGS.RESUME_LAST_POSITION && track?.id) {
+              AsyncStorage.removeItem(`@audion_last_position:${track.id}`).catch(() => {});
+            }
           }
         }
       });
@@ -556,12 +605,28 @@ export const GlobalAudioProvider: React.FC<{ children: ReactNode }> = ({ childre
     if (sound && isPlaying) {
       await sound.pauseAsync();
       setIsPlaying(false);
+      // 現在位置を保存
+      if (AUDIO_FLAGS.RESUME_LAST_POSITION && currentTrack?.id) {
+        try {
+          const st = await sound.getStatusAsync();
+          const pos = (st as any)?.positionMillis || 0;
+          await AsyncStorage.setItem(`@audion_last_position:${currentTrack.id}`, String(Math.floor(pos)));
+        } catch {}
+      }
     }
   };
 
   const stopSound = async () => {
     if (sound) {
       console.log('🎵 [GLOBAL] Stopping sound');
+      // 保存後にアンロード
+      if (AUDIO_FLAGS.RESUME_LAST_POSITION && currentTrack?.id) {
+        try {
+          const st = await sound.getStatusAsync();
+          const pos = (st as any)?.positionMillis || 0;
+          await AsyncStorage.setItem(`@audion_last_position:${currentTrack.id}`, String(Math.floor(pos)));
+        } catch {}
+      }
       await sound.unloadAsync();
       setSound(null);
       setIsPlaying(false);
@@ -722,18 +787,28 @@ export const GlobalAudioProvider: React.FC<{ children: ReactNode }> = ({ childre
     };
   }, [sound]);
 
-  // Configure audio mode once (background, silent mode, mixing)
+  // Configure audio mode once (background, silent mode, mixing) — ensure flags applied
   useEffect(() => {
     (async () => {
       try {
+        const iosInterruption =
+          AUDIO_FLAGS.DUCK_OTHERS === 'duck'
+            ? InterruptionModeIOS.DuckOthers
+            : AUDIO_FLAGS.DUCK_OTHERS === 'mix'
+            ? InterruptionModeIOS.MixWithOthers
+            : InterruptionModeIOS.DoNotMix;
+        const androidInterruption =
+          AUDIO_FLAGS.DUCK_OTHERS === 'duck'
+            ? InterruptionModeAndroid.DuckOthers
+            : InterruptionModeAndroid.DoNotMix;
         await Audio.setAudioModeAsync({
           allowsRecordingIOS: false,
-          playsInSilentModeIOS: true,
-          staysActiveInBackground: true,
-          interruptionModeIOS: Audio.INTERRUPTION_MODE_IOS_DO_NOT_MIX,
-          shouldDuckAndroid: true,
-          interruptionModeAndroid: Audio.INTERRUPTION_MODE_ANDROID_DO_NOT_MIX,
-          playThroughEarpieceAndroid: false,
+          playsInSilentModeIOS: AUDIO_FLAGS.PLAY_IN_SILENT_IOS,
+          staysActiveInBackground: AUDIO_FLAGS.STAYS_ACTIVE_BG,
+          interruptionModeIOS: iosInterruption,
+          shouldDuckAndroid: AUDIO_FLAGS.DUCK_OTHERS === 'duck',
+          interruptionModeAndroid: androidInterruption,
+          playThroughEarpieceAndroid: AUDIO_FLAGS.PLAY_THROUGH_EARPIECE_ANDROID,
         });
       } catch (e) {
         console.warn('Audio mode setup failed:', e);

@@ -23,7 +23,6 @@ import { useRouter } from 'expo-router';
 import { useAuth } from '../../context/AuthContext';
 import { useCuratedFeed } from '../../hooks/useCuratedFeed';
 import { useSettings } from '../../context/SettingsContext';
-import ArticleService from '../../services/ArticleService';
 import { useAutoPick } from '../../context/AutoPickContext';
 import { useArticle } from '../../context/ArticleContext';
 import { autoPickProgressService } from '../../services/AutoPickProgressService';
@@ -48,7 +47,7 @@ import LoadMoreButton from '../../components/LoadMoreButton';
 import AudioRecommendationCarousel from '../../components/AudioRecommendationCarousel';
 import { AudioRecommendation } from '../../components/AudioRecommendationCard';
 import { getTopAudioRecommendations } from '../../data/mock-audio-recommendations';
-import { Article } from '../../services/ArticleService';
+import ArticleService, { Article } from '../../services/ArticleService';
 import { API_CONFIG } from '../../config/api';
 import NotificationService from '../../services/NotificationService';
 import { AppState } from 'react-native';
@@ -58,7 +57,7 @@ import { Genre } from '../../types/rss';
 import { commonStyles, SPACING } from '../../styles/commonStyles';
 import UnifiedArticleList from '../../components/common/UnifiedArticleList';
 import SectionDivider from '../../components/common/SectionDivider';
-import SectionPlaceholder from '../../components/common/SectionPlaceholder';
+import Placeholder from '../../components/common/SectionPlaceholder';
 import { UI_FLAGS } from '../../config/uiFlags';
 
 const { width: screenWidth } = Dimensions.get('window');
@@ -85,6 +84,8 @@ export default function HomeScreen() {
   const [selectedArticle, setSelectedArticle] = useState<Article | null>(null);
   const [showArticleModal, setShowArticleModal] = useState(false);
   
+  // 記事データは useCuratedFeed フックで管理
+  
   // 最新セクション段階的表示用状態
   const [latestVisibleCount, setLatestVisibleCount] = useState(10); // デフォルト10件表示
   
@@ -110,6 +111,10 @@ export default function HomeScreen() {
   const [audioRecommendations, setAudioRecommendations] = useState<AudioRecommendation[]>([]);
   const [audioLoading, setAudioLoading] = useState(false);
 
+  // 記事データ取得は useCuratedFeed フックで自動処理
+
+  // プルツーリフレッシュは下記の完全版onRefresh関数で処理
+
 
   // クリーンアップ用のuseEffect
   useEffect(() => {
@@ -121,7 +126,8 @@ export default function HomeScreen() {
   
   // HOMEタブ専用：システム固定RSSからのキュレーション記事取得
   const {
-    filteredArticles: articles,
+    articles: allArticlesUnfiltered,  // 未フィルタの全記事
+    filteredArticles: articles,       // フィルタ済み記事
     loading,
     selectedGenre,
     availableGenres,
@@ -537,7 +543,7 @@ export default function HomeScreen() {
 
   // 最新セクション「さらに見る」ハンドラー
   const handleLoadMoreLatest = () => {
-    setLatestVisibleCount(prev => prev + 5); // 5件ずつ追加
+    setLatestVisibleCount(prev => prev + 10); // 10件ずつ追加
   };
 
   // ジャンル変更時に表示件数をリセット
@@ -556,7 +562,7 @@ export default function HomeScreen() {
   // Hero, Breaking, Trending, Personalized は全記事から取得（ジャンルフィルタなし）
   // Latest のみジャンルフィルタリングを適用
   
-  const allArticles = articles; // 全記事（フィルタリングなし）
+  const allArticles = allArticlesUnfiltered; // 全記事（フィルタリングなし）
   
   
   // Hero セクション: 全記事から最新5件
@@ -627,12 +633,18 @@ export default function HomeScreen() {
     return personalizedArticlesData.length > 0 ? personalizedArticlesData : allArticles.slice(16, 20);
   }, [personalizedArticlesData, allArticles]);
   
-  // Latest セクション: ジャンルフィルタリング + 軽量ランダムソート適用
+  // Latest セクション: 全記事表示（ジャンルフィルタリング付き）
   const latestArticles = React.useMemo(() => {
-    const latestAllArticles = allArticles.slice(24); // 24件目以降の記事
-    const filteredArticles = applyGenreFilterForHome(latestAllArticles, selectedGenre);
-    const sortedArticles = lightweightRandomSort(filteredArticles); // ソース名ベースの軽量ランダムソート
+    // 全記事を使用
+    const filteredArticles = applyGenreFilterForHome(allArticles, selectedGenre);
+    const sortedArticles = lightweightRandomSort(filteredArticles);
     
+    console.log('🔍 [LATEST_ARTICLES_DEBUG]', {
+      allArticles_length: allArticles.length,
+      filteredArticles_length: filteredArticles.length,
+      sortedArticles_length: sortedArticles.length,
+      selectedGenre
+    });
     
     return sortedArticles;
   }, [allArticles, selectedGenre]);
@@ -640,13 +652,18 @@ export default function HomeScreen() {
   // 段階的表示用の計算（パフォーマンス最適化）
   const visibleLatestArticles = React.useMemo(() => {
     const visible = latestArticles.slice(0, latestVisibleCount);
-    
-    
     return visible;
   }, [latestArticles, latestVisibleCount]);
 
   const hasMoreLatestArticles = React.useMemo(() => {
-    return latestArticles.length > latestVisibleCount;
+    const hasMore = latestArticles.length > latestVisibleCount;
+    console.log('🔍 [MORE_BUTTON_DEBUG]', {
+      latestArticles_length: latestArticles.length,
+      latestVisibleCount,
+      hasMore,
+      selectedGenre
+    });
+    return hasMore;
   }, [latestArticles.length, latestVisibleCount]);
 
   // 大きいカード用のレンダリング関数
@@ -770,7 +787,7 @@ export default function HomeScreen() {
             {/* Hero セクション */}
             <View style={[styles.sectionContainer, styles.heroSectionContainer]}>
               {loading ? (
-                <SectionPlaceholder message="読み込み中…" lines={2} />
+                <Placeholder message="読み込み中…" lines={2} />
               ) : heroArticles.length > 0 ? (
                 <HeroCarousel
                   articles={heroArticles}
@@ -780,17 +797,25 @@ export default function HomeScreen() {
               ) : null}
             </View>
 
-            {/* Breaking セクション（枠は常時表示） */}
-            <View style={styles.sectionContainer}>
-              <SectionHeader
-                type="emergency"
-                title="速報"
-                articleCount={breakingArticles.length}
-                divider="none"
-              />
-              {(sectionsLoading || loading) ? (
-                <SectionPlaceholder message="読み込み中…" lines={1} />
-              ) : breakingArticles.length > 0 ? (
+            {/* Breaking セクション（速報記事がある場合のみ表示） */}
+            {(sectionsLoading || loading) ? (
+              <View style={styles.sectionContainer}>
+                <SectionHeader
+                  type="emergency"
+                  title="速報"
+                  articleCount={0}
+                  divider="none"
+                />
+                <Placeholder message="読み込み中…" lines={1} />
+              </View>
+            ) : breakingArticles.length > 0 ? (
+              <View style={styles.sectionContainer}>
+                <SectionHeader
+                  type="emergency"
+                  title="速報"
+                  articleCount={breakingArticles.length}
+                  divider="none"
+                />
                 <View style={[styles.breakingContainer, { paddingHorizontal: SPACING.SCREEN_HORIZONTAL }]}>
                   {breakingArticles.slice(0, 3).map((article, index) => (
                     <View key={article.id} style={styles.breakingItem}>
@@ -829,13 +854,11 @@ export default function HomeScreen() {
                     </TouchableOpacity>
                   )}
                 </View>
-              ) : (
-                <SectionPlaceholder message="現在表示できる速報はありません" lines={0} />
-              )}
-              {UI_FLAGS.USE_SECTION_FOOTER_DIVIDERS && (
-                <SectionDivider inset={8} topMargin={6} />
-              )}
-            </View>
+                {UI_FLAGS.USE_SECTION_FOOTER_DIVIDERS && (
+                  <SectionDivider inset={8} topMargin={6} />
+                )}
+              </View>
+            ) : null}
 
             {/* Trending セクション（枠は常時表示） */}
             <View style={styles.sectionContainer}>
@@ -848,7 +871,7 @@ export default function HomeScreen() {
                 divider="none"
               />
               {sectionsLoading ? (
-                <SectionPlaceholder message="読み込み中…" lines={1} />
+                <Placeholder message="読み込み中…" lines={1} />
               ) : trendingArticles.length > 0 ? (
                 <TrendingCarousel
                   articles={trendingArticles}
@@ -857,7 +880,7 @@ export default function HomeScreen() {
                   maxItems={10}
                 />
               ) : (
-                <SectionPlaceholder message="現在表示できるトレンドはありません" lines={0} />
+                <Placeholder message="現在表示できるトレンドはありません" lines={0} />
               )}
               {UI_FLAGS.USE_SECTION_FOOTER_DIVIDERS && (
                 <SectionDivider inset={8} topMargin={6} />
@@ -901,7 +924,7 @@ export default function HomeScreen() {
                 divider="none"
               />
               {sectionsLoading ? (
-                <SectionPlaceholder message="読み込み中…" lines={1} />
+                <Placeholder message="読み込み中…" lines={1} />
               ) : personalizedArticles.length > 0 ? (
                 <PersonalizedGrid
                   articles={personalizedArticles}
@@ -910,7 +933,7 @@ export default function HomeScreen() {
                   maxItems={4}
                 />
               ) : (
-                <SectionPlaceholder message="現在表示できるおすすめはありません" lines={0} />
+                <Placeholder message="現在表示できるおすすめはありません" lines={0} />
               )}
               {UI_FLAGS.USE_SECTION_FOOTER_DIVIDERS && (
                 <SectionDivider inset={8} topMargin={6} />

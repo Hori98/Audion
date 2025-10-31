@@ -1,0 +1,39 @@
+{
+  "version": "2.0-minimal",
+  "description": "Minimal Working RSS Sources - Only NASA for testing",
+  "last_updated": "2025-10-30",
+  "sources": [
+    {
+      "id": "nasa_news_releases",
+      "name": "NASA News Releases",
+      "url": "https://www.nasa.gov/news-release/feed/",
+      "category": "science",
+      "description": "Official NASA news releases and announcements",
+      "language": "en",
+      "country": "US",
+      "license": "public-domain",
+      "commercial_use": true,
+      "podcast_allowed": true,
+      "credit_required": false,
+      "source_type": "system_default",
+      "is_active": true,
+      "priority": 1
+    },
+    {
+      "id": "github_blog",
+      "name": "GitHub Blog",
+      "url": "https://github.blog/feed/",
+      "category": "technology",
+      "description": "Updates and insights from GitHub",
+      "language": "en",
+      "country": "US",
+      "license": "editorial-use",
+      "commercial_use": true,
+      "podcast_allowed": true,
+      "credit_required": true,
+      "source_type": "system_default",
+      "is_active": true,
+      "priority": 2
+    }
+  ]
+}

@@ -19,6 +19,7 @@ import { useAuth } from '../../context/AuthContext';
 import HorizontalTabs from '../../components/HorizontalTabs';
 import UnifiedHeader from '../../components/UnifiedHeader';
 import SearchModal from '../../components/SearchModal';
+import Placeholder from '../../components/common/SectionPlaceholder';
 
 interface CommunityAudio {
   id: string;
@@ -179,15 +180,6 @@ export default function DiscoverScreen() {
     }
   };
 
-  if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#007bff" />
-        <Text style={styles.loadingText}>コミュニティコンテンツを読み込み中...</Text>
-      </View>
-    );
-  }
-
   return (
     <View style={styles.container}>
       {/* 固定ヘッダー */}
@@ -199,73 +191,79 @@ export default function DiscoverScreen() {
         contentContainerStyle={styles.scrollContent}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       >
-        {/* Category Filter */}
-        <HorizontalTabs
-          tabs={categories}
-          selectedTab={selectedCategory}
-          onTabSelect={setSelectedCategory}
-          style={styles.categorySection}
-        />
+        {loading ? (
+          <Placeholder message="コミュニティコンテンツを読み込み中…" lines={2} />
+        ) : (
+          <>
+            {/* Category Filter */}
+            <HorizontalTabs
+              tabs={categories}
+              selectedTab={selectedCategory}
+              onTabSelect={setSelectedCategory}
+              style={styles.categorySection}
+            />
 
-        {/* Community Audio List */}
-        <View style={styles.audioSection}>
-          <Text style={styles.sectionTitle}>
-            {selectedCategory === 'official' ? '公式コンテンツ' : 'コミュニティオーディオ'}
-          </Text>
-          
+            {/* Community Audio List */}
+            <View style={styles.audioSection}>
+              <Text style={styles.sectionTitle}>
+                {selectedCategory === 'official' ? '公式コンテンツ' : 'コミュニティオーディオ'}
+              </Text>
+              
           {filteredAudios.length === 0 ? (
             <View style={styles.emptyState}>
               <Text style={styles.emptyIcon}>🎧</Text>
-              <Text style={styles.emptyStateTitle}>コンテンツがありません</Text>
+              <Text style={styles.emptyStateTitle}>現在表示できるコンテンツはありません</Text>
               <Text style={styles.emptyStateDescription}>
-                選択したカテゴリーにはまだコンテンツがありません
+                カテゴリーを変更するか、あとで再度お試しください
               </Text>
             </View>
           ) : (
-            filteredAudios.map((audio) => (
-              <TouchableOpacity key={audio.id} style={styles.audioCard}>
-                <View style={styles.audioHeader}>
-                  <View style={styles.audioTitleSection}>
-                    <Text style={styles.audioTitle}>{audio.title}</Text>
-                    <Text style={styles.audioDescription} numberOfLines={2}>
-                      {audio.description}
-                    </Text>
-                  </View>
-                  <TouchableOpacity style={styles.playButton}>
-                    <Text style={styles.playButtonText}>▶️</Text>
-                  </TouchableOpacity>
-                </View>
-                
-                <View style={styles.audioMeta}>
-                  <View style={styles.authorSection}>
-                    {audio.isOfficial && (
-                      <View style={styles.officialBadge}>
-                        <Text style={styles.officialBadgeText}>✓ 公式</Text>
+                filteredAudios.map((audio) => (
+                  <TouchableOpacity key={audio.id} style={styles.audioCard}>
+                    <View style={styles.audioHeader}>
+                      <View style={styles.audioTitleSection}>
+                        <Text style={styles.audioTitle}>{audio.title}</Text>
+                        <Text style={styles.audioDescription} numberOfLines={2}>
+                          {audio.description}
+                        </Text>
                       </View>
-                    )}
-                    <Text style={styles.authorName}>{audio.author}</Text>
-                  </View>
-                  <Text style={styles.audioTime}>{getRelativeTime(audio.createdAt)}</Text>
-                </View>
+                      <TouchableOpacity style={styles.playButton}>
+                        <Text style={styles.playButtonText}>▶️</Text>
+                      </TouchableOpacity>
+                    </View>
+                    
+                    <View style={styles.audioMeta}>
+                      <View style={styles.authorSection}>
+                        {audio.isOfficial && (
+                          <View style={styles.officialBadge}>
+                            <Text style={styles.officialBadgeText}>✓ 公式</Text>
+                          </View>
+                        )}
+                        <Text style={styles.authorName}>{audio.author}</Text>
+                      </View>
+                      <Text style={styles.audioTime}>{getRelativeTime(audio.createdAt)}</Text>
+                    </View>
 
-                <View style={styles.audioStats}>
-                  <Text style={styles.duration}>⏱️ {formatDuration(audio.duration)}</Text>
-                  <Text style={styles.playCount}>🎧 {formatPlayCount(audio.playCount)}回再生</Text>
+                    <View style={styles.audioStats}>
+                      <Text style={styles.duration}>⏱️ {formatDuration(audio.duration)}</Text>
+                      <Text style={styles.playCount}>🎧 {formatPlayCount(audio.playCount)}回再生</Text>
+                    </View>
+                  </TouchableOpacity>
+                ))
+              )}
+              
+              {/* モックデータ警告 */}
+              {filteredAudios.length > 0 && (
+                <View style={styles.mockDataWarning}>
+                  <Text style={styles.warningIcon}>⚠️</Text>
+                  <Text style={styles.warningText}>
+                    これらはモックデータです。コミュニティ機能は開発中です。
+                  </Text>
                 </View>
-              </TouchableOpacity>
-            ))
-          )}
-          
-          {/* モックデータ警告 */}
-          {filteredAudios.length > 0 && (
-            <View style={styles.mockDataWarning}>
-              <Text style={styles.warningIcon}>⚠️</Text>
-              <Text style={styles.warningText}>
-                これらはモックデータです。コミュニティ機能は開発中です。
-              </Text>
+              )}
             </View>
-          )}
-        </View>
+          </>
+        )}
 
         {/* Coming Soon Section */}
         <View style={styles.comingSoonSection}>

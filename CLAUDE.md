@@ -2,17 +2,25 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Communication Guidelines
+
+**最終的な回答は日本語で作成してください。** (Please provide final responses in Japanese.)
+- 推論や技術的な過程は英語でも問題ありません
+- ただし、ユーザーへの最終的な説明・結果・アクション項目は必ず日本語にしてください
+- エラーメッセージや技術用語は英語のままで構いません
+
 ## Project Overview
 
 Audion is a full-stack podcast generation application that uses AI to convert RSS articles into conversational podcast scripts. The app consists of a React Native frontend built with Expo and a FastAPI Python backend.
 
 ## Architecture
 
-### Frontend (audion-app/)
-- **Technology**: React Native with Expo Router for file-based routing
+### Frontend (audion-app-fresh/)
+- Legacy `audion-app/` は削除済み。React Native 開発は全て `audion-app-fresh/` を使用してください。
+- **Technology**: React Native with Expo (SDK 54), Expo Router
 - **Navigation**: Tab-based navigation with feed, library, sources, and explore tabs
 - **Authentication**: Context-based auth system with AsyncStorage persistence
-- **State Management**: React Context for authentication and global state
+- **State Management**: React Context (GlobalAudioContext, Settings, Auth)
 - **UI Components**: Custom themed components with Expo design system
 
 ### Backend (backend/)
@@ -28,14 +36,12 @@ Audion is a full-stack podcast generation application that uses AI to convert RS
 
 ### Frontend Development
 ```bash
-cd audion-app
-npm install                    # Install dependencies
-npx expo start                # Start development server
-npx expo start --android     # Start with Android emulator
-npx expo start --ios         # Start with iOS simulator
-npx expo start --web         # Start web version
-npm run lint                  # Run ESLint
-npm run reset-project        # Reset to blank project
+cd audion-app-fresh
+npm install                      # Install dependencies
+npx expo start --tunnel         # Start development server
+npx expo start --android        # Start with Android emulator
+npx expo start --ios            # Start with iOS simulator
+npm run lint                     # Run ESLint
 ```
 
 ### Backend Development
@@ -119,10 +125,10 @@ python backend_test.py        # Run comprehensive API tests
 ## Key File Locations
 
 ### Frontend Structure
-- `audion-app/app/(tabs)/` - Main tab screens (feed, library, sources, explore)
-- `audion-app/context/AuthContext.tsx` - Authentication state management
-- `audion-app/components/` - Reusable UI components
-- `audion-app/constants/Colors.ts` - Theme colors
+- `audion-app-fresh/app/(tabs)/` - Main tab screens (feed, library, sources, explore)
+- `audion-app-fresh/context/AuthContext.tsx` - Authentication state management
+- `audion-app-fresh/components/` - Reusable UI components
+- `audion-app-fresh/constants/Colors.ts` - Theme colors
 
 ### Backend Structure
 - `backend/server.py` - Main FastAPI application with all endpoints

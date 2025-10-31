@@ -27,9 +27,9 @@ uvicorn server:app --reload --port 8002
 ## 🔧 アプリ設定
 
 ### **フロントエンド設定**
-- **ファイル:** `audion-app/.env`
-- **設定値:** `EXPO_PUBLIC_BACKEND_URL=http://localhost:8003`
-- **接続先:** ユーザー専用サーバー (port 8003)
+- React Native は `audion-app-fresh` を使用します（Legacy `audion-app` は削除済み）。
+- 接続先は自動検出（`audion-app-fresh/config/api.ts`）または `.env.development` のポート指定で制御。
+- 例: `EXPO_PUBLIC_DEV_API_PORT=8003`
 
 ## 📝 使用ルール
 
