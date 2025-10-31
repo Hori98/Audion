@@ -44,33 +44,40 @@ from config.settings import (
 RSS_SOURCES_CONFIG = {}
 RSS_SECTIONS_CONFIG = {}
 try:
-    # TEMPORARY: Use minimal RSS sources for testing
-    config_path = ROOT_DIR.parent / 'shared-config' / 'rss-sources-minimal.json'
+    # Use verified RSS sources for production
+    config_path = ROOT_DIR.parent / 'shared-config' / 'rss-sources-verified.json'
     if config_path.exists():
         with open(config_path, 'r', encoding='utf-8') as f:
             RSS_SOURCES_CONFIG = json.load(f)
         logging.info(f"Loaded {len(RSS_SOURCES_CONFIG.get('sources', []))} VERIFIED RSS sources from config")
     else:
-        # Fallback to original
-        config_path = ROOT_DIR.parent / 'shared-config' / 'rss-sources.json'
+        # Fallback to minimal for development
+        config_path = ROOT_DIR.parent / 'shared-config' / 'rss-sources-minimal.json'
         if config_path.exists():
             with open(config_path, 'r', encoding='utf-8') as f:
                 RSS_SOURCES_CONFIG = json.load(f)
-            logging.info(f"Loaded {len(RSS_SOURCES_CONFIG.get('sources', []))} RSS sources from config")
+            logging.info(f"Loaded {len(RSS_SOURCES_CONFIG.get('sources', []))} MINIMAL RSS sources from config")
         else:
             logging.warning(f"RSS sources config not found at {config_path}")
 except Exception as e:
     logging.error(f"Error loading RSS sources config: {e}")
 
 try:
-    # TEMPORARY: Use minimal sections mapping for testing
-    sections_config_path = ROOT_DIR.parent / 'shared-config' / 'rss-sections-mapping-minimal.json'
+    # Use verified sections mapping for production
+    sections_config_path = ROOT_DIR.parent / 'shared-config' / 'rss-sections-mapping-verified.json'
     if sections_config_path.exists():
         with open(sections_config_path, 'r', encoding='utf-8') as f:
             RSS_SECTIONS_CONFIG = json.load(f)
-        logging.info(f"Loaded {len(RSS_SECTIONS_CONFIG.get('sections', {}))} section mappings from config")
+        logging.info(f"Loaded {len(RSS_SECTIONS_CONFIG.get('sections', {}))} VERIFIED section mappings from config")
     else:
-        logging.warning(f"RSS sections config not found at {sections_config_path}")
+        # Fallback to minimal for development  
+        sections_config_path = ROOT_DIR.parent / 'shared-config' / 'rss-sections-mapping-minimal.json'
+        if sections_config_path.exists():
+            with open(sections_config_path, 'r', encoding='utf-8') as f:
+                RSS_SECTIONS_CONFIG = json.load(f)
+            logging.info(f"Loaded {len(RSS_SECTIONS_CONFIG.get('sections', {}))} MINIMAL section mappings from config")
+        else:
+            logging.warning(f"RSS sections config not found at {sections_config_path}")
 except Exception as e:
     logging.error(f"Error loading RSS sections config: {e}")
 
@@ -1570,7 +1577,7 @@ async def get_curated_articles(section: Optional[str] = None, genre: Optional[st
                     logging.info(f"[Curated] Fetched new feed for {source['name']}")
 
                 # Extract articles from feed
-                for entry in feed.entries[:5]:  # Limit to 5 per source
+                for entry in feed.entries[:10]:  # Limit to 10 per source (restored from original)
                     article_title = getattr(entry, 'title', "No Title")
                     article_summary = getattr(entry, 'summary', getattr(entry, 'description', "No summary available"))
                     article_genre = classify_genre(article_title, article_summary)
