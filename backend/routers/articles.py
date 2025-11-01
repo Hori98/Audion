@@ -49,6 +49,31 @@ async def get_articles(
         logging.error(f"Error getting articles: {e}")
         raise handle_database_error(e, "get articles")
 
+@router.get("/articles/curated", response_model=List[Article])
+async def get_curated_articles(
+    current_user: User = Depends(get_current_user),
+    language: Optional[str] = Query(None, description="Preferred language (optional)"),
+    max_articles: int = Query(50, description="Maximum number of curated articles (default 50)")
+):
+    """
+    Get curated articles for the current user.
+
+    Minimal implementation that reuses the unified article aggregation.
+    Future enhancement can apply language-aware/verified-source curation.
+    """
+    try:
+        limit = max(0, min(max_articles, 200))
+        articles = await get_articles_for_user(
+            current_user.id,
+            genre=None,
+            source=None,
+            max_articles=limit,
+        )
+        return articles
+    except Exception as e:
+        logging.error(f"Error getting curated articles: {e}")
+        raise handle_database_error(e, "get curated articles")
+
 @router.post("/articles", response_model=List[Article])
 async def post_articles(request: Dict[str, Any], current_user: User = Depends(get_current_user)):
     """

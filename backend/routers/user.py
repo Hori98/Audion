@@ -14,6 +14,7 @@ from backend.services.user_service import (
     get_or_create_user_profile, get_user_insights, 
     initialize_user_with_onboard_preferences
 )
+from backend.services.subscription_service import get_user_limits
 from backend.utils.errors import handle_database_error, handle_generic_error
 
 router = APIRouter(prefix="/api", tags=["User Management"])
@@ -65,3 +66,30 @@ async def delete_user_account(current_user: User = Depends(get_current_user)):
     except Exception as e:
         logging.error(f"Error deleting user account: {e}")
         raise handle_database_error(e, "delete user account")
+
+
+@router.get("/user/subscription/limits")
+async def get_subscription_limits(current_user: User = Depends(get_current_user)):
+    """
+    Get current user's subscription limits and usage.
+
+    Returns a stable structure even if subscription service has partial data,
+    allowing the frontend to fall back gracefully.
+    """
+    try:
+        limits = await get_user_limits(current_user.id)
+        return {
+            "plan": limits.get("plan", "free"),
+            "daily_limit": limits.get("daily_limit", 3),
+            "used_today": limits.get("used_today", 0),
+            "remaining": max(0, limits.get("daily_limit", 3) - limits.get("used_today", 0)),
+        }
+    except Exception as e:
+        logging.warning(f"Subscription limits retrieval failed, returning defaults: {e}")
+        # Always return a safe default so the app can proceed
+        return {
+            "plan": "free",
+            "daily_limit": 3,
+            "used_today": 0,
+            "remaining": 3,
+        }
