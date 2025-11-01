@@ -6,8 +6,8 @@ import logging
 import jwt
 from datetime import datetime, timedelta
 from typing import Optional
-from fastapi import HTTPException, status
-from fastapi.security import HTTPAuthorizationCredentials
+from fastapi import HTTPException, status, Depends
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from backend.config.settings import JWT_SECRET_KEY, JWT_ALGORITHM
 from bson import ObjectId
@@ -79,7 +79,10 @@ def verify_jwt_token(token: str) -> dict:
             detail="Invalid token"
         )
 
-async def get_current_user(credentials: HTTPAuthorizationCredentials) -> User:
+# HTTP Bearer dependency for extracting Authorization header
+security = HTTPBearer()
+
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> User:
     """
     Get current user from JWT token.
     
