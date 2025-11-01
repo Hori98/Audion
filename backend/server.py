@@ -9,7 +9,7 @@ import os
 import logging
 from pathlib import Path
 from pydantic import BaseModel, Field
-from typing import List, Optional, Dict, Tuple
+from typing import List, Optional, Dict, Tuple, Any
 import uuid
 from datetime import datetime
 import feedparser
@@ -30,6 +30,10 @@ import math
 
 # Global cache for RSS feeds
 RSS_CACHE = {}
+try:
+    shared_state.RSS_CACHE = RSS_CACHE
+except Exception:
+    pass
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -38,6 +42,17 @@ load_dotenv(ROOT_DIR / '.env')
 from config.settings import (
     RSS_CACHE_EXPIRY_SECONDS, RECOMMENDED_WORD_COUNT, INSIGHT_WORD_COUNT,
     ALLOWED_ORIGINS
+)
+from runtime import shared_state
+from services.genre_mapping_service import normalize_preferred_genres
+from services.subscription_service import ensure_can_create_audio, get_user_limits
+from services.autopick_pool import resolve_article_pool_for_request as svc_resolve_pool
+from services.task_store import (
+    now_iso as svc_now_iso,
+    task_update as svc_task_update,
+    task_insert_db as svc_task_insert,
+    task_get as svc_task_get,
+    count_user_active_tasks as svc_count_active,
 )
 
 # Load RSS sources configuration from shared config
@@ -81,6 +96,73 @@ try:
 except Exception as e:
     logging.error(f"Error loading RSS sections config: {e}")
 
+# RSS Language Filtering Helper Functions
+def filter_rss_sources_by_language(user_language: str = None) -> list:
+    """
+    Filter RSS sources based on user language preference.
+    
+    Args:
+        user_language: User's language setting ('日本語', 'English', 'ja', 'en', etc.)
+        
+    Returns:
+        List of RSS sources filtered by language
+    """
+    if not RSS_SOURCES_CONFIG or 'sources' not in RSS_SOURCES_CONFIG:
+        return []
+    
+    all_sources = RSS_SOURCES_CONFIG['sources']
+    
+    # If no language specified, return all sources
+    if not user_language:
+        return all_sources
+    
+    # Map user language setting to source language codes
+    language_mapping = {
+        '日本語': 'ja',
+        'Japanese': 'ja',
+        'ja': 'ja',
+        'English': 'en',
+        'en': 'en',
+        'english': 'en',
+        'English (US)': 'en',
+        'English (UK)': 'en'
+    }
+    
+    # Get target language code
+    target_language = language_mapping.get(user_language, 'en')  # Default to English
+    
+    # Filter sources by language
+    filtered_sources = [
+        source for source in all_sources 
+        if source.get('language', '').lower() == target_language.lower() 
+        and source.get('is_active', True)
+    ]
+    
+    logging.info(f"Filtered RSS sources: {len(filtered_sources)} sources for language '{target_language}' (user setting: '{user_language}')")
+    return filtered_sources
+
+def get_user_language_from_settings(user_id: str) -> str:
+    """
+    Get user's language setting from their stored preferences.
+    
+    Args:
+        user_id: User's ID
+        
+    Returns:
+        User's language preference or default 'ja'
+    """
+    try:
+        # Check if user exists and has language setting
+        user = db.users.find_one({"_id": ObjectId(user_id)})
+        if user and 'settings' in user and 'general' in user['settings']:
+            return user['settings']['general'].get('language', '日本語')
+        
+        # Default to Japanese if no setting found
+        return '日本語'
+    except Exception as e:
+        logging.warning(f"Could not retrieve user language setting: {e}")
+        return '日本語'
+
 # MongoDB and API configuration
 MONGO_URL = os.environ['MONGO_URL']
 DB_NAME = os.environ['DB_NAME']
@@ -113,10 +195,20 @@ async def lifespan(app: FastAPI):
         # Test the connection
         await asyncio.wait_for(db.command('ping'), timeout=5.0)
         db_connected = True
+        try:
+            shared_state.db = db
+            shared_state.db_connected = True
+        except Exception:
+            pass
         logging.info("Connected to MongoDB successfully")
     except Exception as e:
         logging.error(f"Failed to connect to MongoDB: {e}")
         db_connected = False
+        try:
+            shared_state.db = None
+            shared_state.db_connected = False
+        except Exception:
+            pass
         logging.info("Server will run in limited mode without database")
     
     # Only run database operations if connected
@@ -187,6 +279,13 @@ if JWT_SECRET_KEY:
     logging.info(f"🔐 JWT_SECRET_KEY length: {len(JWT_SECRET_KEY)}")
 logging.info(f"🔐 JWT_ALGORITHM: {JWT_ALGORITHM}")
 logging.info("=" * 80)
+
+# Include routers
+try:
+    from routers import autopick_v2 as r_autopick_v2
+    app.include_router(r_autopick_v2.router)
+except Exception as e:
+    logging.warning(f"Failed to include routers: {e}")
 
 # Health check endpoint (outside /api prefix for ConnectionService)
 @app.get("/health")
@@ -391,10 +490,30 @@ class UserProfile(BaseModel):
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
+class ArticleCandidate(BaseModel):
+    id: str
+    title: str
+    summary: Optional[str] = None
+    link: Optional[str] = None
+    source_name: Optional[str] = None
+    published_at: Optional[str] = None
+
+
 class AutoPickRequest(BaseModel):
+    # Core selection params
     max_articles: Optional[int] = 5
     preferred_genres: Optional[List[str]] = None
     active_source_ids: Optional[List[str]] = None  # Explicitly specify which sources to use
+
+    # Extended params (optional, tolerated for FE compatibility)
+    voice_language: Optional[str] = None
+    voice_name: Optional[str] = None
+    prompt_style: Optional[str] = None
+    custom_prompt: Optional[str] = None
+    tab_scope: Optional[str] = None  # 'home' | 'feed'
+    source_scope: Optional[str] = None  # 'fixed' | 'user'
+    selected_source_ids: Optional[List[str]] = None
+    candidates: Optional[List[ArticleCandidate]] = None
 
 class UserInteraction(BaseModel):
     article_id: str
@@ -1047,25 +1166,65 @@ async def auto_pick_articles(user_id: str, all_articles: List[Article], max_arti
 # Auth helpers
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
     """
-    Simple user authentication using the token as user ID.
-    This bypasses JWT verification for development simplicity.
+    Enhanced user authentication with better error handling and debugging.
+    Supports both 'id' and '_id' field lookups for MongoDB compatibility.
     """
     global db_connected
     if not db_connected:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Database not connected")
     
     token = credentials.credentials
-    logging.info(f"DEBUG: Attempting authentication with token: {token}")
+    logging.info(f"[AUTH] Attempting authentication with token: {token}")
     
-    user = await db.users.find_one({"id": token})
-    logging.info(f"DEBUG: Found user: {user is not None}")
-    
-    if not user:
-        logging.error(f"DEBUG: User not found for token: {token}")
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid authentication credentials")
-    
-    logging.info(f"DEBUG: Returning user: {user.get('email', 'No email')}")
-    return User(**user)
+    try:
+        # Try to find user by 'id' field first (preferred UUID approach)
+        user = await db.users.find_one({"id": token})
+        
+        # Fallback: Try to find by '_id' if ObjectId format
+        if not user:
+            try:
+                from bson import ObjectId
+                if ObjectId.is_valid(token):
+                    user = await db.users.find_one({"_id": ObjectId(token)})
+                    logging.info(f"[AUTH] Found user by _id lookup: {user is not None}")
+            except Exception:
+                pass
+        
+        # Additional fallback: Search all users and match by any ID field
+        if not user:
+            # Last resort: find any user with this token in any id-like field
+            users_cursor = db.users.find({})
+            async for user_doc in users_cursor:
+                if (user_doc.get('id') == token or 
+                    str(user_doc.get('_id')) == token):
+                    user = user_doc
+                    logging.info(f"[AUTH] Found user by fallback search: {user.get('email', 'No email')}")
+                    break
+        
+        logging.info(f"[AUTH] User found: {user is not None}")
+        
+        if not user:
+            logging.error(f"[AUTH] No user found for token: {token}")
+            # Add debug info about users in database
+            user_count = await db.users.count_documents({})
+            logging.error(f"[AUTH] Total users in database: {user_count}")
+            if user_count > 0:
+                sample_user = await db.users.find_one({})
+                if sample_user:
+                    logging.error(f"[AUTH] Sample user structure: {list(sample_user.keys())}")
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid authentication credentials")
+        
+        # Ensure user has required 'id' field
+        if 'id' not in user:
+            user['id'] = str(user.get('_id', token))
+            logging.info(f"[AUTH] Added missing 'id' field to user: {user['id']}")
+        
+        logging.info(f"[AUTH] Authentication successful for user: {user.get('email', 'No email')}")
+        return User(**user)
+        
+    except Exception as e:
+        logging.error(f"[AUTH] Authentication error: {e}")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication failed")
 
 # === API Endpoints ===
 
@@ -1425,6 +1584,10 @@ async def post_articles(request: dict, current_user: User = Depends(get_current_
     return await get_articles_internal(current_user, genre, source)
 
 async def get_articles_internal(current_user: User, genre: Optional[str] = None, source: Optional[str] = None):
+    # Get user's language preference for default RSS source filtering
+    user_language = get_user_language_from_settings(current_user.id)
+    logging.info(f"[Articles] User {current_user.email} language preference: {user_language}")
+    
     # Get only active sources (is_active is not explicitly False or doesn't exist)
     source_filter = {
         "user_id": current_user.id,
@@ -1510,7 +1673,12 @@ async def get_articles_internal(current_user: User, genre: Optional[str] = None,
     return sorted(all_articles, key=lambda x: x.published, reverse=True)[:50]
 
 @app.get("/api/articles/curated", response_model=List[Article], tags=["Articles"])
-async def get_curated_articles(section: Optional[str] = None, genre: Optional[str] = None, max_articles: Optional[int] = None):
+async def get_curated_articles(
+    section: Optional[str] = None, 
+    genre: Optional[str] = None, 
+    max_articles: Optional[int] = None,
+    language: Optional[str] = None
+):
     """
     Get curated articles from default/public RSS sources.
     This endpoint doesn't require authentication.
@@ -1520,8 +1688,17 @@ async def get_curated_articles(section: Optional[str] = None, genre: Optional[st
     - section: Optional section name ('hero', 'breaking', 'trending', etc.) to filter sources
     - genre: Optional genre filter
     - max_articles: Maximum articles to return (default: 50)
+    - language: Optional language filter ('ja' for Japanese, 'en' for English, '日本語', 'English')
     """
     try:
+        # Apply language filtering to RSS sources first
+        if language:
+            filtered_config_sources = filter_rss_sources_by_language(language)
+            logging.info(f"[Curated] Language filter applied: {len(filtered_config_sources)} sources for language '{language}'")
+        else:
+            filtered_config_sources = RSS_SOURCES_CONFIG.get('sources', [])
+            logging.info(f"[Curated] No language filter applied: {len(filtered_config_sources)} total sources")
+
         # Get default/public RSS sources from configuration
         default_sources = []
 
@@ -1531,8 +1708,8 @@ async def get_curated_articles(section: Optional[str] = None, genre: Optional[st
             source_ids = section_config.get('sources', [])
             logging.info(f"[Curated] Loading sources for section: {section} ({len(source_ids)} sources)")
 
-            # Map source IDs to actual sources
-            sources_by_id = {src['id']: src for src in RSS_SOURCES_CONFIG.get('sources', [])}
+            # Map source IDs to actual sources (using language-filtered sources)
+            sources_by_id = {src['id']: src for src in filtered_config_sources}
             for source_id in source_ids:
                 if source_id in sources_by_id:
                     source = sources_by_id[source_id]
@@ -1543,8 +1720,8 @@ async def get_curated_articles(section: Optional[str] = None, genre: Optional[st
                             "id": source['id']
                         })
         else:
-            # Use all active sources from config
-            for source in RSS_SOURCES_CONFIG.get('sources', []):
+            # Use all active sources from config (language-filtered)
+            for source in filtered_config_sources:
                 if source.get('is_active', True):
                     default_sources.append({
                         "url": source['url'],
@@ -1700,6 +1877,72 @@ async def get_section_rss_sources(section_name: str):
     except Exception as e:
         logging.error(f"[RSS Sources] Error fetching section sources for {section_name}: {e}")
         raise HTTPException(status_code=500, detail="Error fetching section sources")
+
+@app.get("/api/rss-sources/categories", tags=["RSS Sources"])
+async def get_rss_categories():
+    """
+    Get aggregated categories from verified system sources.
+    """
+    try:
+        sources = [src for src in RSS_SOURCES_CONFIG.get('sources', []) if src.get('is_active', True)]
+        category_counts = {}
+        for src in sources:
+            cat = (src.get('category') or 'general').lower()
+            category_counts[cat] = category_counts.get(cat, 0) + 1
+        categories = [
+            {
+                "id": cat,
+                "name": cat.title(),
+                "sort_order": idx,
+                "count": count,
+            }
+            for idx, (cat, count) in enumerate(sorted(category_counts.items(), key=lambda x: (-x[1], x[0])))
+        ]
+        return categories
+    except Exception as e:
+        logging.error(f"[RSS Sources] Error building categories: {e}")
+        return []
+
+@app.get("/api/rss-sources/recommended", tags=["RSS Sources"])
+async def get_recommended_sources(limit: int = 5, lang: Optional[str] = None):
+    """
+    Return a recommended list of legal system sources.
+
+    - Filters by is_active
+    - Optional language filter ('ja'|'en')
+    - Orders by 'priority' then recency of 'verified_date' if available
+    """
+    try:
+        sources = [src for src in RSS_SOURCES_CONFIG.get('sources', []) if src.get('is_active', True)]
+        if lang:
+            # normalize language code
+            target = 'ja' if lang.lower().startswith('ja') else 'en'
+            sources = [s for s in sources if (s.get('language') or '').lower().startswith(target)]
+
+        def sort_key(s):
+            pr = s.get('priority', 99)
+            vd = s.get('verified_date', '')
+            return (pr, vd)
+
+        sources_sorted = sorted(sources, key=sort_key)
+        # Map to simplified shape
+        recs = []
+        for src in sources_sorted[: max(1, limit) ]:
+            recs.append({
+                "id": src.get('id', ''),
+                "name": src.get('name', ''),
+                "description": src.get('description', ''),
+                "url": src.get('url', ''),
+                "category": src.get('category', 'general'),
+                "language": src.get('language', ''),
+                "country": src.get('country', ''),
+                "is_active": True,
+                "is_featured": True,
+            })
+        return recs
+    except Exception as e:
+        logging.error(f"[RSS Sources] Error fetching recommended sources: {e}")
+        return []
 
 @app.post("/api/audio/create", response_model=AudioCreation, tags=["Audio"])
 async def create_audio(request: AudioCreationRequest, current_user: User = Depends(get_current_user)):
@@ -1984,61 +2227,89 @@ async def get_auto_picked_articles(request: AutoPickRequest, current_user: User 
         if not db_connected:
             raise HTTPException(status_code=503, detail="Database service unavailable. Auto-pick requires database connectivity to access RSS sources and user preferences.")
         
-        # Get user's RSS sources based on request parameters
-        if request.active_source_ids:
-            # Use explicitly specified active sources (using UUID-format id field, not ObjectId)
-            sources = await db.rss_sources.find({
-                "user_id": current_user.id,
-                "id": {"$in": request.active_source_ids}
-            }).to_list(100)
-            logging.info(f"Using {len(sources)} explicitly specified sources for user {current_user.id}")
-        else:
-            # Use all active sources (default behavior for backward compatibility)
-            sources = await db.rss_sources.find({
-                "user_id": current_user.id,
-                "$or": [
-                    {"is_active": {"$ne": False}},  # is_active is not explicitly False
-                    {"is_active": {"$exists": False}}  # is_active field doesn't exist (default to active)
-                ]
-            }).to_list(100)
-            logging.info(f"Found {len(sources)} active RSS sources for user {current_user.id}")
-        
-        if not sources:
-            if request.active_source_ids:
-                raise HTTPException(status_code=404, detail="No specified RSS sources found or they are inactive.")
-            else:
-                raise HTTPException(status_code=404, detail="No active RSS sources found. Please add some sources or activate existing ones.")
-        
-        # Fetch all articles from user's sources
+        # Normalize preferred genres (JP/aliases → canonical)
+        if request.preferred_genres:
+            request.preferred_genres = normalize_preferred_genres(request.preferred_genres)
+
+        # Resolve article pool
         all_articles = []
-        for source in sources:
-            try:
-                cache_key = source["url"]
-                current_time = time.time()
 
-                if cache_key in RSS_CACHE and (current_time - RSS_CACHE[cache_key]['timestamp'] < RSS_CACHE_EXPIRY_SECONDS):
-                    feed = RSS_CACHE[cache_key]['feed']
-                else:
-                    feed = feedparser.parse(source["url"])
-                    RSS_CACHE[cache_key] = {'feed': feed, 'timestamp': current_time}
-
-                for entry in feed.entries[:20]:  # Get more articles for better selection
-                    article_title = getattr(entry, 'title', "No Title")
-                    article_summary = getattr(entry, 'summary', getattr(entry, 'description', "No summary available"))
-                    article_genre = classify_genre(article_title, article_summary)
+        # If home tab with candidates provided → use candidates as the pool (no RSS fetch)
+        if (request.tab_scope or '').lower() == 'home' and request.candidates:
+            for c in request.candidates:
+                try:
+                    title = c.title or "No Title"
+                    summary = c.summary or ("No summary available")
+                    genre = classify_genre(title, summary)
                     all_articles.append(Article(
-                        id=str(uuid.uuid4()),
-                        title=article_title,
-                        summary=article_summary,
-                        link=getattr(entry, 'link', ""),
-                        published=time.strftime('%Y-%m-%dT%H:%M:%SZ', entry.published_parsed) if hasattr(entry, 'published_parsed') and entry.published_parsed else "",
-                        source_name=source["name"],
-                        content=getattr(entry, 'summary', getattr(entry, 'description', "No content available")),
-                        genre=article_genre
+                        id=c.id or str(uuid.uuid4()),
+                        title=title,
+                        summary=summary,
+                        link=c.link or "",
+                        published=c.published_at or "",
+                        source_name=c.source_name or "Home Candidates",
+                        content=summary,
+                        genre=genre,
                     ))
-            except Exception as e:
-                logging.warning(f"Error parsing RSS feed {source['url']}: {e}")
-                continue
+                except Exception as ce:
+                    logging.warning(f"Failed to convert candidate to Article: {ce}")
+
+        # Otherwise, fetch from user's RSS sources (feed scope / default behavior)
+        if not all_articles:
+            # Get user's RSS sources based on request parameters
+            if request.active_source_ids:
+                # Use explicitly specified active sources (using UUID-format id field, not ObjectId)
+                sources = await db.rss_sources.find({
+                    "user_id": current_user.id,
+                    "id": {"$in": request.active_source_ids}
+                }).to_list(100)
+                logging.info(f"Using {len(sources)} explicitly specified sources for user {current_user.id}")
+            else:
+                # Use all active sources (default behavior for backward compatibility)
+                sources = await db.rss_sources.find({
+                    "user_id": current_user.id,
+                    "$or": [
+                        {"is_active": {"$ne": False}},  # is_active is not explicitly False
+                        {"is_active": {"$exists": False}}  # is_active field doesn't exist (default to active)
+                    ]
+                }).to_list(100)
+                logging.info(f"Found {len(sources)} active RSS sources for user {current_user.id}")
+
+            if not sources:
+                if request.active_source_ids:
+                    raise HTTPException(status_code=404, detail="No specified RSS sources found or they are inactive.")
+                else:
+                    raise HTTPException(status_code=404, detail="No active RSS sources found. Please add some sources or activate existing ones.")
+
+            # Fetch all articles from user's sources
+            for source in sources:
+                try:
+                    cache_key = source["url"]
+                    current_time = time.time()
+
+                    if cache_key in RSS_CACHE and (current_time - RSS_CACHE[cache_key]['timestamp'] < RSS_CACHE_EXPIRY_SECONDS):
+                        feed = RSS_CACHE[cache_key]['feed']
+                    else:
+                        feed = feedparser.parse(source["url"])
+                        RSS_CACHE[cache_key] = {'feed': feed, 'timestamp': current_time}
+
+                    for entry in feed.entries[:20]:  # Get more articles for better selection
+                        article_title = getattr(entry, 'title', "No Title")
+                        article_summary = getattr(entry, 'summary', getattr(entry, 'description', "No summary available"))
+                        article_genre = classify_genre(article_title, article_summary)
+                        all_articles.append(Article(
+                            id=str(uuid.uuid4()),
+                            title=article_title,
+                            summary=article_summary,
+                            link=getattr(entry, 'link', ""),
+                            published=time.strftime('%Y-%m-%dT%H:%M:%SZ', entry.published_parsed) if hasattr(entry, 'published_parsed') and entry.published_parsed else "",
+                            source_name=source["name"],
+                            content=getattr(entry, 'summary', getattr(entry, 'description', "No content available")),
+                            genre=article_genre
+                        ))
+                except Exception as e:
+                    logging.warning(f"Error parsing RSS feed {source['url']}: {e}")
+                    continue
         
         if not all_articles:
             raise HTTPException(status_code=404, detail="No articles found from your RSS sources")
@@ -2129,6 +2400,15 @@ async def record_audio_interaction(
         logging.error(f"Error recording audio interaction: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+# AutoPick V2 endpoints are now provided by routers/autopick_v2.py
+
+
+@app.get("/api/user/subscription/limits", tags=["User"])
+async def get_subscription_limits(current_user: User = Depends(get_current_user)):
+    """Return simple daily limits for the current user."""
+    limits = await get_user_limits(current_user.id)
+    return limits
+
 @app.get("/api/user-insights", tags=["Auto-Pick"])
 async def get_user_insights(current_user: User = Depends(get_current_user)):
     """Get user personalization insights and recommendation explanations"""
@@ -2210,41 +2490,64 @@ async def test_genre_classification(
 async def create_auto_picked_audio(request: AutoPickRequest, current_user: User = Depends(get_current_user)):
     """Auto-pick articles and create audio in one step"""
     try:
-        # Get auto-picked articles
-        sources = await db.rss_sources.find({"user_id": current_user.id}).to_list(100)
-        if not sources:
-            raise HTTPException(status_code=404, detail="No RSS sources found")
-        
-        # Fetch articles (similar to auto-pick endpoint)
+        # Quota check
+        await ensure_can_create_audio(current_user.id)
+        # Normalize preferred genres (JP/aliases → canonical)
+        if request.preferred_genres:
+            request.preferred_genres = normalize_preferred_genres(request.preferred_genres)
+
+        # Resolve pool: home candidates or RSS sources
         all_articles = []
-        for source in sources:
-            try:
-                cache_key = source["url"]
-                current_time = time.time()
-
-                if cache_key in RSS_CACHE and (current_time - RSS_CACHE[cache_key]['timestamp'] < RSS_CACHE_EXPIRY_SECONDS):
-                    feed = RSS_CACHE[cache_key]['feed']
-                else:
-                    feed = feedparser.parse(source["url"])
-                    RSS_CACHE[cache_key] = {'feed': feed, 'timestamp': current_time}
-
-                for entry in feed.entries[:20]:
-                    article_title = getattr(entry, 'title', "No Title")
-                    article_summary = getattr(entry, 'summary', getattr(entry, 'description', "No summary available"))
-                    article_genre = classify_genre(article_title, article_summary)
+        if (request.tab_scope or '').lower() == 'home' and request.candidates:
+            for c in request.candidates:
+                try:
+                    title = c.title or "No Title"
+                    summary = c.summary or ("No summary available")
+                    genre = classify_genre(title, summary)
                     all_articles.append(Article(
-                        id=str(uuid.uuid4()),
-                        title=article_title,
-                        summary=article_summary,
-                        link=getattr(entry, 'link', ""),
-                        published=time.strftime('%Y-%m-%dT%H:%M:%SZ', entry.published_parsed) if hasattr(entry, 'published_parsed') and entry.published_parsed else "",
-                        source_name=source["name"],
-                        content=getattr(entry, 'summary', getattr(entry, 'description', "No content available")),
-                        genre=article_genre
+                        id=c.id or str(uuid.uuid4()),
+                        title=title,
+                        summary=summary,
+                        link=c.link or "",
+                        published=c.published_at or "",
+                        source_name=c.source_name or "Home Candidates",
+                        content=summary,
+                        genre=genre,
                     ))
-            except Exception as e:
-                logging.warning(f"Error parsing RSS feed {source['url']}: {e}")
-                continue
+                except Exception as ce:
+                    logging.warning(f"Failed to convert candidate to Article: {ce}")
+        else:
+            sources = await db.rss_sources.find({"user_id": current_user.id}).to_list(100)
+            if not sources:
+                raise HTTPException(status_code=404, detail="No RSS sources found")
+            for source in sources:
+                try:
+                    cache_key = source["url"]
+                    current_time = time.time()
+
+                    if cache_key in RSS_CACHE and (current_time - RSS_CACHE[cache_key]['timestamp'] < RSS_CACHE_EXPIRY_SECONDS):
+                        feed = RSS_CACHE[cache_key]['feed']
+                    else:
+                        feed = feedparser.parse(source["url"])
+                        RSS_CACHE[cache_key] = {'feed': feed, 'timestamp': current_time}
+
+                    for entry in feed.entries[:20]:
+                        article_title = getattr(entry, 'title', "No Title")
+                        article_summary = getattr(entry, 'summary', getattr(entry, 'description', "No summary available"))
+                        article_genre = classify_genre(article_title, article_summary)
+                        all_articles.append(Article(
+                            id=str(uuid.uuid4()),
+                            title=article_title,
+                            summary=article_summary,
+                            link=getattr(entry, 'link', ""),
+                            published=time.strftime('%Y-%m-%dT%H:%M:%SZ', entry.published_parsed) if hasattr(entry, 'published_parsed') and entry.published_parsed else "",
+                            source_name=source["name"],
+                            content=getattr(entry, 'summary', getattr(entry, 'description', "No content available")),
+                            genre=article_genre
+                        ))
+                except Exception as e:
+                    logging.warning(f"Error parsing RSS feed {source['url']}: {e}")
+                    continue
         
         # Auto-pick articles
         picked_articles = await auto_pick_articles(
@@ -2300,7 +2603,11 @@ async def create_auto_picked_audio(request: AutoPickRequest, current_user: User 
             custom_prompt=None
         )
         
-        await db.audio_creations.insert_one(audio_creation.dict())
+        doc = audio_creation.dict()
+        if 'created_at' not in doc:
+            from datetime import datetime
+            doc['created_at'] = datetime.utcnow()
+        await db.audio_creations.insert_one(doc)
         
         # Auto-download the created audio
         auto_download = DownloadedAudio(
