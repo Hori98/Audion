@@ -6,8 +6,7 @@ import logging
 import jwt
 from datetime import datetime, timedelta
 from typing import Optional
-from fastapi import HTTPException, status, Depends
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi import HTTPException, status, Request
 
 from backend.config.settings import JWT_SECRET_KEY, JWT_ALGORITHM
 from bson import ObjectId
@@ -80,9 +79,7 @@ def verify_jwt_token(token: str) -> dict:
         )
 
 # HTTP Bearer dependency for extracting Authorization header
-security = HTTPBearer()
-
-async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> User:
+async def get_current_user(request: Request) -> User:
     """
     Get current user from JWT token.
     
@@ -95,12 +92,19 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
     Raises:
         HTTPException: If authentication fails
     """
-    if not is_database_connected():
-        raise handle_database_error(Exception("Database not connected"), "authentication")
-    
     try:
+        if not is_database_connected():
+            raise handle_database_error(Exception("Database not connected"), "authentication")
+
+        # Extract Authorization header manually to avoid proxy/security middleware issues
+        auth_header = request.headers.get('authorization') or request.headers.get('Authorization')
+        if not auth_header or not auth_header.lower().startswith('bearer '):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authenticated")
+
+        token = auth_header.split(' ', 1)[1].strip()
+
         # Verify token
-        payload = verify_jwt_token(credentials.credentials)
+        payload = verify_jwt_token(token)
         user_id = payload.get("sub")
         
         if not user_id:

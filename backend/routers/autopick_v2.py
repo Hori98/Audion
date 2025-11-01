@@ -11,8 +11,7 @@ import uuid
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from backend.models.article import AutoPickRequest, Article
 from backend.models.user import User, UserInteraction
@@ -44,12 +43,15 @@ from bson import ObjectId
 
 # Authentication will use simplified token-as-user-id approach
 
-security = HTTPBearer()
-
-# JWT-based auth for AutoPick V2
-async def get_current_user_v2(credentials: HTTPAuthorizationCredentials = Depends(security)) -> User:
+# JWT-based auth for AutoPick V2 (manual header parse to avoid proxy issues)
+async def get_current_user_v2(request: Request) -> User:
     try:
-        payload = verify_jwt_token(credentials.credentials)
+        auth_header = request.headers.get('authorization') or request.headers.get('Authorization')
+        if not auth_header or not auth_header.lower().startswith('bearer '):
+            raise HTTPException(status_code=401, detail="Not authenticated")
+        token = auth_header.split(' ', 1)[1].strip()
+
+        payload = verify_jwt_token(token)
         user_id = payload.get("sub")
         if not user_id:
             raise HTTPException(status_code=401, detail="Invalid token payload")

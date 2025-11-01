@@ -278,18 +278,7 @@ if JWT_SECRET_KEY:
 logging.info(f"🔐 JWT_ALGORITHM: {JWT_ALGORITHM}")
 logging.info("=" * 80)
 
-# Include routers
-try:
-    # Include all modular routers (auth/rss/articles/audio/user)
-    from backend.routers import routers as all_routers
-    for r in all_routers:
-        app.include_router(r)
-    # Include AutoPick V2 router
-    from backend.routers import autopick_v2 as r_autopick_v2
-    app.include_router(r_autopick_v2.router)
-    logging.info("Routers included successfully")
-except Exception as e:
-    logging.warning(f"Failed to include routers: {e}")
+# Defer router include and pruning until after legacy routes are defined
 
 # Health check endpoint (outside /api prefix for ConnectionService)
 @app.get("/health")
@@ -335,6 +324,33 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
+
+# After all legacy routes are declared below, include modular routers and prune legacy duplicates
+try:
+    from fastapi.routing import APIRoute
+    # Include all modular routers (auth/rss/articles/audio/user)
+    from backend.routers import routers as all_routers
+    for r in all_routers:
+        app.include_router(r)
+    # Include AutoPick V2 router
+    from backend.routers import autopick_v2 as r_autopick_v2
+    app.include_router(r_autopick_v2.router)
+
+    # Prune legacy routes defined in this module under /api/* to avoid conflicts
+    pruned = []
+    removed = 0
+    for route in app.router.routes:
+        if isinstance(route, APIRoute):
+            if route.path.startswith('/api') and route.endpoint.__module__ == __name__ and route.path != '/api/health':
+                removed += 1
+                continue
+        pruned.append(route)
+    app.router.routes = pruned
+    if removed:
+        logging.info(f"Pruned {removed} legacy /api routes in server.py; modular routers are active")
+    logging.info("Routers included successfully (modular)")
+except Exception as e:
+    logging.warning(f"Router include/prune phase failed: {e}")
 
 @app.get("/api/health", tags=["Health Check"])
 def health_check():
