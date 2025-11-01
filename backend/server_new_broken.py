@@ -11,8 +11,8 @@ from fastapi.responses import FileResponse
 from starlette.middleware.cors import CORSMiddleware
 
 # Import configuration and database
-from config.database import connect_to_database, create_database_indexes
-from config.settings import (
+from backend.config.database import connect_to_database, create_database_indexes
+from backend.config.settings import (
     LOG_LEVEL, LOG_FORMAT, ALLOWED_ORIGINS, 
     AUDIO_STORAGE_PATH, PROFILE_IMAGES_PATH
 )
@@ -21,7 +21,7 @@ from config.settings import (
 from routers import routers
 
 # Import services for background tasks
-from services.audio_service import cleanup_expired_deleted_audio
+from backend.services.audio_service import cleanup_expired_deleted_audio
 
 # Configure logging
 logging.basicConfig(level=LOG_LEVEL, format=LOG_FORMAT)
@@ -133,9 +133,9 @@ async def serve_profile_image(filename: str):
 async def get_system_info():
     """Get system information and statistics."""
     try:
-        from services.storage_service import get_storage_stats
-        from services.rss_service import get_cache_stats
-        from config.database import is_database_connected
+        from backend.services.storage_service import get_storage_stats
+        from backend.services.rss_service import get_cache_stats
+        from backend.config.database import is_database_connected
         
         return {
             "status": "ok",

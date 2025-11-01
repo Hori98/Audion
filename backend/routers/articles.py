@@ -6,14 +6,14 @@ import logging
 from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, HTTPException, status, Depends, Query
 
-from models.user import User
-from models.article import Article, AutoPickRequest
-from models.common import StandardResponse
-from services.auth_service import get_current_user
-from services.rss_service import get_articles_for_user
-from services.user_service import auto_pick_articles, record_audio_interaction
-from services.article_service import filter_articles_by_genre
-from utils.errors import handle_database_error, handle_generic_error
+from backend.models.user import User
+from backend.models.article import Article, AutoPickRequest
+from backend.models.common import StandardResponse
+from backend.services.auth_service import get_current_user
+from backend.services.rss_service import get_articles_for_user
+from backend.services.user_service import auto_pick_articles, record_audio_interaction
+from backend.services.article_service import filter_articles_by_genre
+from backend.utils.errors import handle_database_error, handle_generic_error
 
 router = APIRouter(prefix="/api", tags=["Articles"])
 

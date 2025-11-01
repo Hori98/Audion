@@ -6,12 +6,12 @@ import logging
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 
-from config.database import get_database, is_database_connected
-from models.user import UserProfile, UserInteraction
-from models.article import Article, GENRE_KEYWORDS
-from services.article_service import score_article_for_user_preferences
-from utils.errors import handle_database_error, handle_generic_error
-from utils.database import find_one_by_id, insert_document, update_document
+from backend.config.database import get_database, is_database_connected
+from backend.models.user import UserProfile, UserInteraction
+from backend.models.article import Article, GENRE_KEYWORDS
+from backend.services.article_service import score_article_for_user_preferences
+from backend.utils.errors import handle_database_error, handle_generic_error
+from backend.utils.database import find_one_by_id, insert_document, update_document
 
 async def get_or_create_user_profile(user_id: str) -> UserProfile:
     """

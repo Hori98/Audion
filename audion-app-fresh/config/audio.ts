@@ -14,9 +14,11 @@ const envOpt = (key: string, values: string[], fallback: string) => {
 
 // Session/Focus
 const PLAY_IN_SILENT_IOS = envBool('EXPO_PUBLIC_AUDIO_PLAY_IN_SILENT_MODE_IOS', true);
-const STAYS_ACTIVE_BG = envBool('EXPO_PUBLIC_AUDIO_STAYS_ACTIVE_IN_BACKGROUND', true);
+// Keep session persistent only when needed to reduce system conflicts
+const STAYS_ACTIVE_BG = envBool('EXPO_PUBLIC_AUDIO_STAYS_ACTIVE_IN_BACKGROUND', false);
 // none | duck | mix
-const DUCK_OTHERS = envOpt('EXPO_PUBLIC_AUDIO_DUCK_OTHERS', ['none', 'duck', 'mix'], 'duck') as
+// Default to mixing instead of ducking to avoid affecting other apps
+const DUCK_OTHERS = envOpt('EXPO_PUBLIC_AUDIO_DUCK_OTHERS', ['none', 'duck', 'mix'], 'mix') as
   | 'none'
   | 'duck'
   | 'mix';
@@ -72,4 +74,3 @@ export const AUDIO_FLAGS = {
 } as const;
 
 export type DuckMode = typeof AUDIO_FLAGS.DUCK_OTHERS;
-

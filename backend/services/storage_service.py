@@ -10,11 +10,11 @@ from typing import Optional
 import base64
 import uuid
 
-from config.settings import (
+from backend.config.settings import (
     AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION,
     S3_BUCKET_NAME, PROFILE_IMAGES_PATH, FILE_SERVER_URL
 )
-from utils.errors import handle_external_service_error
+from backend.utils.errors import handle_external_service_error
 
 # CRITICAL: Validate AWS credentials at module load time
 def _validate_aws_credentials():

@@ -11,7 +11,7 @@ import uuid
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Header
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from backend.models.article import AutoPickRequest, Article
@@ -38,39 +38,43 @@ from backend.services.ai_service import (
 
 from backend.config.settings import RSS_CACHE_EXPIRY_SECONDS
 from backend.runtime import shared_state
+from backend.config.database import get_database
+from backend.services.auth_service import verify_jwt_token
+from bson import ObjectId
 
 # Authentication will use simplified token-as-user-id approach
 
-# Independent auth dependency for autopick V2
-async def get_current_user_v2(authorization: str = Header(alias="Authorization")) -> User:
-    """
-    Get current user from Bearer token for autopick V2 endpoints.
-    Uses simplified token-as-user-id authentication to match main server behavior.
-    """
+security = HTTPBearer()
+
+# JWT-based auth for AutoPick V2
+async def get_current_user_v2(credentials: HTTPAuthorizationCredentials = Depends(security)) -> User:
     try:
-        # Extract token from Authorization header
-        if not authorization or not authorization.startswith("Bearer "):
-            raise HTTPException(status_code=401, detail="Invalid authorization header")
-        
-        token = authorization.replace("Bearer ", "")
-        logging.info(f"🔐 [AutoPick V2] Token: {token[:20]}...")
-        
-        # Get user from database using token as user ID (matches main server behavior)
+        payload = verify_jwt_token(credentials.credentials)
+        user_id = payload.get("sub")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Invalid token payload")
+
         if not shared_state.db_connected or shared_state.db is None:
-            raise HTTPException(status_code=503, detail="Database not available")
-        
-        user_doc = await shared_state.db.users.find_one({"id": token})
+            # Fallback to direct DB get if shared_state is not wired
+            db = get_database()
+        else:
+            db = shared_state.db
+
+        try:
+            oid = ObjectId(user_id)
+        except Exception:
+            raise HTTPException(status_code=401, detail="Invalid user id in token")
+
+        user_doc = await db.users.find_one({"_id": oid})
         if not user_doc:
-            logging.error(f"❌ [AutoPick V2] User not found for token: {token}")
             raise HTTPException(status_code=404, detail="User not found")
-        
-        logging.info(f"✅ [AutoPick V2] Authenticated user: {user_doc.get('email', 'No email')}")
+
+        user_doc["id"] = str(user_doc["_id"]) ; user_doc.pop("_id", None)
         return User(**user_doc)
-        
     except HTTPException:
         raise
     except Exception as e:
-        logging.error(f"Authentication error in autopick V2: {e}")
+        logging.error(f"[AutoPick V2] Auth error: {e}")
         raise HTTPException(status_code=401, detail="Authentication failed")
 
 

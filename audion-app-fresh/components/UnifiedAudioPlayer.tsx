@@ -60,24 +60,8 @@ export default function UnifiedAudioPlayer({
   const soundRef = useRef<Audio.Sound | null>(null);
   const generationPollingRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Initialize audio settings
+  // Cleanup on unmount
   useEffect(() => {
-    const setupAudio = async () => {
-      try {
-        await Audio.setAudioModeAsync({
-          allowsRecordingIOS: false,
-          staysActiveInBackground: true,
-          playsInSilentModeIOS: true,
-          shouldDuckAndroid: true,
-          playThroughEarpieceAndroid: false,
-        });
-      } catch (error) {
-        console.error('Failed to setup audio:', error);
-      }
-    };
-    
-    setupAudio();
-    
     return () => {
       if (soundRef.current) {
         soundRef.current.unloadAsync();

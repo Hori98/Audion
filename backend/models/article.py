@@ -18,11 +18,37 @@ class Article(BaseModel):
     content: Optional[str] = None
     genre: Optional[str] = None
 
+class ArticleCandidate(BaseModel):
+    """Lightweight candidate article from the frontend (home tab)."""
+    id: str
+    title: str
+    summary: Optional[str] = None
+    link: Optional[str] = None
+    source_name: Optional[str] = None
+    published_at: Optional[str] = None
+
+
 class AutoPickRequest(BaseModel):
-    """Request model for auto-picking articles based on user preferences."""
+    """Request model for auto-picking articles based on user preferences.
+
+    Extended to accept additional optional fields used by the frontend so the
+    backend won't reject richer payloads. Unknown fields can be safely ignored
+    by business logic until fully supported.
+    """
+    # Core selection params
     max_articles: Optional[int] = 5
     preferred_genres: Optional[List[str]] = None
-    active_source_ids: Optional[List[str]] = None  # Explicitly specify which sources to use
+    active_source_ids: Optional[List[str]] = None  # Explicitly specify sources
+
+    # Extended params (optional)
+    voice_language: Optional[str] = None
+    voice_name: Optional[str] = None
+    prompt_style: Optional[str] = None
+    custom_prompt: Optional[str] = None
+    tab_scope: Optional[str] = None  # 'home' | 'feed'
+    source_scope: Optional[str] = None  # 'fixed' | 'user'
+    selected_source_ids: Optional[List[str]] = None
+    candidates: Optional[List[ArticleCandidate]] = None
 
 class MisreadingFeedback(BaseModel):
     """Model for reporting audio misreading issues."""

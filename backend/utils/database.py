@@ -6,7 +6,7 @@ Provides reusable database query patterns with consistent error handling.
 import logging
 from typing import Optional, Dict, Any, List
 from bson import ObjectId
-from config.database import get_database, is_database_connected
+from backend.config.database import get_database, is_database_connected
 from .errors import handle_database_error, handle_not_found_error
 
 async def find_one_by_id(collection_name: str, document_id: str, user_id: str = None) -> Optional[Dict[str, Any]]:

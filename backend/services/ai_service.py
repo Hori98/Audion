@@ -3,6 +3,7 @@ AI service for OpenAI integration including text generation and text-to-speech.
 """
 
 import logging
+import asyncio
 import uuid
 import io
 from typing import List, Dict, Any
@@ -11,12 +12,12 @@ from pathlib import Path
 import openai
 from mutagen.mp3 import MP3
 
-from config.settings import (
+from backend.config.settings import (
     OPENAI_API_KEY, AUDIO_STORAGE_PATH, OPENAI_CHAT_MODEL, OPENAI_TTS_MODEL,
     OPENAI_TTS_VOICE, MOCK_AUDIO_URL_BASE
 )
-from services.storage_service import upload_to_s3
-from utils.errors import handle_external_service_error
+from backend.services.storage_service import upload_to_s3
+from backend.utils.errors import handle_external_service_error
 
 # CRITICAL: Validate OpenAI API key at module load time
 def _validate_openai_api_key():
@@ -53,13 +54,26 @@ async def generate_audio_title_with_openai(articles_content: List[str]) -> str:
         combined_content = "\n\n--- Article ---\n\n".join(articles_content)
         user_message = f"Create an engaging title for a news audio that covers these articles:\n\n{combined_content}"
         
-        chat_completion = await client.chat.completions.create(
-            messages=[
-                {"role": "system", "content": system_message},
-                {"role": "user", "content": user_message}
-            ],
-            model=OPENAI_CHAT_MODEL,
-        )
+        # Lightweight retry with exponential backoff (max 2 retries)
+        delay = 0.8
+        last_error = None
+        for attempt in range(3):
+            try:
+                chat_completion = await client.chat.completions.create(
+                    messages=[
+                        {"role": "system", "content": system_message},
+                        {"role": "user", "content": user_message}
+                    ],
+                    model=OPENAI_CHAT_MODEL,
+                )
+                break
+            except Exception as e:
+                last_error = e
+                if attempt < 2:
+                    await asyncio.sleep(delay)
+                    delay *= 2
+                else:
+                    raise
         
         generated_title = chat_completion.choices[0].message.content.strip()
         # Remove quotes if present
@@ -72,7 +86,7 @@ async def generate_audio_title_with_openai(articles_content: List[str]) -> str:
         logging.error(f"OpenAI title generation error: {e}")
         return f"AI News Summary - {datetime.now().strftime('%Y-%m-%d')}"
 
-async def summarize_articles_with_openai(articles_content: List[str]) -> str:
+async def summarize_articles_with_openai(articles_content: List[str], prompt_style: str = "recommended", custom_prompt: str = None) -> str:
     """
     Summarize articles into a cohesive script using OpenAI.
     
@@ -94,11 +108,20 @@ async def summarize_articles_with_openai(articles_content: List[str]) -> str:
         
         client = openai.AsyncOpenAI(api_key=OPENAI_API_KEY)
         
+        # Basic styles mapping (can be extended)
+        style_map = {
+            'recommended': "clean, professional, single narrator, 200-300 words",
+            '学習': "educational, structured, clear explanations, ~300 words",
+            'ニュース': "concise news tone, factual, ~250 words",
+            'エンタメ': "friendly, engaging, light tone, ~220 words",
+            'レポート': "report-like, objective, ~300-350 words",
+            '意見': "opinionated commentary with caveats, ~250-300 words",
+        }
+        style_hint = style_map.get(prompt_style or 'recommended', style_map['recommended'])
         system_message = (
-            "You are an expert news summarizer. Create a clean, professional news script for a single narrator "
-            "to read aloud. The script should be written in a clear, natural speaking style without any host names, "
-            "speaker labels, or dialogue markers. Focus on delivering the key information in an engaging, "
-            "journalistic tone suitable for audio narration. Keep it around 200-300 words."
+            "You are an expert news summarizer. Create a clean, natural single-narrator news script suitable for voice narration. "
+            f"Style hint: {style_hint}. "
+            "Do not include any speaker labels, host names, or dialogue markers."
         )
         
         combined_content = "\n\n--- Article ---\n\n".join(articles_content)
@@ -107,13 +130,26 @@ async def summarize_articles_with_openai(articles_content: List[str]) -> str:
             "Write only the script content without any speaker labels, host names, or dialogue markers."
         )
         
-        chat_completion = await client.chat.completions.create(
-            messages=[
-                {"role": "system", "content": system_message},
-                {"role": "user", "content": user_message}
-            ],
-            model=OPENAI_CHAT_MODEL,
-        )
+        # Lightweight retry with exponential backoff (max 2 retries)
+        delay = 0.8
+        last_error = None
+        for attempt in range(3):
+            try:
+                chat_completion = await client.chat.completions.create(
+                    messages=[
+                        {"role": "system", "content": system_message},
+                        {"role": "user", "content": user_message if not custom_prompt else custom_prompt + "\n\n" + user_message}
+                    ],
+                    model=OPENAI_CHAT_MODEL,
+                )
+                break
+            except Exception as e:
+                last_error = e
+                if attempt < 2:
+                    await asyncio.sleep(delay)
+                    delay *= 2
+                else:
+                    raise
         
         script = chat_completion.choices[0].message.content
         logging.info(f"Generated script length: {len(script)} characters")
@@ -145,11 +181,24 @@ async def convert_text_to_speech(text: str) -> Dict[str, Any]:
         client = openai.AsyncOpenAI(api_key=OPENAI_API_KEY)
         
         # Generate speech
-        response = await client.audio.speech.create(
-            model=OPENAI_TTS_MODEL,
-            voice=OPENAI_TTS_VOICE,
-            input=text,
-        )
+        # Lightweight retry with exponential backoff (max 2 retries)
+        delay = 0.8
+        last_error = None
+        for attempt in range(3):
+            try:
+                response = await client.audio.speech.create(
+                    model=OPENAI_TTS_MODEL,
+                    voice=OPENAI_TTS_VOICE,
+                    input=text,
+                )
+                break
+            except Exception as e:
+                last_error = e
+                if attempt < 2:
+                    await asyncio.sleep(delay)
+                    delay *= 2
+                else:
+                    raise
         
         logging.info("OpenAI TTS request completed successfully")
         

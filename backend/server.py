@@ -39,15 +39,15 @@ ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
 # Import configuration after loading .env
-from config.settings import (
+from backend.config.settings import (
     RSS_CACHE_EXPIRY_SECONDS, RECOMMENDED_WORD_COUNT, INSIGHT_WORD_COUNT,
     ALLOWED_ORIGINS
 )
-from runtime import shared_state
-from services.genre_mapping_service import normalize_preferred_genres
-from services.subscription_service import ensure_can_create_audio, get_user_limits
-from services.autopick_pool import resolve_article_pool_for_request as svc_resolve_pool
-from services.task_store import (
+from backend.runtime import shared_state
+from backend.services.genre_mapping_service import normalize_preferred_genres
+from backend.services.subscription_service import ensure_can_create_audio, get_user_limits
+from backend.services.autopick_pool import resolve_article_pool_for_request as svc_resolve_pool
+from backend.services.task_store import (
     now_iso as svc_now_iso,
     task_update as svc_task_update,
     task_insert_db as svc_task_insert,
@@ -282,8 +282,14 @@ logging.info("=" * 80)
 
 # Include routers
 try:
-    from routers import autopick_v2 as r_autopick_v2
+    # Include all modular routers (auth/rss/articles/audio/user)
+    from backend.routers import routers as all_routers
+    for r in all_routers:
+        app.include_router(r)
+    # Include AutoPick V2 router
+    from backend.routers import autopick_v2 as r_autopick_v2
     app.include_router(r_autopick_v2.router)
+    logging.info("Routers included successfully")
 except Exception as e:
     logging.warning(f"Failed to include routers: {e}")
 

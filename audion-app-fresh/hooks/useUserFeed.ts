@@ -167,6 +167,25 @@ export function useUserFeed(): UseUserFeedState & UseUserFeedActions {
       setSourcesLoading(true);
       const sources = await RSSSourceService.getUserSources({});
       setUserSources(sources);
+
+      // Auto-add recommended sources when empty (feature-flagged)
+      try {
+        const { FEATURE_FLAGS } = require('../services/config');
+        if (!FEATURE_FLAGS.disableRSSAutoAdd && (!sources || sources.length === 0)) {
+          // Get 3 recommended sources and add them
+          const recs = await RSSSourceService.getRecommendedSources(3);
+          for (const r of recs) {
+            if (r?.name && r?.url) {
+              await RSSSourceService.addUserSource({ custom_name: r.name, custom_url: r.url });
+            }
+          }
+          // Refresh state after auto-add
+          const refreshed = await RSSSourceService.getUserSources({});
+          setUserSources(refreshed);
+        }
+      } catch (autoErr) {
+        console.warn('[useUserFeed] Auto-add recommended sources failed:', autoErr);
+      }
     } catch (err) {
       console.error('❌ [useUserFeed] Error fetching user sources:', err);
     } finally {

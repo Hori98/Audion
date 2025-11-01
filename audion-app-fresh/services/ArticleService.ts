@@ -110,9 +110,10 @@ class ArticleService {
     return result;
   }
 
-  async getCuratedArticles(genre?: string, maxArticles?: number, section?: string): Promise<Article[]> {
+  async getCuratedArticles(genre?: string, maxArticles?: number, section?: string, language?: string): Promise<Article[]> {
     // Getting curated articles from dynamic backend sources
     // Supports section-specific source filtering (hero, breaking, trending, science, etc.)
+    // Now with language filtering support
 
     const requestParams: Record<string, any> = {};
     if (section) {
@@ -123,6 +124,9 @@ class ArticleService {
     }
     if (maxArticles) {
       requestParams.max_articles = maxArticles;
+    }
+    if (language) {
+      requestParams.language = language;
     }
 
     const response = await apiClient.get<Article[]>('/api/articles/curated', { params: requestParams });

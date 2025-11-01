@@ -9,6 +9,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - ただし、ユーザーへの最終的な説明・結果・アクション項目は必ず日本語にしてください
 - エラーメッセージや技術用語は英語のままで構いません
 
+## Implementation Policy
+
+**分析・計画・提案のみのクエリに対しては実装を行わない**
+- 分析、計画、提案、検討などの要求に対しては実装コードを書かない
+- コードの分析や説明は行うが、新しいコードの実装は控える
+- 明示的な実装指示がある場合のみコードを書く
+
 ## Project Overview
 
 Audion is a full-stack podcast generation application that uses AI to convert RSS articles into conversational podcast scripts. The app consists of a React Native frontend built with Expo and a FastAPI Python backend.

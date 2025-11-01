@@ -3,6 +3,7 @@ import ArticleService, { Article } from '../services/ArticleService';
 import { Genre } from '../types/rss';
 import { HOME_FIXED_RSS_SOURCES } from '../data/rss-sources';
 import { getAvailableGenresForHome, applyGenreFilterForHome, generateGenreTabs } from '../utils/genreUtils';
+import { useSettings } from '../context/SettingsContext';
 
 interface UseCuratedFeedState {
   articles: Article[];
@@ -29,6 +30,7 @@ interface UseCuratedFeedActions {
  * - FEEDタブとは完全分離
  */
 export function useCuratedFeed(): UseCuratedFeedState & UseCuratedFeedActions {
+  const { settings } = useSettings();
   const [articles, setArticles] = useState<Article[]>([]);
   const [filteredArticles, setFilteredArticles] = useState<Article[]>([]);
   const [loading, setLoading] = useState(false);
@@ -50,9 +52,15 @@ export function useCuratedFeed(): UseCuratedFeedState & UseCuratedFeedActions {
       setLoading(true);
       setError(null);
 
+      // ユーザーの言語設定を取得して言語フィルタリングを適用
+      const userLanguage = settings.general.language;
+      console.log('🌍 [useCuratedFeed] Using language setting:', userLanguage);
+
       const curatedArticles = await ArticleService.getCuratedArticles(
         undefined, // ジャンルフィルタなし
-        50
+        50,
+        undefined, // セクションフィルタなし
+        userLanguage // 言語設定を渡す
       );
       setArticles(curatedArticles);
       setAvailableGenres(getAvailableGenresForHome(curatedArticles));
@@ -65,7 +73,7 @@ export function useCuratedFeed(): UseCuratedFeedState & UseCuratedFeedActions {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [settings.general.language]);
 
   // プルツーリフレッシュ - フィルタリングなしで全記事を取得
   const refreshArticles = useCallback(async () => {
@@ -73,9 +81,15 @@ export function useCuratedFeed(): UseCuratedFeedState & UseCuratedFeedActions {
       setRefreshing(true);
       setError(null);
 
+      // ユーザーの言語設定を取得して言語フィルタリングを適用
+      const userLanguage = settings.general.language;
+      console.log('🔄 [useCuratedFeed] Refreshing with language setting:', userLanguage);
+
       const curatedArticles = await ArticleService.getCuratedArticles(
         undefined, // ジャンルフィルタなし
-        50
+        50,
+        undefined, // セクションフィルタなし
+        userLanguage // 言語設定を渡す
       );
       setArticles(curatedArticles);
       setAvailableGenres(getAvailableGenresForHome(curatedArticles));
@@ -88,7 +102,7 @@ export function useCuratedFeed(): UseCuratedFeedState & UseCuratedFeedActions {
     } finally {
       setRefreshing(false);
     }
-  }, []);
+  }, [settings.general.language]);
 
   // ジャンル変更時のハンドラー - フィルタリングはコンポーネント側で実行
   const handleSetSelectedGenre = useCallback((genre: Genre) => {

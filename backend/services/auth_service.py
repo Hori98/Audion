@@ -9,11 +9,12 @@ from typing import Optional
 from fastapi import HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials
 
-from config.settings import JWT_SECRET_KEY, JWT_ALGORITHM
-from config.database import get_database, is_database_connected
-from models.user import User
-from utils.errors import handle_authentication_error, handle_database_error
-from utils.helpers import hash_password, verify_password
+from backend.config.settings import JWT_SECRET_KEY, JWT_ALGORITHM
+from bson import ObjectId
+from backend.config.database import get_database, is_database_connected
+from backend.models.user import User
+from backend.utils.errors import handle_authentication_error, handle_database_error
+from backend.utils.helpers import hash_password, verify_password
 
 def create_jwt_token(user_id: str, email: str) -> str:
     """
@@ -105,9 +106,13 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials) -> User:
                 detail="Invalid token payload"
             )
         
-        # Get user from database
+        # Get user from database (ObjectId lookup)
         db = get_database()
-        user_data = await db.users.find_one({"_id": user_id})
+        try:
+            oid = ObjectId(user_id)
+        except Exception:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid user id in token")
+        user_data = await db.users.find_one({"_id": oid})
         
         if not user_data:
             raise HTTPException(
@@ -236,7 +241,11 @@ async def delete_user(user_id: str) -> bool:
         db = get_database()
         
         # Delete user and all associated data
-        await db.users.delete_one({"_id": user_id})
+        try:
+            oid = ObjectId(user_id)
+        except Exception:
+            raise handle_database_error(Exception("Invalid user id"), "user deletion")
+        await db.users.delete_one({"_id": oid})
         await db.rss_sources.delete_many({"user_id": user_id})
         await db.audio_creations.delete_many({"user_id": user_id})
         await db.user_profiles.delete_many({"user_id": user_id})

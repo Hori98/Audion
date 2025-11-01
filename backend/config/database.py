@@ -68,6 +68,10 @@ async def create_database_indexes():
         # Deleted audio indexes
         await db.deleted_audio.create_index([("user_id", 1), ("deleted_at", -1)])
         await db.deleted_audio.create_index("permanent_delete_at")
+
+        # AutoPick task indexes (for V2 task-based generation)
+        await db.autopick_tasks.create_index("task_id", unique=True)
+        await db.autopick_tasks.create_index([("user_id", 1), ("status", 1), ("updated_at", -1)])
         
         # Playlists and albums indexes
         await db.playlists.create_index([("user_id", 1), ("created_at", -1)])

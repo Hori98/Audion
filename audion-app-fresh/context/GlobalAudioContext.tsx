@@ -787,34 +787,7 @@ export const GlobalAudioProvider: React.FC<{ children: ReactNode }> = ({ childre
     };
   }, [sound]);
 
-  // Configure audio mode once (background, silent mode, mixing) — ensure flags applied
-  useEffect(() => {
-    (async () => {
-      try {
-        const iosInterruption =
-          AUDIO_FLAGS.DUCK_OTHERS === 'duck'
-            ? InterruptionModeIOS.DuckOthers
-            : AUDIO_FLAGS.DUCK_OTHERS === 'mix'
-            ? InterruptionModeIOS.MixWithOthers
-            : InterruptionModeIOS.DoNotMix;
-        const androidInterruption =
-          AUDIO_FLAGS.DUCK_OTHERS === 'duck'
-            ? InterruptionModeAndroid.DuckOthers
-            : InterruptionModeAndroid.DoNotMix;
-        await Audio.setAudioModeAsync({
-          allowsRecordingIOS: false,
-          playsInSilentModeIOS: AUDIO_FLAGS.PLAY_IN_SILENT_IOS,
-          staysActiveInBackground: AUDIO_FLAGS.STAYS_ACTIVE_BG,
-          interruptionModeIOS: iosInterruption,
-          shouldDuckAndroid: AUDIO_FLAGS.DUCK_OTHERS === 'duck',
-          interruptionModeAndroid: androidInterruption,
-          playThroughEarpieceAndroid: AUDIO_FLAGS.PLAY_THROUGH_EARPIECE_ANDROID,
-        });
-      } catch (e) {
-        console.warn('Audio mode setup failed:', e);
-      }
-    })();
-  }, []);
+  // (Removed duplicate audio mode setup to avoid session thrashing)
 
   return (
     <GlobalAudioContext.Provider

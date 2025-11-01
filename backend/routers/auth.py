@@ -6,11 +6,11 @@ import logging
 from fastapi import APIRouter, HTTPException, status, Depends
 from fastapi.security import HTTPBearer
 
-from models.user import User, UserCreate, UserLogin
-from models.common import TokenResponse, StandardResponse
-from services.auth_service import authenticate_user, create_user, create_jwt_token, get_current_user
-from utils.errors import handle_authentication_error, handle_database_error
-from utils.helpers import validate_email
+from backend.models.user import User, UserCreate, UserLogin
+from backend.models.common import TokenResponse, StandardResponse
+from backend.services.auth_service import authenticate_user, create_user, create_jwt_token, get_current_user
+from backend.utils.errors import handle_authentication_error, handle_database_error
+from backend.utils.helpers import validate_email
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 security = HTTPBearer()

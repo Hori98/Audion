@@ -6,15 +6,15 @@ import logging
 from typing import List, Optional
 from fastapi import APIRouter, HTTPException, status, Depends, Query
 
-from models.user import User
-from models.rss import RSSSource, RSSSourceCreate, RSSSourceUpdate
-from models.common import StandardResponse
-from services.auth_service import get_current_user
-from services.rss_service import (
+from backend.models.user import User
+from backend.models.rss import RSSSource, RSSSourceCreate, RSSSourceUpdate
+from backend.models.common import StandardResponse
+from backend.services.auth_service import get_current_user
+from backend.services.rss_service import (
     get_user_rss_sources, create_rss_source, update_rss_source, 
     delete_rss_source, get_cache_stats, clear_rss_cache
 )
-from utils.errors import handle_database_error, handle_generic_error
+from backend.utils.errors import handle_database_error, handle_generic_error
 
 router = APIRouter(prefix="/api", tags=["RSS Sources"])
 

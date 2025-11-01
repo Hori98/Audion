@@ -9,8 +9,8 @@ import os
 from datetime import datetime, timedelta
 from typing import Dict
 
-from config.database import get_database, is_database_connected
-from runtime import shared_state
+from backend.config.database import get_database, is_database_connected
+from backend.runtime import shared_state
 
 
 def _start_of_utc_day(dt: datetime) -> datetime:
@@ -56,4 +56,3 @@ async def ensure_can_create_audio(user_id: str):
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Daily audio creation limit reached"
         )
-

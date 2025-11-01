@@ -6,15 +6,15 @@ import logging
 from typing import List, Dict, Any
 from fastapi import APIRouter, HTTPException, status, Depends
 
-from models.user import User, UserProfile, UserInteraction
-from models.rss import OnboardRequest, PresetCategory
-from models.common import StandardResponse
-from services.auth_service import get_current_user, delete_user
-from services.user_service import (
+from backend.models.user import User, UserProfile, UserInteraction
+from backend.models.rss import OnboardRequest, PresetCategory
+from backend.models.common import StandardResponse
+from backend.services.auth_service import get_current_user, delete_user
+from backend.services.user_service import (
     get_or_create_user_profile, get_user_insights, 
     initialize_user_with_onboard_preferences
 )
-from utils.errors import handle_database_error, handle_generic_error
+from backend.utils.errors import handle_database_error, handle_generic_error
 
 router = APIRouter(prefix="/api", tags=["User Management"])
 

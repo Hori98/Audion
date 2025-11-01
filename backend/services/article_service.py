@@ -7,8 +7,8 @@ import re
 from typing import Dict, List, Optional
 from collections import Counter
 
-from models.article import Article, GENRE_KEYWORDS
-from utils.errors import handle_generic_error
+from backend.models.article import Article, GENRE_KEYWORDS
+from backend.utils.errors import handle_generic_error
 
 def calculate_genre_scores(title: str, summary: str) -> Dict[str, float]:
     """

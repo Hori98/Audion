@@ -24,9 +24,9 @@ export default function AudioTest() {
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: false,
         playsInSilentModeIOS: true,
-        shouldDuckAndroid: true,
+        shouldDuckAndroid: false,
         playThroughEarpieceAndroid: false,
-        staysActiveInBackground: true,
+        staysActiveInBackground: false,
       });
       
       console.log('🔍 [AUDIO-TEST] Audio mode configured');

@@ -10,7 +10,7 @@ import { Platform } from 'react-native';
 const detectBackendUrl = (): string => {
   // Development mode
   if (__DEV__) {
-    const devPort = process.env.EXPO_PUBLIC_DEV_API_PORT || '8005';
+    const devPort = process.env.EXPO_PUBLIC_DEV_API_PORT || '8003';
 
     try {
       // Try to detect if we're in Expo Tunnel mode
@@ -106,7 +106,7 @@ export const API_ENDPOINTS = {
 
   // Task-based AutoPick (RN polling)
   AUTOPICK_TASK: {
-    START: '/api/auto-pick/create-audio',
+    START: '/api/v2/audio/autopick',
     STATUS: '/api/auto-pick/task-status/{task_id}',
   },
 

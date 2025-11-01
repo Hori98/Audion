@@ -7,13 +7,13 @@ import uuid
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
 
-from config.database import get_database, is_database_connected
-from models.audio import AudioCreation, Playlist, Album, DownloadedAudio
-from models.article import Article
-from services.ai_service import generate_audio_title_with_openai, summarize_articles_with_openai, convert_text_to_speech
-from services.storage_service import delete_from_s3
-from utils.errors import handle_database_error, handle_generic_error
-from utils.database import find_many_by_user, find_one_by_id, insert_document, update_document, delete_document
+from backend.config.database import get_database, is_database_connected
+from backend.models.audio import AudioCreation, Playlist, Album, DownloadedAudio
+from backend.models.article import Article
+from backend.services.ai_service import generate_audio_title_with_openai, summarize_articles_with_openai, convert_text_to_speech
+from backend.services.storage_service import delete_from_s3
+from backend.utils.errors import handle_database_error, handle_generic_error
+from backend.utils.database import find_many_by_user, find_one_by_id, insert_document, update_document, delete_document
 
 async def create_audio_from_articles(user_id: str, 
                                    article_ids: List[str],

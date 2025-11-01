@@ -6,17 +6,17 @@ import logging
 from typing import List, Dict, Any, Optional
 from fastapi import APIRouter, HTTPException, status, Depends, Query
 
-from models.user import User
-from models.audio import AudioCreation, AudioCreationRequest, RenameRequest
-from models.common import StandardResponse
-from services.auth_service import get_current_user
-from services.audio_service import (
+from backend.models.user import User
+from backend.models.audio import AudioCreation, AudioCreationRequest, RenameRequest
+from backend.models.common import StandardResponse
+from backend.services.auth_service import get_current_user
+from backend.services.audio_service import (
     create_audio_from_articles, get_user_audio_library, get_audio_by_id,
     rename_audio, soft_delete_audio, restore_audio, permanently_delete_audio,
     get_deleted_audio, clear_all_deleted_audio, get_audio_statistics
 )
-from services.user_service import record_audio_interaction
-from utils.errors import handle_database_error, handle_generic_error, handle_not_found_error
+from backend.services.user_service import record_audio_interaction
+from backend.utils.errors import handle_database_error, handle_generic_error, handle_not_found_error
 
 router = APIRouter(prefix="/api", tags=["Audio"])
 

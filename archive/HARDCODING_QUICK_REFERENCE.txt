@@ -1,0 +1,102 @@
+HARDCODING VIOLATIONS - QUICK REFERENCE
+========================================
+
+CRITICAL (3 issues) - Security Risk
+-----------------------------------
+1. backend/server.py:150 - Hardcoded JWT secret default: 'dev-secret-key-do-not-use-in-production'
+2. backend/services/ai_service.py:29,73,129,232 - Checking against "your-openai-key" string
+3. backend/services/storage_service.py:39,255 - Checking against "your-aws-access-key" string
+
+HIGH SEVERITY (7 issues) - Configuration & URLs
+------------------------------------------------
+4. backend/server.py:202-211 - Hardcoded CORS ports (3000,5173,19000,19001,8003,8004)
+5. backend/services/storage_service.py:160 - Hardcoded "http://localhost:8001" for profile images
+6. backend/services/ai_service.py:220 - Hardcoded "http://localhost:8001/audio_files/SampleAudio_0.4mb.mp3"
+7. backend/services/ai_service.py:204 - Hardcoded "http://localhost:8001/audio/{filename}"
+8. backend/config/database.py:30, server.py:93+ - Hardcoded timeouts (5.0, 10.0 seconds)
+9. backend/server.py:33, config/settings.py:28 - Hardcoded RSS_CACHE_EXPIRY_SECONDS = 300
+10. backend/server.py + ai_service.py - Hardcoded word counts in prompts ("200-300 words")
+
+MEDIUM SEVERITY (4 issues) - Network & Service Config
+------------------------------------------------------
+11. audion-app/.env.user:2 - Hardcoded IP "http://192.168.11.60:8000"
+12. audion-app-fresh/config/api.ts:44,49 - Hardcoded URLs 'https://api.audion.app' and port 8003
+13. audion-app-fresh/config/api.ts:55 - Hardcoded timeout default 30000ms
+14. backend/services/ai_service.py:48,102,136,240 - Hardcoded OpenAI models (gpt-4o, tts-1, alloy)
+15. backend/server.py:71, config/settings.py:24 - Hardcoded AWS region 'us-east-1' and bucket name
+
+LOW SEVERITY (2 issues) - Database & App Config
+------------------------------------------------
+16. backend/.env:18 - Hardcoded DB_NAME=audion_atlas_DB (all environments)
+17. audion-app-fresh/.env.development:18-19 - Hardcoded app version "1.0.0-dev"
+
+QUICK FIXES BY FILE
+===================
+
+backend/server.py:
+- Line 150: Remove fallback default for JWT_SECRET_KEY
+- Lines 202-211: Move ALLOWED_ORIGINS to environment variable
+- Line 33: Make CACHE_EXPIRY_SECONDS configurable
+
+backend/config/settings.py:
+- Line 24: Make AWS_REGION required (no 'us-east-1' default)
+- Line 25: Make S3_BUCKET_NAME required
+- Line 28: Make RSS_CACHE_EXPIRY_SECONDS configurable
+- Add: DB_PING_TIMEOUT, DB_OPERATION_TIMEOUT environment variables
+- Add: OPENAI_CHAT_MODEL, OPENAI_TTS_MODEL, OPENAI_TTS_VOICE variables
+
+backend/services/ai_service.py:
+- Lines 29,73,129,232: Replace "your-openai-key" checks with validation
+- Line 220: Use MOCK_AUDIO_URL_BASE variable
+- Line 204: Use MOCK_AUDIO_URL_BASE variable
+- Lines 48,102,136,240: Use OPENAI_*_MODEL variables from settings
+
+backend/services/storage_service.py:
+- Line 160: Use FILE_SERVER_URL environment variable
+- Lines 39,255: Remove hardcoded "your-aws-access-key" checks
+
+audion-app-fresh/config/api.ts:
+- Lines 44,49: Use EXPO_PUBLIC_PROD_API_URL and EXPO_PUBLIC_DEV_API_PORT
+- Line 55: Define DEFAULT_API_TIMEOUT_MS constant
+
+audion-app-fresh/.env.development:
+- Add: EXPO_PUBLIC_PROD_API_URL=https://api.audion.app
+- Add: EXPO_PUBLIC_DEV_API_PORT=8003
+- Add: EXPO_PUBLIC_API_TIMEOUT=60000
+
+ENVIRONMENT VARIABLES TO ADD
+=============================
+
+Backend (.env/.env.production):
+- JWT_SECRET_KEY (REQUIRED - no default)
+- CORS_ALLOWED_ORIGINS (parse comma-separated list)
+- FILE_SERVER_URL (default: http://localhost:8001)
+- MOCK_AUDIO_URL_BASE (already exists)
+- DB_PING_TIMEOUT (default: 5.0)
+- DB_OPERATION_TIMEOUT (default: 10.0)
+- DB_BATCH_TIMEOUT (default: 5.0)
+- RSS_CACHE_EXPIRY_SECONDS (default: 300)
+- RECOMMENDED_WORD_COUNT (default: 250)
+- INSIGHT_WORD_COUNT (default: 350)
+- OPENAI_CHAT_MODEL (default: gpt-4o)
+- OPENAI_TTS_MODEL (default: tts-1)
+- OPENAI_TTS_VOICE (default: alloy)
+- AWS_REGION (REQUIRED - no 'us-east-1' default)
+- S3_BUCKET_NAME (REQUIRED)
+- DB_NAME (use 'audion_dev_db' for dev, 'audion_prod_db' for prod)
+
+Frontend (.env.development):
+- EXPO_PUBLIC_PROD_API_URL=https://api.audion.app
+- EXPO_PUBLIC_DEV_API_PORT=8003
+- EXPO_PUBLIC_API_TIMEOUT=60000
+
+SECURITY PRIORITIES
+===================
+1. IMMEDIATE: Fix JWT_SECRET_KEY fallback (CRITICAL security issue)
+2. IMMEDIATE: Add startup validation for OPENAI_API_KEY and AWS credentials
+3. IMMEDIATE: Remove "your-openai-key" and "your-aws-access-key" hardcoded checks
+4. SHORT-TERM: Externalize all hardcoded URLs and port numbers
+5. SHORT-TERM: Externalize all timeout values
+6. MEDIUM-TERM: Standardize configuration validation
+
+See HARDCODING_VIOLATIONS_ANALYSIS.md for complete details.

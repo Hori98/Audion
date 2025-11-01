@@ -64,8 +64,9 @@ class UnifiedAudioV2Service {
 
     try {
       console.log('🎧 [AutoPick] Request:', payload);
+      // Use sync endpoint to return full audio object immediately
       const response = await apiClient.post<UnifiedAudioResponse>(
-        API_ENDPOINTS.AUDIO_V2.AUTOPICK,
+        `${API_ENDPOINTS.AUDIO_V2.AUTOPICK}/sync`,
         payload
       );
       console.log('✅ [AutoPick] Success:', response.data.id);

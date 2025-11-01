@@ -9,13 +9,13 @@ import feedparser
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 
-from config.settings import RSS_CACHE_EXPIRY_SECONDS
-from config.database import get_database, is_database_connected
-from models.article import Article
-from models.rss import RSSSource
-from services.article_service import classify_article_genre
-from utils.errors import handle_database_error, handle_generic_error
-from utils.database import find_many_by_user, find_one_by_id
+from backend.config.settings import RSS_CACHE_EXPIRY_SECONDS
+from backend.config.database import get_database, is_database_connected
+from backend.models.article import Article
+from backend.models.rss import RSSSource
+from backend.services.article_service import classify_article_genre
+from backend.utils.errors import handle_database_error, handle_generic_error
+from backend.utils.database import find_many_by_user, find_one_by_id
 
 # Global RSS cache
 RSS_CACHE: Dict[str, Dict[str, Any]] = {}
