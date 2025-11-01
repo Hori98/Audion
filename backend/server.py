@@ -3,7 +3,6 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.responses import FileResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
-from motor.motor_asyncio import AsyncIOMotorClient
 from contextlib import asynccontextmanager
 import os
 import logging
@@ -44,6 +43,7 @@ from backend.config.settings import (
     ALLOWED_ORIGINS
 )
 from backend.runtime import shared_state
+from backend.config.database import connect_to_database, create_database_indexes, get_database, is_database_connected
 from backend.services.genre_mapping_service import normalize_preferred_genres
 from backend.services.subscription_service import ensure_can_create_audio, get_user_limits
 from backend.services.autopick_pool import resolve_article_pool_for_request as svc_resolve_pool
@@ -180,7 +180,7 @@ S3_BUCKET_NAME = os.environ.get('S3_BUCKET_NAME', 'audion-audio-files')
 BACKEND_URL = os.environ.get('BACKEND_URL', 'http://localhost:8000')
 MOCK_AUDIO_URL_BASE = os.environ.get('MOCK_AUDIO_URL_BASE', 'http://localhost:8001')
 
-# Global database connection variable
+# Global database connection variable (mirror of config.database)
 db = None
 db_connected = False
 
@@ -190,17 +190,24 @@ async def lifespan(app: FastAPI):
     # Startup
     global db, db_connected
     try:
-        client = AsyncIOMotorClient(MONGO_URL)
-        db = client[DB_NAME]
-        # Test the connection
-        await asyncio.wait_for(db.command('ping'), timeout=5.0)
-        db_connected = True
-        try:
-            shared_state.db = db
-            shared_state.db_connected = True
-        except Exception:
-            pass
-        logging.info("Connected to MongoDB successfully")
+        _, connected = await connect_to_database()
+        db_connected = connected
+        if connected:
+            # mirror config.database to module/global and shared_state
+            db = get_database()
+            try:
+                shared_state.db = db
+                shared_state.db_connected = True
+            except Exception:
+                pass
+            logging.info("Connected to MongoDB successfully")
+        else:
+            try:
+                shared_state.db = None
+                shared_state.db_connected = False
+            except Exception:
+                pass
+            logging.info("Server will run in limited mode without database")
     except Exception as e:
         logging.error(f"Failed to connect to MongoDB: {e}")
         db_connected = False
@@ -209,21 +216,13 @@ async def lifespan(app: FastAPI):
             shared_state.db_connected = False
         except Exception:
             pass
-        logging.info("Server will run in limited mode without database")
     
     # Only run database operations if connected
     if db_connected:
         # Create database indexes (non-blocking)
         try:
-            await db.users.create_index("email", unique=True)
-            await db.rss_sources.create_index([("user_id", 1)])
-            await db.audio_creations.create_index([("user_id", 1), ("created_at", -1)])
-            await db.user_profiles.create_index("user_id", unique=True)
-            await db.user_profiles.create_index([("user_id", 1), ("updated_at", -1)])
-            await db.preset_categories.create_index("name", unique=True)
-            await db.deleted_audio.create_index([("user_id", 1), ("deleted_at", -1)])
-            await db.deleted_audio.create_index("permanent_delete_at")
-            logging.info("Database indexes created successfully")
+            await create_database_indexes()
+            logging.info("Database indexes created successfully (centralized)")
         except Exception as e:
             logging.error(f"Failed to create database indexes: {e}")
             logging.info("Server will continue without some indexes")
@@ -249,9 +248,8 @@ async def lifespan(app: FastAPI):
     
     yield
     
-    # Shutdown
-    client.close()
-    logging.info("Disconnected from MongoDB")
+    # Shutdown (handled by platform; centralized DB client cleanup not required here)
+    logging.info("Lifespan shutdown complete")
 
 # Create the main app
 app = FastAPI(lifespan=lifespan)
@@ -298,10 +296,10 @@ except Exception as e:
 async def health_check():
     """Health check endpoint for connection monitoring"""
     try:
-        # Test database connection
-        if db is not None:
-            # Simple ping to check database connectivity
-            await db.command("ping")
+        # Test database connection via centralized handle
+        local_db = get_database()
+        if local_db is not None:
+            await local_db.command("ping")
             return {
                 "status": "healthy",
                 "timestamp": datetime.utcnow().isoformat(),
