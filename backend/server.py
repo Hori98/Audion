@@ -245,7 +245,24 @@ async def lifespan(app: FastAPI):
             logging.info("Server will continue without cleanup")
     else:
         logging.info("Skipping database initialization - running in limited mode")
-    
+    # Ensure modular routers take precedence over legacy routes:
+    # prune any /api/* routes defined in this module (except /api/health)
+    try:
+        from fastapi.routing import APIRoute
+        new_routes = []
+        removed = 0
+        for route in app.router.routes:
+            if isinstance(route, APIRoute):
+                if route.path.startswith('/api') and route.endpoint.__module__ == __name__ and route.path != '/api/health':
+                    removed += 1
+                    continue
+            new_routes.append(route)
+        app.router.routes = new_routes
+        if removed:
+            logging.info(f"Pruned {removed} legacy /api routes from server.py during startup")
+    except Exception as e:
+        logging.warning(f"Failed to prune legacy routes on startup: {e}")
+
     yield
     
     # Shutdown (handled by platform; centralized DB client cleanup not required here)
