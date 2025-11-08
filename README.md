@@ -9,11 +9,14 @@ RSS記事やWebコンテンツを高品質な音声コンテンツに変換し�
 - **This README** - Quick start and current architecture
 
 ### **📚 Supporting Documentation**
-- `docs/BACKEND.md` - Backend env, endpoints, integration notes
-- `docs/DEVELOPMENT_GUIDE.md` - Dev practices, testing, debug tips
+- **[docs/BACKEND.md](./docs/BACKEND.md)** - Backend env, endpoints, integration notes
+- **[docs/DEVELOPMENT_GUIDE.md](./docs/DEVELOPMENT_GUIDE.md)** - Dev practices, testing, debug tips
 
 ### **🗂️ Archived Documentation**
 Historical/plan documents are consolidated under `docs_archive/` to reduce clutter.
+
+### **📝 Note: Documentation is Based on Actual Implementation**
+All documentation reflects the current codebase state. If documentation and code conflict, **the code is correct**.
 
 ## 🚀 Quick Start
 
@@ -42,16 +45,14 @@ npx expo start
 # Backend runs on: http://<YOUR_IP>:8003
 ```
 
-### **Frontend (Choose One)**
+### **Frontend**
 ```bash
-# Option 1: Main project frontend (✅ Active)
-cd audion-app
+# ✅ Active frontend (Latest implementation with genreUtils)
+cd audion-app-fresh
 npm install
 npx expo start
-# ✅ 現在のアクティブなフロントエンド（AutoPick統合済み）
 
-# Option 2: (旧) 記述の整理前フロント  
-# 現在は `audion-app/` に集約済みのため未使用
+# ⚠️ Legacy: audion-app/ は旧実装のため使用しないでください
 ```
 
 ### **✅ 動作確認**
@@ -73,27 +74,57 @@ curl -X POST http://<表示されたIP>:8003/api/auth/login \
 
 ## 🏗️ Current Architecture
 
-### **Frontend**
+### **Frontend (Active)**
 ```
-audion-app/              # ✅ Active frontend (Expo Router)
-├── app/(tabs)/          # Tab screens
-├── components/          # 70+ components (AutoPick統合)
-├── services/            # API integration (Unified Audio, RSS, Auth)
-└── context/             # Auth, RSS, Settings state
+audion-app-fresh/        # ✅ Active frontend (Expo Router + genreUtils)
+├── app/
+│   ├── (tabs)/          # 4 main tabs
+│   │   ├── index.tsx       # ホーム（固定RSSキュレーション）
+│   │   ├── articles.tsx    # フィード（ユーザーRSS管理）
+│   │   ├── discover.tsx    # ディスカバー（コミュニティ）
+│   │   └── two.tsx         # ライブラリ（音声再生）
+│   ├── auth/            # Login, Register screens
+│   └── settings/        # Settings screens
+├── components/          # 38 components (Unified UI)
+├── services/            # 13 services (API clients)
+├── hooks/               # useCuratedFeed, useUserFeed, etc.
+├── utils/               # genreUtils.ts (shared filtering logic)
+└── context/             # Auth, Settings, Audio state
 ```
 
 ### **Backend**
 ```
 backend/
-├── server.py            # ✅ Main FastAPI server (Unified TTS integrated)
-├── services/            # ✅ Unified Audio & TTS processing services
-│   ├── tts_service.py      # ✅ NEW: Unified TTS service with XML processing  
-│   ├── unified_audio_service.py # Audio generation consolidation
-│   └── ai_service.py       # Legacy compatibility layer
-├── utils/               # ✅ NEW: Text processing utilities
-│   └── text_utils.py       # XML→clean text extraction
-├── models/              # Database models (MongoDB)
-└── routers/             # API endpoint organization
+├── server.py            # ✅ Main FastAPI server
+├── routers/             # 14 API routers
+│   ├── articles.py         # Article endpoints (GET /articles/curated)
+│   ├── rss.py              # RSS management (user sources)
+│   ├── auth.py             # Authentication (JWT)
+│   ├── audio_unified.py    # Unified audio generation
+│   ├── audio.py            # Legacy audio endpoints
+│   ├── user.py             # User profile & settings
+│   ├── subscription.py     # Freemium plans
+│   ├── archive.py          # Article archiving
+│   ├── bookmarks.py        # Bookmarks
+│   ├── downloads.py        # Download management
+│   ├── albums.py           # Audio playlists
+│   ├── notifications.py    # Push notifications
+│   ├── onboard.py          # User onboarding
+│   └── __init__.py
+├── services/            # 16 services
+│   ├── rss_service.py      # RSS fetch/cache/parallel
+│   ├── article_service.py  # Genre classification
+│   ├── auth_service.py     # JWT token management
+│   ├── unified_audio_service.py # Audio generation
+│   ├── tts_service.py      # Text-to-Speech
+│   ├── scheduler_service.py # SchedulePick
+│   ├── task_manager.py     # Progress tracking
+│   ├── dynamic_prompt_service.py # AI prompts
+│   └── ...
+├── models/              # MongoDB models
+└── utils/               # Text processing utilities
+    ├── error_handler.py    # Unified error responses
+    └── logging_config.py   # Structured logging
 ```
 
 #### CORS / Upload Limits (env)
@@ -103,51 +134,62 @@ backend/
 #### Content Rights Policy
 - 詳細は `docs/CONTENT_RIGHTS_POLICY.md` を参照（出典明記、要約方針、二次配布禁止 等）
 
-## ✅ Current Features (January 2025)
+## ✅ Current Features (November 2025)
 
 ### **Core Functionality**
 - **✅ User Authentication**: JWT-based login/registration system
-- **✅ RSS Article Integration**: 6 sources, 65+ articles successfully fetched
+- **✅ RSS Article Integration**:
+  - Home: Fixed RSS (curated sources)
+  - Feed: User-managed RSS (personal sources)
+- **✅ Genre Filtering**: 12 Japanese categories with shared taxonomy
+  - `utils/genreUtils.ts` - Centralized filtering logic
+  - Dynamic genre tabs based on available content
 - **✅ AutoPick AI Audio Generation**: OpenAI GPT + TTS with real-time progress monitoring
-- **✅ Audio Library**: Real API integration with playback controls
+- **✅ ManualPick**: Multi-article selection for custom audio
+- **✅ SchedulePick**: Scheduled audio generation
+- **✅ Audio Library**: Full playback controls with chapter navigation
 - **✅ Search & Discovery**: Advanced fuzzy search with relevance scoring
-
-- **✅ Unified Audio System (Jan 2025)**: 統合されたTTSサービスとXML処理パイプライン
+- **✅ Archive System**: Article bookmarking and organization
+- **✅ Freemium System**: Subscription plans with usage tracking
 - **✅ Progress Monitoring**: AutoPick進捗監視（React NativeではSSE互換のポーリング方式を採用）
 - **✅ Task Manager**: Background audio generation with progress tracking
-- **✅ EventSource Compatibility**: react-native-sse integration for React Native
-- **✅ Library Integration**: Converted from mock data to real API calls
-- **✅ Code Quality Improvement**: sys.path操作排除、クリーン依存関係
+- **✅ Error Handling**: Unified error responses with correlation IDs
+- **✅ Structured Logging**: Domain-specific loggers (auth, rss, audio, api, database)
 
 ## 🎯 Development Status
 
 ### **✅ Working & Verified**
-- Backend operational at `http://192.168.11.30:8003`
-- RSS article fetching from 6 configured sources  
-- AutoPick audio generation with progress monitoring
+- Backend operational (FastAPI + MongoDB)
+- RSS article fetching (Home: fixed sources, Feed: user sources)
+- Genre filtering with shared taxonomy (12 categories)
+- AutoPick/ManualPick/SchedulePick audio generation
 - Authentication system with JWT tokens
-- Basic audio playback functionality
+- Full audio playback with chapter navigation
+- Archive & bookmark system
+- Freemium subscription system
+- Progress monitoring with SSE-compatible polling
+- Unified error handling and structured logging
 
 ### **🚧 In Progress**
-- Frontend architecture consolidation (`audion-app/` vs `audion_new_frontend/`)
-- Backend modular refactoring (server.py → clean architecture)
-- Production deployment preparation
+- UI enhancements (documented in `audion-app-fresh/HOME_UI_ENHANCEMENT_REQUIREMENTS.md`)
+- Performance optimization
+- Additional audio generation modes
 
 ### **📋 Planned**
-- Social & community features (user-generated content sharing)
-- Freemium monetization system implementation
-- Content rights & licensing framework
+- Emergency news API integration (Layer 1 RSS)
 - Advanced personalization algorithms
+- Community features expansion
+- Production deployment optimization
 
 ## ⚠️ Important Documentation Rules
 
-### **Single Source of Truth**
-**All project information should reference [PROJECT_MASTER_PLAN.md](./PROJECT_MASTER_PLAN.md) as the authoritative source.**
+### **Documentation Policy**
+**When documentation and code conflict, the code is always correct.**
 
-### **Update Protocol**
-1. **Architecture changes** → Update `PROJECT_MASTER_PLAN.md` first
-2. **Feature implementations** → Update status immediately upon completion  
-3. **Bug reports** → Reference current architecture in master plan
+### **Primary References**
+1. **[CODEX_PROJECT_OVERVIEW.md](./CODEX_PROJECT_OVERVIEW.md)** - Quick handoff guide
+2. **[docs/DEVELOPMENT_GUIDE.md](./docs/DEVELOPMENT_GUIDE.md)** - Development practices
+3. **This README** - Current architecture and status
 
 ### **Historical Context**
 Documents in `docs_archive/` are preserved for historical reference but should not be used for current development decisions.
@@ -171,6 +213,6 @@ API_BASE_URL=http://192.168.11.30:8003
 
 ---
 
-**📅 Last Updated**: January 30, 2025  
-**📋 For complete project status**: See [PROJECT_MASTER_PLAN.md](./PROJECT_MASTER_PLAN.md)  
-**🤖 AI Development**: See [CLAUDE.md](./CLAUDE.md) for AI collaboration guidelines
+**📅 Last Updated**: November 8, 2025
+**📋 Quick Reference**: See [CODEX_PROJECT_OVERVIEW.md](./CODEX_PROJECT_OVERVIEW.md)
+**🛠️ Development Guide**: See [docs/DEVELOPMENT_GUIDE.md](./docs/DEVELOPMENT_GUIDE.md)

@@ -1,16 +1,16 @@
 # Codex Project Overview (Hand-off Guide)
 
-Purpose: Give Codex a compact, MECE, always-fresh picture of this repo so it can act fast without re-reading everything.
+**Purpose**: Compact, MECE reference for the Audion codebase. Code is always the source of truth.
 
 ## 1) TL;DR
-- App = React Native (Expo) frontend + FastAPI backend + MongoDB.
-- Use `audion-app-fresh/` as the only active frontend. Ignore `audion-app/`.
-- RSS sources split:
-  - Home tab: fixed/preset RSS (public, curated endpoints).
-  - Feed tab: user-managed RSS (auth required, per-user sources).
-- Filters rely on source_name and normalized genres (shared taxonomy, 12 Japanese categories).
-- Backend requires JWT. Missing token → many errors look like “Field required”/401/422.
-- RSS cache can stale; clear via `DELETE /api/rss-sources/cache/clear` after changes.
+- **Stack**: React Native (Expo) frontend + FastAPI backend + MongoDB
+- **Active Frontend**: `audion-app-fresh/` only. **Ignore** `audion-app/` (legacy)
+- **RSS Architecture**:
+  - Home tab: Fixed RSS (curated sources via `/api/articles/curated`)
+  - Feed tab: User-managed RSS (auth required, `/api/rss-sources`)
+- **Filtering**: `utils/genreUtils.ts` - shared logic for source_name + 12 Japanese genres
+- **Auth**: JWT required for most endpoints. Missing token → 401/422/"Field required"
+- **Cache**: RSS cache can stale; clear via `DELETE /api/rss-sources/cache/clear`
 
 ## 2) How to Run
 - Backend (FastAPI): `./start-dev-fixed.sh` (activates venv, sets host/port, logs IP).
@@ -25,39 +25,71 @@ Purpose: Give Codex a compact, MECE, always-fresh picture of this repo so it can
 - Authentication: JWT required for user RSS endpoints. Frontend stores token under `@audion_auth_token`.
 
 ## 4) Repo Map (active parts)
-- Frontend: `audion-app-fresh/`
-  - `app/(tabs)/index.tsx` = Home (fixed RSS)
-  - `app/(tabs)/articles.tsx` = Feed (user RSS)
-  - `components/FeedUI.tsx` = Feed UI (renders props)
-  - `hooks/useRSSFeed.ts` / `hooks/useUserFeed.ts` = data/filters
-  - `services/*` = API clients
+- **Frontend**: `audion-app-fresh/`
+  - `app/(tabs)/index.tsx` = Home (fixed RSS キュレーション)
+  - `app/(tabs)/articles.tsx` = Feed (user RSS管理)
+  - `app/(tabs)/discover.tsx` = Discover (コミュニティ)
+  - `app/(tabs)/two.tsx` = Library (音声ライブラリ)
+  - `components/` = 38 components (ArticleCard, HeroCarousel, FeedUI, etc.)
+  - `hooks/useCuratedFeed.ts` = Home用データ取得
+  - `hooks/useUserFeed.ts` = Feed用データ取得（ソース/ジャンルフィルタ）
+  - `utils/genreUtils.ts` = 共通フィルタリングロジック
+  - `services/` = 13 API clients (ArticleService, RSSService, AudioService, etc.)
   - `types/rss.ts` = genre taxonomy (12 categories)
-- Backend: `backend/`
-  - `server.py` = main app
-  - `routers/` = endpoints (rss.py, articles.py, auth.py, etc.)
+- **Backend**: `backend/`
+  - `server.py` = main FastAPI app
+  - `routers/` = 14 routers (articles, rss, auth, audio_unified, user, etc.)
   - `services/rss_service.py` = RSS fetch/merge/cache/parallel
   - `services/article_service.py` = genre classification + normalization
+  - `services/unified_audio_service.py` = Audio generation (AutoPick/ManualPick/SchedulePick)
+  - `utils/error_handler.py` = Unified error responses
+  - `utils/logging_config.py` = Structured logging
 
 ## 5) RSS Management (core flows)
-- Home tab (no auth): `GET /api/articles/curated` (+ optional `genre`).
-- Feed tab (auth): user-managed RSS via `routers/rss.py`:
-  - List: `GET /api/rss-sources`
-  - Add: preferred `POST /api/rss-sources` with `{ name, url }`
-  - Fallback Add: `POST /api/rss-sources/add` with `{ custom_name, custom_url, is_active? }`
-  - Update status: `PUT /api/rss-sources/{id}` with `{ is_active }`
-  - Delete: `DELETE /api/rss-sources/{id}`
-  - Cache maintenance: `DELETE /api/rss-sources/cache/clear`
-- After add/remove/toggle: clear cache and re-fetch sources+articles to avoid stale content.
 
-## 6) Filtering & Taxonomy (feed)
-- Source filter uses source_name (not id). Normalize for comparison (trim+lowercase).
-- Genre taxonomy (12):
-  - すべて / 国内 / 国際 / 政治 / 経済・ビジネス / テクノロジー /
-    科学・環境 / 健康・医療 / スポーツ / エンタメ・文化 / ライフスタイル / その他
-- Backend normalization:
-  - `classify_article_genre()` (coarse) → `normalize_genre()` (UI-aligned categories).
-  - “国際・社会” → 政治/国際/国内、 “エンタメ・スポーツ” → スポーツ/エンタメ・文化、 “ライフスタイル” → 健康・医療を抽出、等。
-- Feed rendering must use filtered list only (not raw list). We pass `filteredArticles` to `FeedUI`.
+### Home Tab (Fixed RSS - no auth)
+- Endpoint: `GET /api/articles/curated?genre={genre}`
+- Returns curated articles from fixed sources (NHK, 朝日新聞, etc.)
+- Uses `useCuratedFeed.ts` hook
+
+### Feed Tab (User RSS - auth required)
+Managed via `routers/rss.py`:
+- **List**: `GET /api/rss-sources`
+- **Add**: `POST /api/rss-sources` with `{ name, url }`
+- **Fallback Add**: `POST /api/rss-sources/add` with `{ custom_name, custom_url, is_active? }`
+- **Update**: `PUT /api/rss-sources/{source_id}` with `{ is_active }`
+- **Delete**: `DELETE /api/rss-sources/{source_id}`
+- **Cache Clear**: `DELETE /api/rss-sources/cache/clear` (must call after changes)
+
+### Critical Flow
+1. Add/Remove/Toggle RSS source
+2. Clear cache (`DELETE /api/rss-sources/cache/clear`)
+3. Re-fetch sources (`GET /api/rss-sources`)
+4. Re-fetch articles (via `useUserFeed.ts`)
+
+## 6) Filtering & Taxonomy
+
+### Genre Taxonomy (12 categories - `types/rss.ts`)
+```
+すべて / 国内 / 国際 / 政治 / 経済・ビジネス / テクノロジー /
+科学・環境 / 健康・医療 / スポーツ / エンタメ・文化 / ライフスタイル / その他
+```
+
+### Shared Filtering Logic (`utils/genreUtils.ts`)
+- **`getAvailableGenresForHome()`**: Home専用（ソースフィルタなし）
+- **`applyGenreFilterForHome()`**: Home専用フィルタリング
+- **`getAvailableGenres()`**: Feed用（ソースフィルタ考慮）
+- **`applyGenreFilter()`**: Feed用多段階フィルタ（ソース→ジャンル）
+- **`normalizeGenre()`**: Backend "General" → "その他" マッピング
+- **`generateGenreTabs()`**: UIタブデータ生成
+
+### Backend Normalization
+- `classify_article_genre()` → `normalize_genre()`
+- Examples: "国際・社会" → 政治/国際/国内, "エンタメ・スポーツ" → スポーツ/エンタメ・文化
+
+### Critical Rule
+- **Always** use `filteredArticles` for rendering (not raw `articles`)
+- Source filter uses `source_name` (normalized: trim + lowercase)
 
 ## 7) Known Pitfalls & Fixes
 - “Field required” / 422 on RSS add/update: Usually missing Bearer token or wrong body.
@@ -79,16 +111,21 @@ Purpose: Give Codex a compact, MECE, always-fresh picture of this repo so it can
 - Health: `curl http://<IP>:8003/api/health`
 - Cache clear: `curl -X DELETE http://<IP>:8003/api/rss-sources/cache/clear -H "Authorization: Bearer <TOKEN>"`
 
-## 10) Conventions & Do/Don’t
-- Do
-  - Use `audion-app-fresh/` only.
-  - Compare filters by `source_name` (normalized), not `id`.
-  - Keep taxonomy in `types/rss.ts`. Prefer a single source of truth.
-  - After RSS changes, clear cache and re-fetch.
-- Don’t
-  - Don’t rely on `audion-app/`.
-  - Don’t pass raw `articles` into FeedUI; always use filtered list.
-  - Don’t ignore 401/422; most are “auth missing/invalid”.
+## 10) Conventions & Do/Don't
+
+### ✅ Do
+- Use **`audion-app-fresh/`** only
+- Use `utils/genreUtils.ts` for all filtering logic
+- Compare filters by `source_name` (normalized), not `id`
+- Keep taxonomy in `types/rss.ts` (single source of truth)
+- After RSS changes: clear cache → re-fetch
+- Check code when docs conflict (code = truth)
+
+### ❌ Don't
+- Don't use `audion-app/` (legacy)
+- Don't pass raw `articles` to UI; use `filteredArticles`
+- Don't ignore 401/422; check auth token
+- Don't trust old docs without verifying code
 
 ## 11) Debug Tips
 - Log BASE_URL from `config/api.ts` startup.
