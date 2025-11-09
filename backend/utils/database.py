@@ -31,16 +31,18 @@ async def find_one_by_id(collection_name: str, document_id: str, user_id: str = 
         db = get_database()
         collection = getattr(db, collection_name)
 
-        # Build query
-        query = {"_id": ObjectId(document_id)}
+        # Build query - use string ID matching instead of ObjectId conversion
+        # (Audio documents use UUID strings, not ObjectIds)
+        query = {"id": document_id}
         if user_id:
             query["user_id"] = user_id
 
         result = await collection.find_one(query)
 
         if result:
-            result["id"] = str(result["_id"])
-            del result["_id"]
+            if "_id" in result:
+                result["id"] = str(result["_id"])
+                del result["_id"]
 
         return result
 
@@ -150,8 +152,9 @@ async def update_document(collection_name: str, document_id: str,
         db = get_database()
         collection = getattr(db, collection_name)
 
-        # Build query
-        query = {"_id": ObjectId(document_id)}
+        # Build query - use string ID matching instead of ObjectId conversion
+        # (Audio documents use UUID strings, not ObjectIds)
+        query = {"id": document_id}
         if user_id:
             query["user_id"] = user_id
 
@@ -183,8 +186,9 @@ async def delete_document(collection_name: str, document_id: str, user_id: str =
         db = get_database()
         collection = getattr(db, collection_name)
 
-        # Build query
-        query = {"_id": ObjectId(document_id)}
+        # Build query - use string ID matching instead of ObjectId conversion
+        # (Audio documents use UUID strings, not ObjectIds)
+        query = {"id": document_id}
         if user_id:
             query["user_id"] = user_id
 
