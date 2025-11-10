@@ -10,11 +10,35 @@ import { Platform } from 'react-native';
 const resolveDevHost = (): string | null => {
   try {
     const m: any = (Constants as any);
+
+    // 🔍 DEBUG: Log Constants structure
+    if (__DEV__) {
+      console.log('[DEBUG resolveDevHost] Constants.manifest2:', m.manifest2);
+      console.log('[DEBUG resolveDevHost] Constants.manifest:', m.manifest);
+      console.log('[DEBUG resolveDevHost] Constants.expoConfig:', m.expoConfig);
+      console.log('[DEBUG resolveDevHost] Constants.expoConfig?.hostUri:', m.expoConfig?.hostUri);
+      console.log('[DEBUG resolveDevHost] Constants.manifest?.debuggerHost:', m.manifest?.debuggerHost);
+      console.log('[DEBUG resolveDevHost] Constants.manifest2?.extra?.expoGo?.debuggerHost:', m.manifest2?.extra?.expoGo?.debuggerHost);
+    }
+
     const dbg = m.manifest2?.extra?.expoGo?.debuggerHost || m.manifest?.debuggerHost || m.expoConfig?.hostUri;
+
+    if (__DEV__) {
+      console.log('[DEBUG resolveDevHost] Selected debuggerHost value:', dbg);
+    }
+
     if (!dbg) return null;
     const host = String(dbg).split(':')[0];
+
+    if (__DEV__) {
+      console.log('[DEBUG resolveDevHost] Extracted host:', host);
+    }
+
     return host || null;
-  } catch {
+  } catch (error) {
+    if (__DEV__) {
+      console.error('[DEBUG resolveDevHost] Error:', error);
+    }
     return null;
   }
 };
