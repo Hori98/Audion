@@ -4,7 +4,6 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Genre } from '../types/rss';
 import ArticleService, { Article } from '../services/ArticleService';
 import RSSSourceService, { UserRSSSource } from '../services/RSSSourceService';
-import RSSChangeNotifier from '../services/RSSChangeNotifier';
 import { getAvailableGenres, applyGenreFilter, handleSourceChange } from '../utils/genreUtils';
 
 interface UseUserFeedState {
@@ -303,18 +302,8 @@ export function useUserFeed(): UseUserFeedState & UseUserFeedActions {
     setSelectedReadStatus(status);
   }, []);
 
-  // RSS変更監視とアプリフォアグラウンド復帰時のリロード
+  // アプリがフォアグラウンドに復帰したときのリロード
   useEffect(() => {
-
-    // RSS変更イベントリスナー
-    const unsubscribeRSSChanges = RSSChangeNotifier.subscribeToRSSChanges((event) => {
-
-      // RSS変更時は両方の情報を更新
-      fetchUserSources();
-      fetchArticles();
-    });
-
-    // アプリがフォアグラウンドに復帰したときのリロード
     const handleAppStateChange = (nextAppState: string) => {
       if (nextAppState === 'active') {
 
@@ -328,7 +317,6 @@ export function useUserFeed(): UseUserFeedState & UseUserFeedActions {
 
     // クリーンアップ
     return () => {
-      unsubscribeRSSChanges();
       subscription?.remove();
     };
   }, [fetchUserSources, fetchArticles]);
