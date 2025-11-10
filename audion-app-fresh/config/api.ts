@@ -53,8 +53,22 @@ const detectBackendUrl = (): string => {
     // Only replace localhost with dev host IP on native (Expo Go/Dev Client), not on web
     if (__DEV__ && envUrl.includes('localhost') && Platform.OS !== 'web') {
       const host = resolveDevHost();
-      if (host && /^(?:\d{1,3}\.){3}\d{1,3}$/.test(host)) {
-        envUrl = envUrl.replace('localhost', host);
+      if (host) {
+        // Accept both IPv4 (192.168.1.1) and Tunnel URLs (*.exp.direct)
+        // IPv4 pattern: ^(?:\d{1,3}\.){3}\d{1,3}$
+        // Domain pattern: has dots and no spaces
+        const isValidHost =
+          /^(?:\d{1,3}\.){3}\d{1,3}$/.test(host) ||  // IPv4
+          (host.includes('.') && !/\s/.test(host));   // Domain with dots, no spaces
+
+        if (isValidHost) {
+          if (__DEV__) {
+            console.log('[DEBUG detectBackendUrl] Replacing localhost with:', host);
+          }
+          envUrl = envUrl.replace('localhost', host);
+        } else if (__DEV__) {
+          console.warn('[DEBUG detectBackendUrl] Invalid host format:', host);
+        }
       }
     }
     return envUrl;
